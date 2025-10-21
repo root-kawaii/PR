@@ -1,14 +1,13 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16
     container_name: postgres-dev-pierre
+    network_mode: "host"  # Add this line
     environment:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: events
     ports:
-      - "5433:5433"
+      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
