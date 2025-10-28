@@ -1,12 +1,17 @@
 // src/main.rs
 
 // Declare your modules (tells Rust these files exist)
-mod models;      // Looks for src/models.rs
-mod handlers;    // Looks for src/handlers.rs
-
+mod models;
+mod controllers;
+mod services;
 // Import specific items from your modules
-use models::{Event, CreateEvent, UpdateEvent, AppState};
-
+use crate::models::{EventEntity, EventRequest, AppState}; // Correct!
+use crate::services::event_service::{
+    load_all_events_service,
+    load_event_service,
+    create_event_service,
+    erase_event_service,
+};
 // src/routes.rs
 
 use axum::{
@@ -14,21 +19,20 @@ use axum::{
     Router,
 };
 
-use crate::handlers::{
-    get_all_events, 
-    get_event, 
-    create_event, 
-    update_event, 
-    delete_event
+use crate::controllers::event_controller::{
+    get_all_events,
+    get_events,
+    post_events,
+    delete_events,
 };
 use sqlx::PgPool;
 
 pub fn create_router(pool: AppState) -> Router {
     Router::new()
-        .route("/events", get(get_all_events).post(create_event))
+        .route("/events", get(get_all_events).post(post_events))
         .route(
             "/events/:id",
-            get(get_event).put(update_event).delete(delete_event),
+            get(get_events).delete(delete_events),
         )
         .with_state(pool)
 }
