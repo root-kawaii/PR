@@ -3,20 +3,20 @@
 // Declare your modules (tells Rust these files exist)
 mod models;
 mod controllers;
-mod services;
+mod persistences;
 // Import specific items from your modules
 use crate::models::{EventEntity, EventRequest, AppState}; // Correct!
-use crate::services::event_service::{
-    load_all_events_service,
-    load_event_service,
-    create_event_service,
-    erase_event_service,
-};
-// src/routes.rs
 
 use axum::{
     routing::{get, post, put, delete},
     Router,
+};
+
+use crate::controllers::payment_controller::{
+    get_all_payments,
+    get_payment,
+    post_payment,
+    delete_payment,
 };
 
 use crate::controllers::event_controller::{
@@ -33,6 +33,11 @@ pub fn create_router(pool: AppState) -> Router {
         .route(
             "/events/:id",
             get(get_events).delete(delete_events),
+        )
+        .route("/payments", get(get_all_payments).post(post_payment))
+        .route(
+            "/payments/:id",
+            get(get_payment).delete(delete_payment),
         )
         .with_state(pool)
 }

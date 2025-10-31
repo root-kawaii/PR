@@ -7,7 +7,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::services::event_service::{
+use crate::persistences::event_persistence::{
     load_all_events_service,
     load_event_service,
     create_event_service,

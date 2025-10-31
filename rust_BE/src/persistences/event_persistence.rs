@@ -5,7 +5,7 @@ use axum::Json;
 
 pub async fn load_all_events_service(pool: &AppState) -> Result<Vec<EventEntity>, StatusCode> {
     sqlx::query_as::<_, EventEntity>(
-        "SELECT id, title, url, description, completed FROM events"
+        "SELECT id, title, description, completed FROM events"
     )
     .fetch_all(pool)
     .await
@@ -17,7 +17,7 @@ pub async fn load_all_events_service(pool: &AppState) -> Result<Vec<EventEntity>
 
 pub async fn load_event_service(id: Uuid, pool: &AppState) -> Result<EventEntity, StatusCode> {
     sqlx::query_as::<_, EventEntity>(
-        "SELECT id, title, url, description, completed FROM events WHERE id = $1"
+        "SELECT id, title, description, completed FROM events WHERE id = $1"
     )
     .bind(id)
     .fetch_optional(pool)

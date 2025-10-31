@@ -1,9 +1,11 @@
 CREATE TABLE IF NOT EXISTS events (
     id UUID PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
+    url VARCHAR(512) NOT NULL,
     description TEXT NOT NULL,
     completed BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    insert_date TIMESTAMP,
+    update_date TIMESTAMP
 );
 
 -- Insert some sample data
