@@ -26,3 +26,5 @@ tower = "0.4"
 
 # UUID - For generating unique IDs
 uuid = { version = "1", features = ["v4", "serde"] }
+dotenv = "0.15"
+async-stripe = { version = "*", default-features = false, features = ["runtime-async-std-surf"] }
