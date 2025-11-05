@@ -1,7 +1,9 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../context/AuthContext';
+import { useRouter } from 'expo-router';
 
 const following = [
   { label: '1 artist', icon: '👤' },
@@ -15,10 +17,35 @@ export const options = {
 };
 
 export default function ProfileScreen() {
+  const { user, logout } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        onPress: async () => {
+          await logout();
+          router.replace('/login');
+        },
+        style: 'destructive',
+      },
+    ]);
+  };
+
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
       <ThemedView style={styles.container}>
-        <ThemedText type="title" style={styles.header}>Matteo Regge</ThemedText>
+        <View style={styles.profileHeader}>
+          <View>
+            <ThemedText type="title" style={styles.header}>{user?.name || 'User'}</ThemedText>
+            <Text style={styles.email}>{user?.email}</Text>
+          </View>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={styles.sectionTitle}>Following</Text>
         <View style={styles.followRow}>
           {following.map((item, i) => (
@@ -45,7 +72,11 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111', padding: 16 },
-  header: { color: '#fff', marginBottom: 18, fontSize: 28 },
+  profileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
+  header: { color: '#fff', marginBottom: 4, fontSize: 28 },
+  email: { color: '#888', fontSize: 14, marginBottom: 8 },
+  logoutButton: { backgroundColor: '#FF6B6B', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  logoutText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   sectionTitle: { color: '#fff', fontWeight: 'bold', fontSize: 18, marginBottom: 8 },
   followRow: { flexDirection: 'row', gap: 12, marginBottom: 18 },
   followCircle: { backgroundColor: '#222', borderRadius: 40, width: 80, height: 80, alignItems: 'center', justifyContent: 'center', position: 'relative' },

@@ -2,14 +2,21 @@ services:
   postgres:
     image: postgres:16
     container_name: postgres-dev-pierre
-    network_mode: "host"  # Add this line
     environment:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: events
+      POSTGRES_USER: postgres
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres-data:
