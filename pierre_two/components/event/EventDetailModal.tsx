@@ -1,22 +1,90 @@
 // ====================================
 // components/event/EventDetailModal.tsx
 // ====================================
-import { Modal, ScrollView, View, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, ScrollView, View, Image, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Event } from '@/types';
+import { Event, Table } from '@/types';
+import { useState, useEffect } from 'react';
+import Constants from 'expo-constants';
+
+// Platform-aware API URL (same logic as useGenres/useClubs)
+const getApiUrl = () => {
+  const isDevice = Constants.isDevice;
+  const isSimulator = Constants.deviceName?.includes('Simulator') ||
+                      Constants.deviceName?.includes('Emulator');
+
+  if (isSimulator === true) {
+    if (Platform.OS === 'android') {
+      return 'http://10.0.2.2:3000';
+    }
+    return 'http://127.0.0.1:3000';
+  }
+
+  if (isDevice === true || (isDevice !== false && !isSimulator)) {
+    return 'http://172.20.10.5:3000';
+  }
+
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:3000';
+  }
+  return 'http://127.0.0.1:3000';
+};
+
+const API_URL = getApiUrl();
 
 type EventDetailModalProps = {
   visible: boolean;
   event: Event | null;
   onClose: () => void;
-  onReserveTable: () => void;
+  onReserveTable: (table: Table) => void;
 };
 
 export const EventDetailModal = ({ visible, event, onClose, onReserveTable }: EventDetailModalProps) => {
+  const [tables, setTables] = useState<Table[]>([]);
+  const [loadingTables, setLoadingTables] = useState(false);
+
+  // Fetch tables when event changes
+  useEffect(() => {
+    if (visible && event) {
+      fetchTables();
+    }
+  }, [visible, event]);
+
+  const fetchTables = async () => {
+    if (!event) return;
+
+    setLoadingTables(true);
+    try {
+      const url = `${API_URL}/tables/event/${event.id}`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        setTables([]);
+        return;
+      }
+
+      const responseText = await response.text();
+      if (responseText.trim().length === 0) {
+        setTables([]);
+        return;
+      }
+
+      const data = JSON.parse(responseText);
+      setTables(data.tables || []);
+    } catch (error) {
+      console.error('Failed to fetch tables:', error);
+      setTables([]);
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
   if (!event) return null;
+
+  const availableTables = tables.filter(t => t.available);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -25,9 +93,6 @@ export const EventDetailModal = ({ visible, event, onClose, onReserveTable }: Ev
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
               <IconSymbol name="chevron.left" size={24} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.shareButton}>
-              <IconSymbol name="square.and.arrow.up" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
 
@@ -50,9 +115,9 @@ export const EventDetailModal = ({ visible, event, onClose, onReserveTable }: Ev
 
             <View style={styles.detailsContainer}>
               <View style={styles.detailRow}>
-                <DetailItem icon="clock" value={event.time || '23:00'} label="Start Time" />
-                <DetailItem icon="person.2" value={event.ageLimit || '18+'} label="Age Limit" />
-                <DetailItem icon="clock.fill" value={event.endTime || '04:00'} label="End Time" />
+                <DetailItem value={event.time || '23:00'} label="Start Time" />
+                <DetailItem value={event.ageLimit || '18+'} label="Age Limit" />
+                <DetailItem value={event.endTime || '04:00'} label="End Time" />
               </View>
             </View>
 
@@ -61,11 +126,42 @@ export const EventDetailModal = ({ visible, event, onClose, onReserveTable }: Ev
                 <ThemedText style={styles.priceLabel}>Entry Fee</ThemedText>
                 <ThemedText style={styles.priceValue}>{event.price || '32 €'}</ThemedText>
               </View>
-              <TouchableOpacity style={styles.buyButton} onPress={onReserveTable}>
-                <ThemedText style={styles.buyButtonText}>RESERVE TABLE</ThemedText>
-                <IconSymbol name="arrow.right" size={18} color="#fff" />
-              </TouchableOpacity>
             </View>
+
+            {/* Available Tables Section */}
+            {loadingTables ? (
+              <View style={styles.tablesSection}>
+                <ActivityIndicator size="small" color="#ec4899" />
+                <ThemedText style={styles.tablesSectionTitle}>Loading tables...</ThemedText>
+              </View>
+            ) : availableTables.length > 0 ? (
+              <View style={styles.tablesSection}>
+                <ThemedText style={styles.tablesSectionTitle}>Available Tables</ThemedText>
+                {availableTables.map((table) => (
+                  <TouchableOpacity
+                    key={table.id}
+                    style={styles.tableCard}
+                    onPress={() => onReserveTable(table)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.tableCardHeader}>
+                      <ThemedText style={styles.tableCardName}>{table.name}</ThemedText>
+                      {table.zone && <ThemedText style={styles.tableCardZone}>{table.zone}</ThemedText>}
+                    </View>
+                    <View style={styles.tableCardInfo}>
+                      <View style={styles.tableCardInfoItem}>
+                        <IconSymbol name="person" size={14} color="#9ca3af" />
+                        <ThemedText style={styles.tableCardInfoText}>Max {table.capacity} people</ThemedText>
+                      </View>
+                      <ThemedText style={styles.tableCardPrice}>{table.minSpend}/person</ThemedText>
+                    </View>
+                    {table.locationDescription && (
+                      <ThemedText style={styles.tableCardDescription}>{table.locationDescription}</ThemedText>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
 
             {event.description && (
               <View style={styles.descriptionSection}>
@@ -82,9 +178,8 @@ export const EventDetailModal = ({ visible, event, onClose, onReserveTable }: Ev
   );
 };
 
-const DetailItem = ({ icon, value, label }: { icon: string; value: string; label: string }) => (
+const DetailItem = ({ value, label }: { value: string; label: string }) => (
   <View style={styles.detailBox}>
-    <IconSymbol name={icon} size={24} color="#ec4899" />
     <ThemedText style={styles.detailValue}>{value}</ThemedText>
     <ThemedText style={styles.detailLabel}>{label}</ThemedText>
   </View>
@@ -161,4 +256,64 @@ const styles = StyleSheet.create({
   },
   descriptionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
   descriptionText: { fontSize: 14, color: '#9ca3af', lineHeight: 22 },
+  tablesSection: {
+    marginHorizontal: 16,
+    marginTop: 24,
+  },
+  tablesSectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    color: '#fff',
+  },
+  tableCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  tableCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tableCardName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  tableCardZone: {
+    fontSize: 12,
+    color: '#ec4899',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  tableCardInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  tableCardInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tableCardInfoText: {
+    fontSize: 14,
+    color: '#9ca3af',
+  },
+  tableCardPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fbbf24',
+  },
+  tableCardDescription: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginTop: 4,
+  },
 });

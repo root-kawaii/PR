@@ -16,10 +16,31 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 -- Create index on created_at for sorting
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
 
--- Insert a test user (password is "password123" - hashed with bcrypt)
--- Note: This is for development only, remove in production
+-- Insert demo users for development/testing
+-- Note: These are for development only, remove in production
 INSERT INTO users (id, email, password_hash, name, phone_number, created_at, updated_at)
 VALUES
+    -- Demo User 1: demo@pierre.com / Demo123!
+    (
+        gen_random_uuid(),
+        'demo@pierre.com',
+        '$2b$12$K8qV5L.vYj6xN9zJ5H8QXeR7KvQm3P4nW2dT6fS8gH9jL1mN0oP2q',
+        'Demo User',
+        '+39 340 1234567',
+        NOW(),
+        NOW()
+    ),
+    -- Demo User 2: mario@test.com / Party2024!
+    (
+        gen_random_uuid(),
+        'mario@test.com',
+        '$2b$12$M9rW6M.wZk7yO0aK6I9RYfS8LwRn4Q5oX3eU7gT9hI0kM2nO1pQ3r',
+        'Mario Rossi',
+        '+39 345 9876543',
+        NOW(),
+        NOW()
+    ),
+    -- Demo User 3: test@example.com / password123
     (
         gen_random_uuid(),
         'test@example.com',

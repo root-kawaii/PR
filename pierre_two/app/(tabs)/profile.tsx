@@ -1,9 +1,10 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, Alert, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 
 const following = [
   { label: '1 artist', icon: '👤' },
@@ -19,6 +20,15 @@ export const options = {
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    // In the future, this can reload user profile data, reservations, etc.
+    // For now, it just completes the refresh animation
+    await new Promise(resolve => setTimeout(resolve, 600));
+    setRefreshing(false);
+  };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -37,34 +47,47 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
       <ThemedView style={styles.container}>
-        <View style={styles.profileHeader}>
-          <View>
-            <ThemedText type="title" style={styles.header}>{user?.name || 'User'}</ThemedText>
-            <Text style={styles.email}>{user?.email}</Text>
-          </View>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.sectionTitle}>Following</Text>
-        <View style={styles.followRow}>
-          {following.map((item, i) => (
-            <View key={i} style={styles.followCircle}>
-              <Text style={styles.followIcon}>{item.icon}</Text>
-              <Text style={styles.followLabel}>{item.label}</Text>
-              <TouchableOpacity style={styles.addBtn}><Text style={styles.addBtnText}>+</Text></TouchableOpacity>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#db2777"
+              colors={["#db2777"]}
+              progressViewOffset={60}
+            />
+          }
+        >
+          <View style={styles.profileHeader}>
+            <View>
+              <ThemedText type="title" style={styles.header}>{user?.name || 'User'}</ThemedText>
+              <Text style={styles.email}>{user?.email}</Text>
             </View>
-          ))}
-        </View>
-        <View style={styles.friendsBox}>
-          <Text style={styles.friendsText}>0/3</Text>
-          <Text style={styles.friendsDesc}>Follow 3 friends{"\n"}See what they're interested in and we'll suggest shows you can go to together.</Text>
-        </View>
-        <Text style={styles.sectionTitle}>Groups</Text>
-        <View style={styles.groupBox}>
-          <Text style={styles.groupPlus}>+</Text>
-        </View>
-        <Text style={styles.groupDesc}>Get friends together, vote on events and see who's going.</Text>
+            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+              <Text style={styles.logoutText}>Logout</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.sectionTitle}>Following</Text>
+          <View style={styles.followRow}>
+            {following.map((item, i) => (
+              <View key={i} style={styles.followCircle}>
+                <Text style={styles.followIcon}>{item.icon}</Text>
+                <Text style={styles.followLabel}>{item.label}</Text>
+                <TouchableOpacity style={styles.addBtn}><Text style={styles.addBtnText}>+</Text></TouchableOpacity>
+              </View>
+            ))}
+          </View>
+          <View style={styles.friendsBox}>
+            <Text style={styles.friendsText}>0/3</Text>
+            <Text style={styles.friendsDesc}>Follow 3 friends{"\n"}See what they're interested in and we'll suggest shows you can go to together.</Text>
+          </View>
+          <Text style={styles.sectionTitle}>Groups</Text>
+          <View style={styles.groupBox}>
+            <Text style={styles.groupPlus}>+</Text>
+          </View>
+          <Text style={styles.groupDesc}>Get friends together, vote on events and see who's going.</Text>
+        </ScrollView>
       </ThemedView>
     </SafeAreaView>
   );

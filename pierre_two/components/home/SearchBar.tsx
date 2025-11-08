@@ -1,29 +1,42 @@
 // ====================================
 // components/home/SearchBar.tsx
 // ====================================
-import { View, TextInput, StyleSheet } from 'react-native';
+import { View, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useRouter } from 'expo-router';
 
 type SearchBarProps = {
   value: string;
   onChangeText: (text: string) => void;
 };
 
-export const SearchBar = ({ value, onChangeText }: SearchBarProps) => (
-  <View style={styles.header}>
-    <View style={styles.searchBar}>
-      <IconSymbol name="magnifyingglass" size={20} color="#9ca3af" />
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Cerca per città o locale..."
-        placeholderTextColor="#9ca3af"
-        value={value}
-        onChangeText={onChangeText}
-      />
-      <IconSymbol name="mappin" size={20} color="#ec4899" />
+export const SearchBar = ({ value, onChangeText }: SearchBarProps) => {
+  const router = useRouter();
+
+  const handleSearchPress = () => {
+    router.push('/explore');
+  };
+
+  return (
+    <View style={styles.header}>
+      <TouchableOpacity style={styles.searchBar} onPress={handleSearchPress} activeOpacity={0.7}>
+        <IconSymbol name="magnifyingglass" size={20} color="#9ca3af" />
+        <View style={styles.searchInputContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Cerca per città o locale..."
+            placeholderTextColor="#9ca3af"
+            value={value}
+            onChangeText={onChangeText}
+            editable={false}
+            pointerEvents="none"
+          />
+        </View>
+        <IconSymbol name="mappin" size={20} color="#ec4899" />
+      </TouchableOpacity>
     </View>
-  </View>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   header: {
@@ -41,6 +54,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 8,
+  },
+  searchInputContainer: {
+    flex: 1,
   },
   searchInput: {
     flex: 1,

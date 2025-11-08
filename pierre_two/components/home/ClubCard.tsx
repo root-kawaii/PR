@@ -11,11 +11,11 @@ type ClubCardProps = {
 };
 
 export const ClubCard = ({ club, index }: ClubCardProps) => (
-  <TouchableOpacity style={styles.clubCard}>
+  <TouchableOpacity style={styles.clubCard} activeOpacity={0.9}>
     <Image source={{ uri: club.image }} style={styles.clubImage} />
     <View style={[styles.clubOverlay, index === 0 ? styles.pinkGradient : styles.cyanGradient]} />
     <View style={styles.clubInfo}>
-      <ThemedText style={styles.clubName} numberOfLines={1}>
+      <ThemedText style={styles.clubName} numberOfLines={2}>
         {club.name}
       </ThemedText>
       <ThemedText style={styles.clubSubtitle} numberOfLines={1}>
@@ -27,11 +27,12 @@ export const ClubCard = ({ club, index }: ClubCardProps) => (
 
 const styles = StyleSheet.create({
   clubCard: {
-    flex: 1,
-    aspectRatio: 1,
+    width: 180,
+    height: 180,
     borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
+    marginRight: 16,
   },
   clubImage: {
     width: '100%',
@@ -43,7 +44,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    opacity: 0.6,
+    opacity: 0.4,
   },
   pinkGradient: {
     backgroundColor: '#ec4899',
@@ -56,14 +57,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 12,
+    padding: 14,
   },
   clubName: {
-    fontSize: 13,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
+    lineHeight: 20,
   },
   clubSubtitle: {
-    fontSize: 11,
-    color: '#e5e7eb',
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
   },
 });

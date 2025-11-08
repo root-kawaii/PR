@@ -1,69 +1,159 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState, useMemo } from 'react';
+import { useEvents } from '@/hooks/useEvents';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useRouter } from 'expo-router';
+import { Event } from '@/types';
 
-const filters = ["DATE", "PRICE", "MONZA"];
-const categories = ["Shows", "Theater", "DJ", "Film", "Party"];
-const recentlyViewed = [
-  { name: "Quercia", type: "Artist", image: require('@/assets/images/partial-react-logo.png') },
-  { name: "Yosuke Yukimatsu", type: "Artist", image: null },
-];
-const popular = [
-  { title: "2000 Power ai Magazza a Milano", date: "Thu 23 Oct", venue: "Magazzini Generali", image: require('@/assets/images/react-logo.png') },
-  { title: "Nerone Live + Guests • Milano", date: "Wed 22 Oct", venue: "Magazzini Generali", image: require('@/assets/images/icon.png') },
-  { title: "Wunder Mrkt - il Mercato allo ...", date: "Sun 2 Nov", venue: "Spirit de Milan", image: require('@/assets/images/partial-react-logo.png') },
-];
+// Fuzzy match helper function
+const fuzzyMatch = (text: string, search: string): boolean => {
+  const searchLower = search.toLowerCase();
+  const textLower = text.toLowerCase();
+
+  // Direct substring match
+  if (textLower.includes(searchLower)) return true;
+
+  // Fuzzy character-by-character match
+  let searchIndex = 0;
+  for (let i = 0; i < textLower.length && searchIndex < searchLower.length; i++) {
+    if (textLower[i] === searchLower[searchIndex]) {
+      searchIndex++;
+    }
+  }
+  return searchIndex === searchLower.length;
+};
+
+// Parse Italian date format and check if event is in the future
+const isEventInFuture = (dateStr: string): boolean => {
+  const monthMap: { [key: string]: number } = {
+    'GEN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAG': 4, 'GIU': 5,
+    'LUG': 6, 'AGO': 7, 'SET': 8, 'OTT': 9, 'NOV': 10, 'DIC': 11
+  };
+
+  const parts = dateStr.split('|')[0].trim().split(' ');
+  if (parts.length !== 2) return true;
+
+  const day = parseInt(parts[0]);
+  const monthStr = parts[1];
+  const month = monthMap[monthStr];
+
+  if (month === undefined) return true;
+
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+
+  const eventYear = month < currentMonth ? currentYear + 1 : currentYear;
+  const eventDate = new Date(eventYear, month, day);
+
+  today.setHours(0, 0, 0, 0);
+  eventDate.setHours(0, 0, 0, 0);
+
+  return eventDate >= today;
+};
 
 export default function SearchScreen() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const { events, loading } = useEvents();
+  const router = useRouter();
+
+  // Filter events: future only + fuzzy search match
+  const filteredEvents = useMemo(() => {
+    return events.filter(event => {
+      // Only future events
+      if (!isEventInFuture(event.date)) return false;
+
+      // If no search query, show all future events
+      if (!searchQuery.trim()) return true;
+
+      // Fuzzy match against title, venue, or description
+      return fuzzyMatch(event.title, searchQuery) ||
+             fuzzyMatch(event.venue, searchQuery) ||
+             (event.description && fuzzyMatch(event.description, searchQuery));
+    });
+  }, [events, searchQuery]);
+
+  const handleEventPress = (event: Event) => {
+    // Store the event for opening in home screen
+    // For now, just navigate back - in a full implementation,
+    // you'd pass the event through navigation params
+    router.push({
+      pathname: '/',
+      params: { eventId: event.id }
+    });
+  };
+
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
       <ThemedView style={styles.container}>
-        <TextInput
-          style={styles.searchBar}
-          placeholder="Search for an event, artist or venue"
-          placeholderTextColor="#888"
-        />
-        <View style={styles.filterRow}>
-          {filters.map(f => (
-            <TouchableOpacity key={f} style={styles.filterButton}>
-              <Text style={styles.filterText}>{f}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <IconSymbol name="chevron.left" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.searchBar}
+            placeholder="Cerca eventi, artisti o locali..."
+            placeholderTextColor="#888"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+          />
         </View>
+
         <ScrollView>
-          <View style={styles.categoryRow}>
-            {categories.map(c => (
-              <View key={c} style={styles.categoryBox}>
-                <Text style={styles.categoryText}>{c}</Text>
-              </View>
-            ))}
-          </View>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>Recently Viewed</ThemedText>
-          {recentlyViewed.map((item, i) => (
-            <View key={i} style={styles.recentRow}>
-              <View style={styles.avatar}>
-                {item.image ? <View style={styles.avatarImg} /> : <Text style={styles.avatarIcon}>👤</Text>}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.recentName}>{item.name}</Text>
-                <Text style={styles.recentType}>{item.type}</Text>
-              </View>
-              <TouchableOpacity style={styles.followBtn}><Text style={styles.followText}>FOLLOW</Text></TouchableOpacity>
+          {loading ? (
+            <View style={styles.centerContainer}>
+              <ActivityIndicator size="large" color="#db2777" />
+              <Text style={styles.loadingText}>Caricamento eventi...</Text>
             </View>
-          ))}
-          <ThemedText type="subtitle" style={styles.sectionTitle}>Popular on DICE</ThemedText>
-          {popular.map((item, i) => (
-            <View key={i} style={styles.popularRow}>
-              <View style={styles.popularImg} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.popularTitle}>{item.title}</Text>
-                <Text style={styles.popularMeta}>{item.date}</Text>
-                <Text style={styles.popularMeta}>{item.venue}</Text>
-              </View>
-              <TouchableOpacity><Text style={styles.bookmark}>🔖</Text></TouchableOpacity>
+          ) : filteredEvents.length === 0 ? (
+            <View style={styles.centerContainer}>
+              <IconSymbol name="magnifyingglass" size={64} color="#444" />
+              <Text style={styles.emptyText}>
+                {searchQuery.trim() ? 'Nessun evento trovato' : 'Cerca eventi futuri'}
+              </Text>
+              <Text style={styles.emptySubtext}>
+                {searchQuery.trim()
+                  ? 'Prova con parole diverse'
+                  : 'Inizia a digitare per cercare'}
+              </Text>
             </View>
-          ))}
+          ) : (
+            <>
+              <Text style={styles.resultsCount}>
+                {filteredEvents.length} {filteredEvents.length === 1 ? 'evento trovato' : 'eventi trovati'}
+              </Text>
+              {filteredEvents.map((event) => (
+                <TouchableOpacity
+                  key={event.id}
+                  style={styles.eventRow}
+                  onPress={() => handleEventPress(event)}
+                  activeOpacity={0.7}
+                >
+                  <Image
+                    source={{ uri: event.image }}
+                    style={styles.eventImg}
+                    resizeMode="cover"
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
+                    <View style={styles.eventMetaRow}>
+                      <IconSymbol name="calendar" size={14} color="#9ca3af" />
+                      <Text style={styles.eventMeta}>{event.date}</Text>
+                    </View>
+                    <View style={styles.eventMetaRow}>
+                      <IconSymbol name="location.fill" size={14} color="#9ca3af" />
+                      <Text style={styles.eventMeta} numberOfLines={1}>{event.venue}</Text>
+                    </View>
+                  </View>
+                  <IconSymbol name="chevron.right" size={20} color="#666" />
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
         </ScrollView>
       </ThemedView>
     </SafeAreaView>
@@ -71,34 +161,86 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#111', padding: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: '#111',
+    padding: 16
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  backButton: {
+    padding: 8,
+  },
   searchBar: {
+    flex: 1,
     backgroundColor: '#222',
     borderRadius: 24,
     paddingHorizontal: 20,
     paddingVertical: 12,
     color: '#fff',
     fontSize: 16,
-    marginBottom: 12,
   },
-  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  filterButton: { backgroundColor: '#222', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
-  filterText: { color: '#fff', fontWeight: 'bold' },
-  categoryRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  categoryBox: { backgroundColor: '#222', borderRadius: 12, padding: 18, minWidth: 80, alignItems: 'center' },
-  categoryText: { color: '#fff', fontWeight: 'bold' },
-  sectionTitle: { color: '#fff', marginTop: 24, marginBottom: 8 },
-  recentRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  avatarImg: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#666' },
-  avatarIcon: { color: '#fff', fontSize: 24 },
-  recentName: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  recentType: { color: '#aaa', fontSize: 13 },
-  followBtn: { backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 6 },
-  followText: { color: '#111', fontWeight: 'bold' },
-  popularRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
-  popularImg: { width: 56, height: 56, borderRadius: 8, backgroundColor: '#fff', marginRight: 12 },
-  popularTitle: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
-  popularMeta: { color: '#aaa', fontSize: 13 },
-  bookmark: { fontSize: 22, color: '#fff', marginLeft: 8 },
+  centerContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+  },
+  loadingText: {
+    color: '#9ca3af',
+    fontSize: 16,
+    marginTop: 16,
+  },
+  emptyText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    color: '#9ca3af',
+    fontSize: 14,
+    marginTop: 8,
+  },
+  resultsCount: {
+    color: '#9ca3af',
+    fontSize: 14,
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  eventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1f2937',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    gap: 12,
+  },
+  eventImg: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: '#374151',
+  },
+  eventTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 6,
+  },
+  eventMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  eventMeta: {
+    color: '#9ca3af',
+    fontSize: 13,
+  },
 });

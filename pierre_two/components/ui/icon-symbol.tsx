@@ -9,8 +9,21 @@ type IconSymbolName =
   | 'paperplane.fill'
   | 'chevron.left.forwardslash.chevron.right'
   | 'chevron.right'
+  | 'chevron.left'
+  | 'chevron.up'
+  | 'chevron.down'
   | 'confirmation-number'
-  | 'person';
+  | 'person'
+  | 'ticket.fill'
+  | 'exclamationmark.triangle.fill'
+  | 'location.fill'
+  | 'calendar'
+  | 'barcode'
+  | 'qrcode'
+  | 'xmark'
+  | 'checkmark.circle'
+  | 'magnifyingglass'
+  | 'mappin';
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
@@ -22,8 +35,21 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  'chevron.left': 'chevron-left',
+  'chevron.up': 'keyboard-arrow-up',
+  'chevron.down': 'keyboard-arrow-down',
   'confirmation-number': 'confirmation-number',
   'person': 'person',
+  'ticket.fill': 'confirmation-number',
+  'exclamationmark.triangle.fill': 'warning',
+  'location.fill': 'location-on',
+  'calendar': 'event',
+  'barcode': 'qr-code-2',
+  'qrcode': 'qr-code',
+  'xmark': 'close',
+  'checkmark.circle': 'check-circle',
+  'magnifyingglass': 'search',
+  'mappin': 'place',
 } as const;
 
 /**

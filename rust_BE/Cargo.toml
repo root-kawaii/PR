@@ -33,3 +33,6 @@ async-stripe = { version = "*", default-features = false, features = ["runtime-a
 # Authentication dependencies
 bcrypt = "0.15"
 jsonwebtoken = "9"
+
+# Random number generation (for ticket codes)
+rand = "0.8"

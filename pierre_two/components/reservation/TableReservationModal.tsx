@@ -1,222 +1,630 @@
-// ====================================
-// components/reservation/TableReservationModal.tsx
-// ====================================
-import { useState } from 'react';
-import { Modal, ScrollView, View, TouchableOpacity, StyleSheet } from 'react-native';
+import { useState, useEffect } from 'react';
+import {
+  Modal,
+  ScrollView,
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  TextInput,
+  Alert,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Event } from '@/types';
-import { MOCK_TABLES } from '@/constants/data';
+import { Table, Event } from '@/types';
+import { useAuth } from '@/hooks/useAuth';
 
 type TableReservationModalProps = {
   visible: boolean;
+  table: Table | null;
   event: Event | null;
   onClose: () => void;
 };
 
-export const TableReservationModal = ({ visible, event, onClose }: TableReservationModalProps) => {
-  const [selectedZone, setSelectedZone] = useState<string>('A');
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+const API_URL = Platform.select({
+  ios: 'http://localhost:3000',
+  android: 'http://10.0.2.2:3000',
+  default: 'http://127.0.0.1:3000',
+});
 
-  if (!event) return null;
+export const TableReservationModal = ({
+  visible,
+  table,
+  event,
+  onClose,
+}: TableReservationModalProps) => {
+  const { user } = useAuth();
+  const [numPeople, setNumPeople] = useState(1);
+  const [customAmount, setCustomAmount] = useState('');
+  const [nome, setNome] = useState('');
+  const [cognome, setCognome] = useState('');
+  const [email, setEmail] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const tables = event.tables || MOCK_TABLES;
-  const filteredTables = tables.filter(t => t.zone === selectedZone);
+  // Reset form when modal opens
+  useEffect(() => {
+    if (visible && table) {
+      setNumPeople(1);
+      setCustomAmount('');
+      setNome('');
+      setCognome('');
+      setEmail(user?.email || '');
+      setTelefono('');
+    }
+  }, [visible, table, user]);
+
+  // Return early if no table or event - don't render anything
+  if (!table || !event) {
+    return null;
+  }
+
+  // Calculate total cost - with safety checks
+  const minSpendPerPerson = parseFloat((table.minSpend || '0').replace(/[^0-9.]/g, ''));
+
+  // Use custom amount if set, otherwise calculate from number of people
+  const calculatedAmount = minSpendPerPerson * numPeople;
+  const totalCost = customAmount
+    ? parseFloat(customAmount).toFixed(2)
+    : calculatedAmount.toFixed(2);
+
+  const minPeople = Math.ceil(parseFloat((table.totalCost || '0').replace(/[^0-9.]/g, '')) / minSpendPerPerson / 2);
+  const minTotalSpend = minSpendPerPerson * minPeople;
+
+  const incrementPeople = () => {
+    if (numPeople < table.capacity) {
+      setNumPeople(numPeople + 1);
+      setCustomAmount(''); // Clear custom amount when using buttons
+    }
+  };
+
+  const decrementPeople = () => {
+    if (numPeople > 1) {
+      setNumPeople(numPeople - 1);
+      setCustomAmount(''); // Clear custom amount when using buttons
+    }
+  };
+
+  const handleAmountChange = (value: string) => {
+    // Only allow numbers and decimal point
+    const filtered = value.replace(/[^0-9.]/g, '');
+    setCustomAmount(filtered);
+  };
+
+  const handleReservation = async () => {
+    // Validation
+    if (!nome.trim() || !cognome.trim() || !email.trim() || !telefono.trim()) {
+      Alert.alert(
+        'Campi obbligatori',
+        'Compila tutti i campi obbligatori (Nome, Cognome, Email, Telefono)'
+      );
+      return;
+    }
+
+    if (!user) {
+      Alert.alert('Errore', 'Devi effettuare il login per prenotare un tavolo');
+      return;
+    }
+
+    const amount = parseFloat(totalCost);
+    if (amount < minTotalSpend) {
+      Alert.alert(
+        'Importo minimo richiesto',
+        `Il tavolo richiede un minimo di €${minTotalSpend.toFixed(2)} (almeno ${minPeople} persone a €${minSpendPerPerson.toFixed(2)} ciascuna).`
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/reservations/user/${user.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          table_id: table.id,
+          event_id: event.id,
+          num_people: numPeople,
+          contact_name: `${nome} ${cognome}`,
+          contact_email: email,
+          contact_phone: telefono,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create reservation');
+      }
+
+      const data = await response.json();
+
+      Alert.alert(
+        'Prenotazione Confermata!',
+        `Codice prenotazione: ${data.reservationCode}\nTotale: €${totalCost}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => onClose(),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Reservation error:', error);
+      Alert.alert('Errore', 'Non è stato possibile completare la prenotazione. Riprova più tardi.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.modalContainer} edges={["top"]}>
-        <ThemedView style={styles.modalContent}>
-          <View style={styles.modalHeader}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+      presentationStyle="pageSheet"
+    >
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <LinearGradient colors={['#db2777', '#ec4899', '#f472b6']} style={styles.gradient}>
+          {/* Header */}
+          <View style={styles.header}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
-              <IconSymbol name="chevron.left" size={24} color="#fff" />
+              <IconSymbol name="chevron.left" size={28} color="#fff" />
             </TouchableOpacity>
-            <ThemedText style={styles.reservationTitle}>Reserve Table</ThemedText>
-            <View style={{ width: 40 }} />
+            <ThemedText style={styles.headerTitle}>Paga la Tua Quota</ThemedText>
+            <View style={styles.backButtonPlaceholder} />
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} style={styles.reservationScroll}>
-            <View style={styles.infoCard}>
-              <ThemedText style={styles.infoCardTitle}>INFO BASE (Disponibile)</ThemedText>
-              <ThemedText style={styles.infoCardSubtitle}>TAVOLO</ThemedText>
-              <View style={styles.infoRow}>
-                <ThemedText style={styles.infoLabel}>1. Prenotque Max</ThemedText>
+          <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
+            {/* Table Info Card */}
+            <View style={styles.tableInfoCard}>
+              <View style={styles.locationRow}>
+                <IconSymbol name="location.fill" size={16} color="#fff" />
+                <ThemedText style={styles.tableName}>{table.name} - {table.zone || 'Molto'}</ThemedText>
               </View>
-              <View style={styles.infoRow}>
-                <ThemedText style={styles.infoLabel}>2. Minimo Spesa per Persona</ThemedText>
-              </View>
-              <View style={styles.prenotaBox}>
-                <ThemedText style={styles.prenotaText}>Prenota</ThemedText>
-              </View>
-            </View>
 
-            <View style={styles.zoneSelectorContainer}>
-              <ThemedText style={styles.sectionLabel}>LISTA TAVOLI DIVISA PER PREZZO</ThemedText>
-              <View style={styles.zoneButtons}>
-                <TouchableOpacity
-                  style={[styles.zoneButton, selectedZone === 'A' && styles.zoneButtonActive]}
-                  onPress={() => setSelectedZone('A')}
-                >
-                  <ThemedText style={styles.zoneButtonText}>ZONA A (80€)</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.zoneButton, selectedZone === 'B' && styles.zoneButtonActive]}
-                  onPress={() => setSelectedZone('B')}
-                >
-                  <ThemedText style={styles.zoneButtonText}>ZONA B (25€)</ThemedText>
-                </TouchableOpacity>
+              {/* Event Info */}
+              <View style={styles.eventInfo}>
+                <ThemedText style={styles.eventTitle}>{event.title}</ThemedText>
+                <ThemedText style={styles.eventVenue}>{event.venue}</ThemedText>
+                <ThemedText style={styles.eventDate}>{event.date}</ThemedText>
               </View>
-            </View>
 
-            <View style={styles.tableListContainer}>
-              {filteredTables.map((table) => (
-                <TouchableOpacity
-                  key={table.id}
-                  style={[
-                    styles.tableItem,
-                    selectedTable === table.id && styles.tableItemSelected,
-                    !table.available && styles.tableItemDisabled
-                  ]}
-                  onPress={() => table.available && setSelectedTable(table.id)}
-                  disabled={!table.available}
-                >
-                  <View style={styles.tableItemHeader}>
-                    <ThemedText style={styles.tableItemTitle}>• {table.name}</ThemedText>
-                    {!table.available && (
-                      <View style={styles.unavailableBadge}>
-                        <ThemedText style={styles.unavailableText}>Not Available</ThemedText>
-                      </View>
-                    )}
+              {/* Characteristics */}
+              <View style={styles.characteristicsSection}>
+                <ThemedText style={styles.sectionTitle}>Caratteristiche Tavolo:</ThemedText>
+                {table.features?.map((feature, index) => (
+                  <View key={index} style={styles.featureRow}>
+                    <ThemedText style={styles.bulletPoint}>•</ThemedText>
+                    <ThemedText style={styles.featureText}>{feature}</ThemedText>
                   </View>
-                  <ThemedText style={styles.tableItemDetail}>
-                    Capacity: {table.capacity} | Min Spend: {table.minSpend}€
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
+                ))}
+                {table.locationDescription && (
+                  <View style={styles.featureRow}>
+                    <ThemedText style={styles.bulletPoint}>•</ThemedText>
+                    <ThemedText style={styles.featureText}>{table.locationDescription}</ThemedText>
+                  </View>
+                )}
+              </View>
             </View>
 
-            <View style={{ height: 100 }} />
-          </ScrollView>
+            {/* Spend Selector */}
+            <View style={styles.spendSection}>
+              <ThemedText style={styles.spendTitle}>Quanto Vuoi Spendere?</ThemedText>
 
-          {selectedTable && (
-            <View style={styles.bottomBar}>
-              <View style={styles.bottomPrice}>
-                <ThemedText style={styles.bottomPriceLabel}>Total</ThemedText>
-                <ThemedText style={styles.bottomPriceValue}>
-                  {tables.find(t => t.id === selectedTable)?.price}€
+              {/* Number of people selector */}
+              <View style={styles.peopleSelectorContainer}>
+                <ThemedText style={styles.peopleSelectorLabel}>Numero di persone</ThemedText>
+                <View style={styles.peopleSelector}>
+                  <TouchableOpacity
+                    onPress={decrementPeople}
+                    style={[styles.peopleButton, numPeople <= 1 && styles.peopleButtonDisabled]}
+                    disabled={numPeople <= 1}
+                  >
+                    <ThemedText style={styles.peopleButtonText}>−</ThemedText>
+                  </TouchableOpacity>
+
+                  <View style={styles.peopleDisplay}>
+                    <ThemedText style={styles.peopleNumber}>{numPeople}</ThemedText>
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={incrementPeople}
+                    style={[styles.peopleButton, numPeople >= table.capacity && styles.peopleButtonDisabled]}
+                    disabled={numPeople >= table.capacity}
+                  >
+                    <ThemedText style={styles.peopleButtonText}>+</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Amount input */}
+              <View style={styles.amountInputContainer}>
+                <ThemedText style={styles.amountInputLabel}>Il tuo importo (€)</ThemedText>
+                <View style={styles.amountInputWrapper}>
+                  <ThemedText style={styles.euroPrefix}>€</ThemedText>
+                  <TextInput
+                    style={styles.amountInput}
+                    placeholder={calculatedAmount.toFixed(2)}
+                    placeholderTextColor="#666"
+                    value={customAmount}
+                    onChangeText={handleAmountChange}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+                <ThemedText style={styles.minSpendText}>
+                  Minimo {table.minSpend} per persona • Minimo totale: €{minTotalSpend.toFixed(2)}
                 </ThemedText>
               </View>
-              <TouchableOpacity style={styles.confirmButton}>
-                <ThemedText style={styles.confirmButtonText}>CONFIRM RESERVATION</ThemedText>
-              </TouchableOpacity>
+
+              {/* Table Info Box */}
+              <View style={styles.infoBox}>
+                <ThemedText style={styles.infoTitle}>Riepilogo</ThemedText>
+
+                <View style={styles.infoRow}>
+                  <ThemedText style={styles.infoLabel}>Persone:</ThemedText>
+                  <ThemedText style={styles.infoValue}>{numPeople}</ThemedText>
+                </View>
+
+                <View style={styles.infoRow}>
+                  <ThemedText style={styles.infoLabel}>Importo per persona:</ThemedText>
+                  <ThemedText style={styles.infoValue}>€{(parseFloat(totalCost) / numPeople).toFixed(2)}</ThemedText>
+                </View>
+
+                <View style={[styles.infoRow, styles.totalRow]}>
+                  <ThemedText style={styles.totalLabel}>Totale da pagare:</ThemedText>
+                  <ThemedText style={[styles.infoValue, styles.highlightValue]}>€{totalCost}</ThemedText>
+                </View>
+              </View>
             </View>
-          )}
-        </ThemedView>
+
+            {/* Personal Information */}
+            <View style={styles.personalInfoSection}>
+              <ThemedText style={styles.sectionTitle}>Informazioni Personali</ThemedText>
+
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nome"
+                  placeholderTextColor="#9ca3af"
+                  value={nome}
+                  onChangeText={setNome}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Cognome"
+                  placeholderTextColor="#9ca3af"
+                  value={cognome}
+                  onChangeText={setCognome}
+                />
+              </View>
+
+              <TextInput
+                style={[styles.input, styles.fullWidthInput]}
+                placeholder="Email"
+                placeholderTextColor="#9ca3af"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <TextInput
+                style={[styles.input, styles.fullWidthInput]}
+                placeholder="Telefono"
+                placeholderTextColor="#9ca3af"
+                value={telefono}
+                onChangeText={setTelefono}
+                keyboardType="phone-pad"
+              />
+
+              <ThemedText style={styles.requiredText}>
+                ⚠ Compila tutti i campi obbligatori (Nome, Cognome, Email, Telefono)
+              </ThemedText>
+            </View>
+
+            {/* Reserve Button */}
+            <TouchableOpacity
+              style={[styles.reserveButton, loading && styles.reserveButtonDisabled]}
+              onPress={handleReservation}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <IconSymbol name="checkmark.circle" size={20} color="#fff" />
+                  <ThemedText style={styles.reserveButtonText}>UNISCITI AL TAVOLO</ThemedText>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </LinearGradient>
       </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalContainer: { flex: 1, backgroundColor: '#000' },
-  modalContent: { flex: 1, backgroundColor: '#000' },
-  modalHeader: {
+  container: { flex: 1 },
+  gradient: { flex: 1 },
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: 'center',
+    paddingVertical: 20,
+    paddingTop: 16,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 22,
+  },
+  backButtonPlaceholder: {
+    width: 44,
+    height: 44,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  scrollView: { flex: 1 },
+  tableInfoCard: {
+    margin: 16,
+    padding: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 16,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  tableName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  eventInfo: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  eventTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  eventVenue: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 2,
+  },
+  eventDate: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  characteristicsSection: {
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  bulletPoint: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  featureText: {
+    flex: 1,
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  spendSection: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 16,
+  },
+  spendTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 20,
+  },
+  peopleSelectorContainer: {
+    marginBottom: 20,
+  },
+  peopleSelectorLabel: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 12,
+    fontWeight: '600',
+  },
+  peopleSelector: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  peopleButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  reservationTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-  reservationScroll: { flex: 1 },
-  infoCard: {
-    margin: 16,
-    padding: 20,
-    backgroundColor: '#dc2626',
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#ef4444',
+  peopleButtonDisabled: {
+    opacity: 0.3,
   },
-  infoCardTitle: { fontSize: 14, fontWeight: 'bold', color: '#fff', marginBottom: 8 },
-  infoCardSubtitle: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 12 },
-  infoRow: { marginBottom: 8 },
-  infoLabel: { fontSize: 13, color: '#fff' },
-  prenotaBox: {
-    marginTop: 12,
-    paddingVertical: 8,
+  peopleButtonText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  peopleDisplay: {
+    minWidth: 80,
+    height: 48,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  peopleNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  amountInputContainer: {
+    marginBottom: 20,
+  },
+  amountInputLabel: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 12,
+    fontWeight: '600',
+  },
+  amountInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     paddingHorizontal: 16,
-    backgroundColor: '#f97316',
-    borderRadius: 8,
-    alignSelf: 'flex-start',
+    height: 56,
   },
-  prenotaText: { fontSize: 14, fontWeight: 'bold', color: '#fff' },
-  zoneSelectorContainer: { marginHorizontal: 16, marginBottom: 16 },
-  sectionLabel: { fontSize: 12, color: '#9ca3af', marginBottom: 12, textAlign: 'right' },
-  zoneButtons: { gap: 12 },
-  zoneButton: {
+  euroPrefix: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginRight: 8,
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    padding: 0,
+  },
+  minSpendText: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 8,
+  },
+  infoBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     padding: 16,
-    backgroundColor: '#1f2937',
     borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#374151',
+    gap: 12,
   },
-  zoneButtonActive: { borderColor: '#ec4899', backgroundColor: '#1f1f2e' },
-  zoneButtonText: { fontSize: 14, fontWeight: 'bold', color: '#fff' },
-  tableListContainer: { marginHorizontal: 16, gap: 12 },
-  tableItem: {
-    padding: 16,
-    backgroundColor: '#1f2937',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#374151',
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
   },
-  tableItemSelected: { borderColor: '#ec4899', backgroundColor: '#1f1f2e' },
-  tableItemDisabled: { opacity: 0.5 },
-  tableItemHeader: {
+  infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
-  tableItemTitle: { fontSize: 15, fontWeight: 'bold', color: '#fff' },
-  unavailableBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#991b1b',
-    borderRadius: 6,
+  infoLabel: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.9)',
   },
-  unavailableText: { fontSize: 10, color: '#fff' },
-  tableItemDetail: { fontSize: 12, color: '#9ca3af' },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#111',
-    padding: 16,
+  infoValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  highlightValue: {
+    fontSize: 20,
+    color: '#fbbf24',
+  },
+  totalRow: {
+    marginTop: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1f2937',
+    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  totalLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  personalInfoSection: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 16,
+  },
+  inputRow: {
+    flexDirection: 'row',
     gap: 12,
+    marginBottom: 12,
   },
-  bottomPrice: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  bottomPriceLabel: { fontSize: 14, color: '#9ca3af' },
-  bottomPriceValue: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-  confirmButton: {
-    backgroundColor: '#ec4899',
-    paddingVertical: 16,
+  input: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 8,
+    padding: 14,
+    fontSize: 14,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  fullWidthInput: {
+    marginBottom: 12,
+  },
+  requiredText: {
+    fontSize: 11,
+    color: '#fbbf24',
+    marginTop: 8,
+  },
+  reserveButton: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    marginHorizontal: 16,
+    padding: 18,
     borderRadius: 12,
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: 8,
   },
-  confirmButtonText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+  reserveButtonDisabled: {
+    opacity: 0.5,
+  },
+  reserveButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+    letterSpacing: 1,
+  },
 });

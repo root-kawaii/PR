@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ScrollView, View, StyleSheet } from 'react-native';
+import { useState, useEffect } from 'react';
+import { ScrollView, View, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { SearchBar } from '@/components/home/SearchBar';
@@ -10,23 +10,54 @@ import { GenreCard } from '@/components/home/GenreCard';
 import { EventDetailModal } from '@/components/event/EventDetailModal';
 import { TableReservationModal } from '@/components/reservation/TableReservationModal';
 import { useEvents } from '@/hooks/useEvents';
+import { useGenres } from '@/hooks/useGenres';
+import { useClubs } from '@/hooks/useClubs';
 import { useModal } from '@/hooks/useModal';
-import { CLUBS, GENRES } from '@/constants/data';
-import { Event } from '@/types';
+import { Event, Table } from '@/types';
+import { useLocalSearchParams } from 'expo-router';
 
 export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const { events, loading } = useEvents();
+  const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const { events, loading: eventsLoading, refetch: refetchEvents } = useEvents();
+  const { genres, loading: genresLoading, refetch: refetchGenres } = useGenres();
+  const { clubs, loading: clubsLoading, refetch: refetchClubs } = useClubs();
   const eventModal = useModal();
   const reservationModal = useModal();
+  const params = useLocalSearchParams();
+
+  // Handle navigation from search page
+  useEffect(() => {
+    if (params.eventId && events.length > 0) {
+      const event = events.find(e => e.id === params.eventId);
+      if (event) {
+        handleEventPress(event);
+      }
+    }
+  }, [params.eventId, events]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refetchEvents(true), // Silent refetch
+      refetchGenres(true),
+      refetchClubs(true)
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    setRefreshing(false);
+  };
 
   const handleEventPress = (event: Event) => {
     setSelectedEvent(event);
     eventModal.open();
   };
 
-  const handleReserveTable = () => {
+  const handleReserveTable = (table?: Table) => {
+    // If a table is passed, use it; otherwise use first available table
+    const tableToReserve = table || selectedEvent?.tables?.[0] || null;
+    setSelectedTable(tableToReserve);
     eventModal.close();
     reservationModal.open();
   };
@@ -36,7 +67,19 @@ export default function HomeScreen() {
       <ThemedView style={styles.container}>
         <SearchBar value={searchQuery} onChangeText={setSearchQuery} />
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#db2777"
+              colors={["#db2777"]}
+              progressViewOffset={60}
+            />
+          }
+        >
           <View style={styles.section}>
             <SectionHeader icon="calendar" title="Questa settimana" iconColor="#ef4444" />
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -48,17 +91,17 @@ export default function HomeScreen() {
 
           <View style={styles.section}>
             <SectionHeader icon="" title="Clubs con eventi in programma" />
-            <View style={styles.grid}>
-              {CLUBS.map((club, index) => (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {clubs.map((club, index) => (
                 <ClubCard key={club.id} club={club} index={index} />
               ))}
-            </View>
+            </ScrollView>
           </View>
 
           <View style={styles.section}>
             <SectionHeader icon="music.note" title="Generi musicali" iconColor="#10b981" />
             <View style={styles.genreGrid}>
-              {GENRES.map((genre) => (
+              {genres.map((genre) => (
                 <GenreCard key={genre.id} genre={genre} />
               ))}
             </View>
@@ -75,6 +118,7 @@ export default function HomeScreen() {
 
       <TableReservationModal
         visible={reservationModal.isVisible}
+        table={selectedTable}
         event={selectedEvent}
         onClose={reservationModal.close}
       />

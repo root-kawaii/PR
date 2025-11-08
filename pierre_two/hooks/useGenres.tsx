@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
+import { Genre } from '@/types';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { Event } from '@/types';
-import { getMockEvents } from '@/constants/data';
 
-// Platform-aware API URL (same logic as useGenres/useClubs)
+// Platform-aware API URL (same logic as AuthContext)
 const getApiUrl = () => {
   const isDevice = Constants.isDevice;
   const isSimulator = Constants.deviceName?.includes('Simulator') ||
@@ -29,28 +28,34 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 
-export const useEvents = () => {
-  const [events, setEvents] = useState<Event[]>([]);
+export const useGenres = () => {
+  const [genres, setGenres] = useState<Genre[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchEvents();
+    fetchGenres();
   }, []);
 
-  const fetchEvents = async (silent = false) => {
+  const fetchGenres = async (silent = false) => {
     try {
       if (!silent) {
         setLoading(true);
       }
-      const res = await fetch(`${API_URL}/events`);
+      const res = await fetch(`${API_URL}/genres`);
+
+      if (!res.ok) {
+        throw new Error('Failed to fetch genres');
+      }
+
       const data = await res.json();
-      setEvents(data.events || []);
+      setGenres(data || []);
       setError(null);
     } catch (e) {
-      setError('Failed to fetch events');
+      console.error('Failed to fetch genres:', e);
+      setError('Failed to fetch genres');
       if (!silent) {
-        setEvents(getMockEvents());
+        setGenres([]);
       }
     } finally {
       if (!silent) {
@@ -59,5 +64,5 @@ export const useEvents = () => {
     }
   };
 
-  return { events, loading, error, refetch: fetchEvents };
+  return { genres, loading, error, refetch: fetchGenres };
 };
