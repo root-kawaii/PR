@@ -287,13 +287,46 @@ pub async fn get_reservation(
     }
 }
 
-/// Get a reservation by code
+/// Get a reservation by code (with full details)
 pub async fn get_reservation_by_code(
     State(state): State<Arc<AppState>>,
     Path(code): Path<String>,
-) -> Result<Json<TableReservationResponse>, StatusCode> {
-    match table_persistence::get_reservation_by_code(&state.db_pool, &code).await {
-        Ok(reservation) => Ok(Json(reservation.into())),
+) -> Result<Json<TableReservationWithDetailsResponse>, StatusCode> {
+    match table_persistence::get_reservation_with_details_by_code(&state.db_pool, &code).await {
+        Ok((reservation, table, (event_id, event_title, event_venue, event_date, event_image))) => {
+            let amount_remaining = reservation.total_amount - reservation.amount_paid;
+
+            Ok(Json(TableReservationWithDetailsResponse {
+                id: reservation.id.to_string(),
+                reservation_code: reservation.reservation_code,
+                status: reservation.status,
+                num_people: reservation.num_people,
+                total_amount: format!("{:.2} €", reservation.total_amount),
+                amount_paid: format!("{:.2} €", reservation.amount_paid),
+                amount_remaining: format!("{:.2} €", amount_remaining),
+                contact_name: reservation.contact_name,
+                contact_email: reservation.contact_email,
+                contact_phone: reservation.contact_phone,
+                special_requests: reservation.special_requests,
+                created_at: reservation.created_at.to_rfc3339(),
+                table: TableSummary {
+                    id: table.id.to_string(),
+                    name: table.name,
+                    zone: table.zone,
+                    capacity: table.capacity,
+                    min_spend: format!("{:.2} €", table.min_spend),
+                    location_description: table.location_description,
+                    features: table.features,
+                },
+                event: TableEventSummary {
+                    id: event_id.to_string(),
+                    title: event_title,
+                    venue: event_venue,
+                    date: event_date,
+                    image: event_image,
+                },
+            }))
+        }
         Err(sqlx::Error::RowNotFound) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }

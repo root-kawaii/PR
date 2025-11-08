@@ -265,6 +265,33 @@ pub async fn get_reservation_by_code(pool: &PgPool, code: &str) -> Result<TableR
     Ok(reservation)
 }
 
+/// Get reservation with table and event details by code
+/// Returns three separate tuples to avoid SQLx 16-field limit
+pub async fn get_reservation_with_details_by_code(
+    pool: &PgPool,
+    code: &str,
+) -> Result<(TableReservation, Table, (Uuid, String, String, String, String)), sqlx::Error> {
+    // First, get the reservation
+    let reservation = get_reservation_by_code(pool, code).await?;
+
+    // Then get table details
+    let table = get_table_by_id(pool, reservation.table_id).await?;
+
+    // Finally get event details
+    let event = sqlx::query_as::<_, (Uuid, String, String, String, String)>(
+        r#"
+        SELECT id, title, venue, date, image
+        FROM events
+        WHERE id = $1
+        "#,
+    )
+    .bind(reservation.event_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok((reservation, table, event))
+}
+
 /// Get reservations with table and event details joined (for user view)
 /// Split into 16 fields to fit SQLx tuple limit
 pub async fn get_reservations_with_details_by_user_id(

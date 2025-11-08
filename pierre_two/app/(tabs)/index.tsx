@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { ScrollView, View, StyleSheet, RefreshControl } from 'react-native';
+import { ScrollView, View, StyleSheet, RefreshControl, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { ThemedView } from '@/components/themed-view';
 import { SearchBar } from '@/components/home/SearchBar';
 import { SectionHeader } from '@/components/home/SectionHeader';
@@ -9,23 +10,45 @@ import { ClubCard } from '@/components/home/ClubCard';
 import { GenreCard } from '@/components/home/GenreCard';
 import { EventDetailModal } from '@/components/event/EventDetailModal';
 import { TableReservationModal } from '@/components/reservation/TableReservationModal';
+import { FloatingActionButton } from '@/components/common/FloatingActionButton';
+import { ReservationCodeModal } from '@/components/reservation/ReservationCodeModal';
+import { TableReservationDetailModal } from '@/components/reservation/TableReservationDetailModal';
 import { useEvents } from '@/hooks/useEvents';
 import { useGenres } from '@/hooks/useGenres';
 import { useClubs } from '@/hooks/useClubs';
 import { useModal } from '@/hooks/useModal';
-import { Event, Table } from '@/types';
+import { Event, Table, TableReservation } from '@/types';
 import { useLocalSearchParams } from 'expo-router';
+
+// Helper function to get API URL
+const getApiUrl = () => {
+  const isDevice = Constants.isDevice;
+  const isSimulator = Constants.deviceName?.includes('Simulator') ||
+                      Constants.deviceName?.includes('Emulator');
+
+  if (isSimulator === true) {
+    if (Platform.OS === 'android') return 'http://10.0.2.2:3000';
+    return 'http://127.0.0.1:3000';
+  }
+  if (isDevice === true || (isDevice !== false && !isSimulator)) {
+    return 'http://172.20.10.5:3000';
+  }
+  return 'http://127.0.0.1:3000';
+};
 
 export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [selectedReservation, setSelectedReservation] = useState<TableReservation | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const { events, loading: eventsLoading, refetch: refetchEvents } = useEvents();
-  const { genres, loading: genresLoading, refetch: refetchGenres } = useGenres();
-  const { clubs, loading: clubsLoading, refetch: refetchClubs } = useClubs();
+  const { events, refetch: refetchEvents } = useEvents();
+  const { genres, refetch: refetchGenres } = useGenres();
+  const { clubs, refetch: refetchClubs } = useClubs();
   const eventModal = useModal();
   const reservationModal = useModal();
+  const codeInputModal = useModal();
+  const reservationDetailModal = useModal();
   const params = useLocalSearchParams();
 
   // Handle navigation from search page
@@ -60,6 +83,55 @@ export default function HomeScreen() {
     setSelectedTable(tableToReserve);
     eventModal.close();
     reservationModal.open();
+  };
+
+  const handleFABPress = () => {
+    codeInputModal.open();
+  };
+
+  const handleReservationCodeSubmit = async (code: string) => {
+    const API_URL = getApiUrl();
+
+    try {
+      const response = await fetch(`${API_URL}/reservations/code/${code}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Prenotazione non trovata');
+        }
+        throw new Error('Errore durante il recupero della prenotazione');
+      }
+
+      const data = await response.json();
+      setSelectedReservation(data);
+      codeInputModal.close();
+      reservationDetailModal.open();
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
+  const handlePaymentSubmit = async (numPeople: number) => {
+    if (!selectedReservation) return;
+
+    const minSpendPerPerson = parseFloat(selectedReservation.table?.minSpend?.replace(' €', '') || '0');
+    const amount = minSpendPerPerson * numPeople;
+
+    // TODO: Implement actual payment flow
+    // For now, just show a success message
+    Alert.alert(
+      'Pagamento Simulato',
+      `Pagamento di ${amount.toFixed(2)} € per ${numPeople} ${numPeople === 1 ? 'persona' : 'persone'} simulato con successo.\n\nIn produzione, qui verrebbe integrato il sistema di pagamento.`,
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            reservationDetailModal.close();
+            setSelectedReservation(null);
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -121,6 +193,21 @@ export default function HomeScreen() {
         table={selectedTable}
         event={selectedEvent}
         onClose={reservationModal.close}
+      />
+
+      <FloatingActionButton onPress={handleFABPress} icon="qrcode" />
+
+      <ReservationCodeModal
+        visible={codeInputModal.isVisible}
+        onClose={codeInputModal.close}
+        onSubmit={handleReservationCodeSubmit}
+      />
+
+      <TableReservationDetailModal
+        visible={reservationDetailModal.isVisible}
+        reservation={selectedReservation}
+        onClose={reservationDetailModal.close}
+        onPaymentSubmit={handlePaymentSubmit}
       />
     </SafeAreaView>
   );
