@@ -8,9 +8,10 @@ import { useRouter } from 'expo-router';
 type SearchBarProps = {
   value: string;
   onChangeText: (text: string) => void;
+  onCalendarPress?: () => void;
 };
 
-export const SearchBar = ({ value, onChangeText }: SearchBarProps) => {
+export const SearchBar = ({ value, onChangeText, onCalendarPress }: SearchBarProps) => {
   const router = useRouter();
 
   const handleSearchPress = () => {
@@ -32,7 +33,9 @@ export const SearchBar = ({ value, onChangeText }: SearchBarProps) => {
             pointerEvents="none"
           />
         </View>
-        <IconSymbol name="mappin" size={20} color="#ec4899" />
+        <TouchableOpacity onPress={onCalendarPress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <IconSymbol name="calendar" size={20} color="#ec4899" />
+        </TouchableOpacity>
       </TouchableOpacity>
     </View>
   );

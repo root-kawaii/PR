@@ -7,6 +7,23 @@ type EventCardProps = {
   onPress: () => void;
 };
 
+const formatEventTime = (event: Event) => {
+  // Prefer the time field if available
+  if (event.time) {
+    return event.time;
+  }
+
+  // Fallback to parsing the date field
+  try {
+    const date = new Date(event.date);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  } catch (e) {
+    return '';
+  }
+};
+
 export const EventCard = ({ event, onPress }: EventCardProps) => (
   <TouchableOpacity style={styles.eventCard} onPress={onPress} activeOpacity={0.9}>
     <View style={styles.eventImageContainer}>
@@ -20,7 +37,7 @@ export const EventCard = ({ event, onPress }: EventCardProps) => (
         <ThemedText style={styles.eventTitle} numberOfLines={2}>
           {event.title}
         </ThemedText>
-        <ThemedText style={styles.eventDate}>{event.date}</ThemedText>
+        <ThemedText style={styles.eventDate}>{formatEventTime(event)}</ThemedText>
         <ThemedText style={styles.eventVenue} numberOfLines={1}>
           {event.venue}
         </ThemedText>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
   Modal,
   ScrollView,
@@ -9,14 +9,16 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Table, Event } from '@/types';
-import { useAuth } from '@/hooks/useAuth';
+  Keyboard,
+  TouchableWithoutFeedback,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { ThemedView } from "@/components/themed-view";
+import { ThemedText } from "@/components/themed-text";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { Table, Event } from "@/types";
+import { useAuth } from "@/hooks/useAuth";
 
 type TableReservationModalProps = {
   visible: boolean;
@@ -26,9 +28,9 @@ type TableReservationModalProps = {
 };
 
 const API_URL = Platform.select({
-  ios: 'http://localhost:3000',
-  android: 'http://10.0.2.2:3000',
-  default: 'http://127.0.0.1:3000',
+  ios: "http://localhost:3000",
+  android: "http://10.0.2.2:3000",
+  default: "http://127.0.0.1:3000",
 });
 
 export const TableReservationModal = ({
@@ -39,22 +41,22 @@ export const TableReservationModal = ({
 }: TableReservationModalProps) => {
   const { user } = useAuth();
   const [numPeople, setNumPeople] = useState(1);
-  const [customAmount, setCustomAmount] = useState('');
-  const [nome, setNome] = useState('');
-  const [cognome, setCognome] = useState('');
-  const [email, setEmail] = useState('');
-  const [telefono, setTelefono] = useState('');
+  const [customAmount, setCustomAmount] = useState("");
+  const [nome, setNome] = useState("");
+  const [cognome, setCognome] = useState("");
+  const [email, setEmail] = useState("");
+  const [telefono, setTelefono] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Reset form when modal opens
   useEffect(() => {
     if (visible && table) {
       setNumPeople(1);
-      setCustomAmount('');
-      setNome('');
-      setCognome('');
-      setEmail(user?.email || '');
-      setTelefono('');
+      setCustomAmount("");
+      setNome("");
+      setCognome("");
+      setEmail(user?.email || "");
+      setTelefono("");
     }
   }, [visible, table, user]);
 
@@ -64,7 +66,9 @@ export const TableReservationModal = ({
   }
 
   // Calculate total cost - with safety checks
-  const minSpendPerPerson = parseFloat((table.minSpend || '0').replace(/[^0-9.]/g, ''));
+  const minSpendPerPerson = parseFloat(
+    (table.minSpend || "0").replace(/[^0-9.]/g, "")
+  );
 
   // Use custom amount if set, otherwise calculate from number of people
   const calculatedAmount = minSpendPerPerson * numPeople;
@@ -72,26 +76,30 @@ export const TableReservationModal = ({
     ? parseFloat(customAmount).toFixed(2)
     : calculatedAmount.toFixed(2);
 
-  const minPeople = Math.ceil(parseFloat((table.totalCost || '0').replace(/[^0-9.]/g, '')) / minSpendPerPerson / 2);
+  const minPeople = Math.ceil(
+    parseFloat((table.totalCost || "0").replace(/[^0-9.]/g, "")) /
+      minSpendPerPerson /
+      2
+  );
   const minTotalSpend = minSpendPerPerson * minPeople;
 
   const incrementPeople = () => {
     if (numPeople < table.capacity) {
       setNumPeople(numPeople + 1);
-      setCustomAmount(''); // Clear custom amount when using buttons
+      setCustomAmount(""); // Clear custom amount when using buttons
     }
   };
 
   const decrementPeople = () => {
     if (numPeople > 1) {
       setNumPeople(numPeople - 1);
-      setCustomAmount(''); // Clear custom amount when using buttons
+      setCustomAmount(""); // Clear custom amount when using buttons
     }
   };
 
   const handleAmountChange = (value: string) => {
     // Only allow numbers and decimal point
-    const filtered = value.replace(/[^0-9.]/g, '');
+    const filtered = value.replace(/[^0-9.]/g, "");
     setCustomAmount(filtered);
   };
 
@@ -99,22 +107,26 @@ export const TableReservationModal = ({
     // Validation
     if (!nome.trim() || !cognome.trim() || !email.trim() || !telefono.trim()) {
       Alert.alert(
-        'Campi obbligatori',
-        'Compila tutti i campi obbligatori (Nome, Cognome, Email, Telefono)'
+        "Campi obbligatori",
+        "Compila tutti i campi obbligatori (Nome, Cognome, Email, Telefono)"
       );
       return;
     }
 
     if (!user) {
-      Alert.alert('Errore', 'Devi effettuare il login per prenotare un tavolo');
+      Alert.alert("Errore", "Devi effettuare il login per prenotare un tavolo");
       return;
     }
 
     const amount = parseFloat(totalCost);
     if (amount < minTotalSpend) {
       Alert.alert(
-        'Importo minimo richiesto',
-        `Il tavolo richiede un minimo di €${minTotalSpend.toFixed(2)} (almeno ${minPeople} persone a €${minSpendPerPerson.toFixed(2)} ciascuna).`
+        "Importo minimo richiesto",
+        `Il tavolo richiede un minimo di €${minTotalSpend.toFixed(
+          2
+        )} (almeno ${minPeople} persone a €${minSpendPerPerson.toFixed(
+          2
+        )} ciascuna).`
       );
       return;
     }
@@ -123,9 +135,9 @@ export const TableReservationModal = ({
 
     try {
       const response = await fetch(`${API_URL}/reservations/user/${user.id}`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           table_id: table.id,
@@ -138,24 +150,27 @@ export const TableReservationModal = ({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create reservation');
+        throw new Error("Failed to create reservation");
       }
 
       const data = await response.json();
 
       Alert.alert(
-        'Prenotazione Confermata!',
+        "Prenotazione Confermata!",
         `Codice prenotazione: ${data.reservationCode}\nTotale: €${totalCost}`,
         [
           {
-            text: 'OK',
+            text: "OK",
             onPress: () => onClose(),
           },
         ]
       );
     } catch (error) {
-      console.error('Reservation error:', error);
-      Alert.alert('Errore', 'Non è stato possibile completare la prenotazione. Riprova più tardi.');
+      console.error("Reservation error:", error);
+      Alert.alert(
+        "Errore",
+        "Non è stato possibile completare la prenotazione. Riprova più tardi."
+      );
     } finally {
       setLoading(false);
     }
@@ -168,23 +183,36 @@ export const TableReservationModal = ({
       onRequestClose={onClose}
       presentationStyle="pageSheet"
     >
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <LinearGradient colors={['#db2777', '#ec4899', '#f472b6']} style={styles.gradient}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <LinearGradient
+          colors={["#db2777", "#ec4899", "#f472b6"]}
+          style={styles.gradient}
+        >
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
               <IconSymbol name="chevron.left" size={28} color="#fff" />
             </TouchableOpacity>
-            <ThemedText style={styles.headerTitle}>Paga la Tua Quota</ThemedText>
+            <ThemedText style={styles.headerTitle}>
+              Paga la Tua Quota
+            </ThemedText>
             <View style={styles.backButtonPlaceholder} />
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
-            {/* Table Info Card */}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={styles.scrollView}
+            keyboardShouldPersistTaps="handled"
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <View>
+                {/* Table Info Card */}
             <View style={styles.tableInfoCard}>
               <View style={styles.locationRow}>
                 <IconSymbol name="location.fill" size={16} color="#fff" />
-                <ThemedText style={styles.tableName}>{table.name} - {table.zone || 'Molto'}</ThemedText>
+                <ThemedText style={styles.tableName}>
+                  {table.name} - {table.zone || "Molto"}
+                </ThemedText>
               </View>
 
               {/* Event Info */}
@@ -196,17 +224,23 @@ export const TableReservationModal = ({
 
               {/* Characteristics */}
               <View style={styles.characteristicsSection}>
-                <ThemedText style={styles.sectionTitle}>Caratteristiche Tavolo:</ThemedText>
+                <ThemedText style={styles.sectionTitle}>
+                  Caratteristiche Tavolo:
+                </ThemedText>
                 {table.features?.map((feature, index) => (
                   <View key={index} style={styles.featureRow}>
                     <ThemedText style={styles.bulletPoint}>•</ThemedText>
-                    <ThemedText style={styles.featureText}>{feature}</ThemedText>
+                    <ThemedText style={styles.featureText}>
+                      {feature}
+                    </ThemedText>
                   </View>
                 ))}
                 {table.locationDescription && (
                   <View style={styles.featureRow}>
                     <ThemedText style={styles.bulletPoint}>•</ThemedText>
-                    <ThemedText style={styles.featureText}>{table.locationDescription}</ThemedText>
+                    <ThemedText style={styles.featureText}>
+                      {table.locationDescription}
+                    </ThemedText>
                   </View>
                 )}
               </View>
@@ -214,27 +248,40 @@ export const TableReservationModal = ({
 
             {/* Spend Selector */}
             <View style={styles.spendSection}>
-              <ThemedText style={styles.spendTitle}>Quanto Vuoi Spendere?</ThemedText>
+              <ThemedText style={styles.spendTitle}>
+                Quanto Vuoi Spendere?
+              </ThemedText>
 
               {/* Number of people selector */}
               <View style={styles.peopleSelectorContainer}>
-                <ThemedText style={styles.peopleSelectorLabel}>Numero di persone</ThemedText>
+                <ThemedText style={styles.peopleSelectorLabel}>
+                  Numero di persone
+                </ThemedText>
                 <View style={styles.peopleSelector}>
                   <TouchableOpacity
                     onPress={decrementPeople}
-                    style={[styles.peopleButton, numPeople <= 1 && styles.peopleButtonDisabled]}
+                    style={[
+                      styles.peopleButton,
+                      numPeople <= 1 && styles.peopleButtonDisabled,
+                    ]}
                     disabled={numPeople <= 1}
                   >
                     <ThemedText style={styles.peopleButtonText}>−</ThemedText>
                   </TouchableOpacity>
 
                   <View style={styles.peopleDisplay}>
-                    <ThemedText style={styles.peopleNumber}>{numPeople}</ThemedText>
+                    <ThemedText style={styles.peopleNumber}>
+                      {numPeople}
+                    </ThemedText>
                   </View>
 
                   <TouchableOpacity
                     onPress={incrementPeople}
-                    style={[styles.peopleButton, numPeople >= table.capacity && styles.peopleButtonDisabled]}
+                    style={[
+                      styles.peopleButton,
+                      numPeople >= table.capacity &&
+                        styles.peopleButtonDisabled,
+                    ]}
                     disabled={numPeople >= table.capacity}
                   >
                     <ThemedText style={styles.peopleButtonText}>+</ThemedText>
@@ -244,7 +291,9 @@ export const TableReservationModal = ({
 
               {/* Amount input */}
               <View style={styles.amountInputContainer}>
-                <ThemedText style={styles.amountInputLabel}>Il tuo importo (€)</ThemedText>
+                <ThemedText style={styles.amountInputLabel}>
+                  Il tuo importo (€)
+                </ThemedText>
                 <View style={styles.amountInputWrapper}>
                   <ThemedText style={styles.euroPrefix}>€</ThemedText>
                   <TextInput
@@ -257,7 +306,8 @@ export const TableReservationModal = ({
                   />
                 </View>
                 <ThemedText style={styles.minSpendText}>
-                  Minimo {table.minSpend} per persona • Minimo totale: €{minTotalSpend.toFixed(2)}
+                  Minimo {table.minSpend} per persona • Minimo totale: €
+                  {minTotalSpend.toFixed(2)}
                 </ThemedText>
               </View>
 
@@ -271,20 +321,30 @@ export const TableReservationModal = ({
                 </View>
 
                 <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>Importo per persona:</ThemedText>
-                  <ThemedText style={styles.infoValue}>€{(parseFloat(totalCost) / numPeople).toFixed(2)}</ThemedText>
+                  <ThemedText style={styles.infoLabel}>
+                    Importo per persona:
+                  </ThemedText>
+                  <ThemedText style={styles.infoValue}>
+                    €{(parseFloat(totalCost) / numPeople).toFixed(2)}
+                  </ThemedText>
                 </View>
 
                 <View style={[styles.infoRow, styles.totalRow]}>
-                  <ThemedText style={styles.totalLabel}>Totale da pagare:</ThemedText>
-                  <ThemedText style={[styles.infoValue, styles.highlightValue]}>€{totalCost}</ThemedText>
+                  <ThemedText style={styles.totalLabel}>
+                    Totale da pagare:
+                  </ThemedText>
+                  <ThemedText style={[styles.infoValue, styles.highlightValue]}>
+                    €{totalCost}
+                  </ThemedText>
                 </View>
               </View>
             </View>
 
             {/* Personal Information */}
             <View style={styles.personalInfoSection}>
-              <ThemedText style={styles.sectionTitle}>Informazioni Personali</ThemedText>
+              <ThemedText style={styles.sectionTitle}>
+                Informazioni Personali
+              </ThemedText>
 
               <View style={styles.inputRow}>
                 <TextInput
@@ -323,13 +383,17 @@ export const TableReservationModal = ({
               />
 
               <ThemedText style={styles.requiredText}>
-                ⚠ Compila tutti i campi obbligatori (Nome, Cognome, Email, Telefono)
+                ⚠ Compila tutti i campi obbligatori (Nome, Cognome, Email,
+                Telefono)
               </ThemedText>
             </View>
 
             {/* Reserve Button */}
             <TouchableOpacity
-              style={[styles.reserveButton, loading && styles.reserveButtonDisabled]}
+              style={[
+                styles.reserveButton,
+                loading && styles.reserveButtonDisabled,
+              ]}
               onPress={handleReservation}
               disabled={loading}
             >
@@ -338,12 +402,16 @@ export const TableReservationModal = ({
               ) : (
                 <>
                   <IconSymbol name="checkmark.circle" size={20} color="#fff" />
-                  <ThemedText style={styles.reserveButtonText}>UNISCITI AL TAVOLO</ThemedText>
+                  <ThemedText style={styles.reserveButtonText}>
+                    UNISCITI AL TAVOLO
+                  </ThemedText>
                 </>
               )}
             </TouchableOpacity>
 
             <View style={{ height: 40 }} />
+              </View>
+            </TouchableWithoutFeedback>
           </ScrollView>
         </LinearGradient>
       </SafeAreaView>
@@ -355,19 +423,19 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   gradient: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 20,
-    paddingTop: 16,
+    paddingTop: 32,
   },
   backButton: {
     width: 44,
     height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
     borderRadius: 22,
   },
   backButtonPlaceholder: {
@@ -376,72 +444,72 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
   },
   scrollView: { flex: 1 },
   tableInfoCard: {
     margin: 16,
     padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
     borderRadius: 16,
   },
   locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     marginBottom: 16,
   },
   tableName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
   },
   eventInfo: {
     marginBottom: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
+    borderBottomColor: "rgba(255, 255, 255, 0.2)",
   },
   eventTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     marginBottom: 4,
   },
   eventVenue: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: "rgba(255, 255, 255, 0.9)",
     marginBottom: 2,
   },
   eventDate: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: "rgba(255, 255, 255, 0.8)",
   },
   characteristicsSection: {
     gap: 8,
   },
   sectionTitle: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     marginBottom: 8,
   },
   featureRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
   },
   bulletPoint: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 14,
   },
   featureText: {
     flex: 1,
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: "rgba(255, 255, 255, 0.9)",
   },
   spendSection: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
     marginHorizontal: 16,
     marginBottom: 16,
     padding: 20,
@@ -449,173 +517,173 @@ const styles = StyleSheet.create({
   },
   spendTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     marginBottom: 20,
   },
   peopleSelectorContainer: {
     marginBottom: 20,
   },
   peopleSelectorLabel: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.9)",
     marginBottom: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   peopleSelector: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
     gap: 16,
   },
   peopleButton: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   peopleButtonDisabled: {
     opacity: 0.3,
   },
   peopleButtonText: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
   },
   peopleDisplay: {
     minWidth: 80,
     height: 48,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
     borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 20,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: "rgba(255, 255, 255, 0.3)",
   },
   peopleNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#fff",
   },
   amountInputContainer: {
     marginBottom: 20,
   },
   amountInputLabel: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: "rgba(255, 255, 255, 0.9)",
     marginBottom: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   amountInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: "rgba(255, 255, 255, 0.3)",
     paddingHorizontal: 16,
     height: 56,
   },
   euroPrefix: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     marginRight: 8,
   },
   amountInput: {
     flex: 1,
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     padding: 0,
   },
   minSpendText: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: "rgba(255, 255, 255, 0.7)",
     marginTop: 8,
   },
   infoBox: {
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
     padding: 16,
     borderRadius: 12,
     gap: 12,
   },
   infoTitle: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     marginBottom: 8,
   },
   infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   infoLabel: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: "rgba(255, 255, 255, 0.9)",
   },
   infoValue: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
   },
   highlightValue: {
     fontSize: 20,
-    color: '#fbbf24',
+    color: "#fbbf24",
   },
   totalRow: {
     marginTop: 8,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+    borderTopColor: "rgba(255, 255, 255, 0.2)",
   },
   totalLabel: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
   },
   personalInfoSection: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
     marginHorizontal: 16,
     marginBottom: 16,
     padding: 20,
     borderRadius: 16,
   },
   inputRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
     marginBottom: 12,
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     borderRadius: 8,
     padding: 14,
     fontSize: 14,
-    color: '#fff',
+    color: "#fff",
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   fullWidthInput: {
     marginBottom: 12,
   },
   requiredText: {
     fontSize: 11,
-    color: '#fbbf24',
+    color: "#fbbf24",
     marginTop: 8,
   },
   reserveButton: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    flexDirection: "row",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     marginHorizontal: 16,
     padding: 18,
     borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     gap: 8,
   },
   reserveButtonDisabled: {
@@ -623,8 +691,8 @@ const styles = StyleSheet.create({
   },
   reserveButtonText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     letterSpacing: 1,
   },
 });

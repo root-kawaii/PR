@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -61,68 +63,74 @@ export const ReservationCodeModal = ({
       animationType="fade"
       onRequestClose={handleClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.modal}>
-          {/* Header */}
-          <View style={styles.header}>
-            <ThemedText style={styles.title}>Inserisci Codice</ThemedText>
-            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <IconSymbol name="xmark" size={24} color="#9ca3af" />
-            </TouchableOpacity>
-          </View>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <View>
+                {/* Header */}
+                <View style={styles.header}>
+                  <ThemedText style={styles.title}>Inserisci Codice</ThemedText>
+                  <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+                    <IconSymbol name="xmark" size={24} color="#9ca3af" />
+                  </TouchableOpacity>
+                </View>
 
-          {/* Content */}
-          <View style={styles.content}>
-            <ThemedText style={styles.description}>
-              Inserisci il codice della prenotazione per visualizzare i dettagli e contribuire al pagamento.
-            </ThemedText>
+                {/* Content */}
+                <View style={styles.content}>
+                  <ThemedText style={styles.description}>
+                    Inserisci il codice della prenotazione per visualizzare i dettagli e contribuire al pagamento.
+                  </ThemedText>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Es: RES-XXXXXXXX"
-              placeholderTextColor="#6b7280"
-              value={code}
-              onChangeText={(text) => {
-                setCode(text);
-                setError('');
-              }}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              maxLength={20}
-            />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Es: RES-XXXXXXXX"
+                    placeholderTextColor="#6b7280"
+                    value={code}
+                    onChangeText={(text) => {
+                      setCode(text);
+                      setError('');
+                    }}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    maxLength={20}
+                  />
 
-            {error ? (
-              <View style={styles.errorContainer}>
-                <IconSymbol name="exclamationmark.triangle" size={16} color="#ef4444" />
-                <ThemedText style={styles.errorText}>{error}</ThemedText>
+                  {error ? (
+                    <View style={styles.errorContainer}>
+                      <IconSymbol name="exclamationmark.triangle.fill" size={16} color="#ef4444" />
+                      <ThemedText style={styles.errorText}>{error}</ThemedText>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Actions */}
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    style={[styles.button, styles.cancelButton]}
+                    onPress={handleClose}
+                    disabled={loading}
+                  >
+                    <ThemedText style={styles.cancelButtonText}>Annulla</ThemedText>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.button, styles.submitButton, loading && styles.buttonDisabled]}
+                    onPress={handleSubmit}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <ThemedText style={styles.submitButtonText}>Cerca</ThemedText>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
-            ) : null}
-          </View>
-
-          {/* Actions */}
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={handleClose}
-              disabled={loading}
-            >
-              <ThemedText style={styles.cancelButtonText}>Annulla</ThemedText>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.submitButton, loading && styles.buttonDisabled]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <ThemedText style={styles.submitButtonText}>Cerca</ThemedText>
-              )}
-            </TouchableOpacity>
+            </TouchableWithoutFeedback>
           </View>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 };

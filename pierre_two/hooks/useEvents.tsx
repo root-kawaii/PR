@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { Event } from '@/types';
-import { getMockEvents } from '@/constants/data';
 
 // Platform-aware API URL (same logic as useGenres/useClubs)
 const getApiUrl = () => {
@@ -49,9 +48,7 @@ export const useEvents = () => {
       setError(null);
     } catch (e) {
       setError('Failed to fetch events');
-      if (!silent) {
-        setEvents(getMockEvents());
-      }
+      setEvents([]);
     } finally {
       if (!silent) {
         setLoading(false);

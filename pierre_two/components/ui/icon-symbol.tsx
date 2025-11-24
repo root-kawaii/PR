@@ -23,7 +23,16 @@ type IconSymbolName =
   | 'xmark'
   | 'checkmark.circle'
   | 'magnifyingglass'
-  | 'mappin';
+  | 'mappin'
+  | 'gearshape.fill'
+  | 'clock.fill'
+  | 'heart.fill'
+  | 'person.3.fill'
+  | 'person.2.fill'
+  | 'square.stack.3d.up.fill'
+  | 'music.note'
+  | 'bell.fill'
+  | 'arrow.right.square.fill';
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
@@ -50,6 +59,15 @@ const MAPPING = {
   'checkmark.circle': 'check-circle',
   'magnifyingglass': 'search',
   'mappin': 'place',
+  'gearshape.fill': 'settings',
+  'clock.fill': 'schedule',
+  'heart.fill': 'favorite',
+  'person.3.fill': 'group',
+  'person.2.fill': 'people',
+  'square.stack.3d.up.fill': 'layers',
+  'music.note': 'music-note',
+  'bell.fill': 'notifications',
+  'arrow.right.square.fill': 'logout',
 } as const;
 
 /**

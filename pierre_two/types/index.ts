@@ -10,6 +10,7 @@ export type Event = {
   endTime?: string;
   price?: string;
   description?: string;
+  matterportId?: string;
   tables?: Table[];
 };
 
