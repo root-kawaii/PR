@@ -3,9 +3,13 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
+import { StripeProvider } from '@stripe/stripe-react-native';
+import Constants from 'expo-constants';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+
+const stripePublishableKey = Constants.expoConfig?.extra?.stripePublishableKey || '';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -47,8 +51,10 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootLayoutNav />
-    </AuthProvider>
+    <StripeProvider publishableKey={stripePublishableKey}>
+      <AuthProvider>
+        <RootLayoutNav />
+      </AuthProvider>
+    </StripeProvider>
   );
 }

@@ -19,6 +19,8 @@ import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Table, Event } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
+import Constants from 'expo-constants';
+import { useStripe } from '@stripe/stripe-react-native';
 
 type TableReservationModalProps = {
   visible: boolean;
@@ -27,11 +29,31 @@ type TableReservationModalProps = {
   onClose: () => void;
 };
 
-const API_URL = Platform.select({
-  ios: "http://localhost:3000",
-  android: "http://10.0.2.2:3000",
-  default: "http://127.0.0.1:3000",
-});
+// Platform-aware API URL with environment variable support
+const getApiUrl = () => {
+  // Use production URL from app.json extra config if available
+  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  // Fall back to local development
+  const isDevice = Constants.isDevice;
+  const isSimulator = Constants.deviceName?.includes('Simulator') ||
+                      Constants.deviceName?.includes('Emulator');
+
+  if (isSimulator) {
+    return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://127.0.0.1:3000';
+  }
+
+  if (isDevice) {
+    return 'http://172.20.10.5:3000';
+  }
+
+  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://127.0.0.1:3000';
+};
+
+const API_URL = getApiUrl();
 
 export const TableReservationModal = ({
   visible,
@@ -40,12 +62,15 @@ export const TableReservationModal = ({
   onClose,
 }: TableReservationModalProps) => {
   const { user } = useAuth();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [numPeople, setNumPeople] = useState(1);
   const [customAmount, setCustomAmount] = useState("");
   const [nome, setNome] = useState("");
   const [cognome, setCognome] = useState("");
   const [email, setEmail] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [guestPhones, setGuestPhones] = useState<string[]>([]);
+  const [newGuestPhone, setNewGuestPhone] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Reset form when modal opens
@@ -57,6 +82,8 @@ export const TableReservationModal = ({
       setCognome("");
       setEmail(user?.email || "");
       setTelefono("");
+      setGuestPhones([]);
+      setNewGuestPhone("");
     }
   }, [visible, table, user]);
 
@@ -134,26 +161,92 @@ export const TableReservationModal = ({
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/reservations/user/${user.id}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          table_id: table.id,
-          event_id: event.id,
-          num_people: numPeople,
-          contact_name: `${nome} ${cognome}`,
-          contact_email: email,
-          contact_phone: telefono,
-        }),
+      // Step 1: Create Stripe PaymentIntent
+      console.log('Creating payment intent...');
+      const paymentIntentResponse = await fetch(
+        `${API_URL}/reservations/create-payment-intent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            table_id: table.id,
+            event_id: event.id,
+            owner_user_id: user.id,
+            guest_phone_numbers: guestPhones,
+          }),
+        }
+      );
+
+      if (!paymentIntentResponse.ok) {
+        const errorText = await paymentIntentResponse.text();
+        console.error('Payment intent error:', errorText);
+        throw new Error(`Failed to create payment intent: ${errorText}`);
+      }
+
+      const paymentIntentData = await paymentIntentResponse.json();
+      console.log('Payment intent created:', paymentIntentData.paymentIntentId);
+
+      // Step 2: Initialize and present Stripe payment sheet
+      const { error: initError } = await initPaymentSheet({
+        paymentIntentClientSecret: paymentIntentData.clientSecret,
+        merchantDisplayName: 'Pierre Two',
+        returnURL: 'pierre-two://stripe-redirect',
       });
 
-      if (!response.ok) {
+      if (initError) {
+        console.error('Payment sheet init error:', initError);
+        Alert.alert('Errore', 'Impossibile inizializzare il pagamento. Riprova.');
+        setLoading(false);
+        return;
+      }
+
+      const { error: presentError } = await presentPaymentSheet();
+
+      if (presentError) {
+        if (presentError.code !== 'Canceled') {
+          console.error('Payment sheet present error:', presentError);
+          Alert.alert('Errore', 'Pagamento non riuscito. Riprova.');
+        }
+        setLoading(false);
+        return;
+      }
+
+      console.log('Payment successful');
+
+      // Step 3: Create reservation with payment
+      console.log('Creating reservation with payment...');
+      const reservationResponse = await fetch(
+        `${API_URL}/reservations/create-with-payment`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            table_id: table.id,
+            event_id: event.id,
+            owner_user_id: user.id,
+            guest_phone_numbers: guestPhones,
+            payment_amount: amount,
+            stripe_payment_intent_id: paymentIntentData.paymentIntentId,
+            contact_name: `${nome} ${cognome}`,
+            contact_email: email,
+            contact_phone: telefono,
+            special_requests: null,
+          }),
+        }
+      );
+
+      if (!reservationResponse.ok) {
+        const errorText = await reservationResponse.text();
+        console.error('Reservation error:', errorText);
         throw new Error("Failed to create reservation");
       }
 
-      const data = await response.json();
+      const data = await reservationResponse.json();
+      console.log('Reservation created:', data);
 
       Alert.alert(
         "Prenotazione Confermata!",
@@ -386,6 +479,66 @@ export const TableReservationModal = ({
                 ⚠ Compila tutti i campi obbligatori (Nome, Cognome, Email,
                 Telefono)
               </ThemedText>
+            </View>
+
+            {/* Guest Phone Numbers */}
+            <View style={styles.guestPhonesSection}>
+              <ThemedText style={styles.sectionTitle}>
+                Invita Ospiti (Opzionale)
+              </ThemedText>
+              <ThemedText style={styles.guestPhonesSubtitle}>
+                Aggiungi i numeri di telefono degli ospiti che condivideranno il tavolo
+              </ThemedText>
+
+              {/* Guest Phone Input */}
+              <View style={styles.guestPhoneInputRow}>
+                <TextInput
+                  style={[styles.input, styles.guestPhoneInput]}
+                  placeholder="+39 123 456 7890"
+                  placeholderTextColor="#9ca3af"
+                  value={newGuestPhone}
+                  onChangeText={setNewGuestPhone}
+                  keyboardType="phone-pad"
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.addGuestButton,
+                    !newGuestPhone.trim() && styles.addGuestButtonDisabled,
+                  ]}
+                  onPress={() => {
+                    if (newGuestPhone.trim()) {
+                      setGuestPhones([...guestPhones, newGuestPhone.trim()]);
+                      setNewGuestPhone("");
+                    }
+                  }}
+                  disabled={!newGuestPhone.trim()}
+                >
+                  <IconSymbol name="plus.circle.fill" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Guest List */}
+              {guestPhones.length > 0 && (
+                <View style={styles.guestList}>
+                  <ThemedText style={styles.guestListTitle}>
+                    Ospiti aggiunti ({guestPhones.length}):
+                  </ThemedText>
+                  {guestPhones.map((phone, index) => (
+                    <View key={index} style={styles.guestItem}>
+                      <IconSymbol name="person.3.fill" size={16} color="#fff" />
+                      <ThemedText style={styles.guestPhone}>{phone}</ThemedText>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setGuestPhones(guestPhones.filter((_, i) => i !== index));
+                        }}
+                        style={styles.removeGuestButton}
+                      >
+                        <IconSymbol name="xmark" size={20} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
 
             {/* Reserve Button */}
@@ -675,6 +828,64 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#fbbf24",
     marginTop: 8,
+  },
+  guestPhonesSection: {
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 16,
+  },
+  guestPhonesSubtitle: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.7)",
+    marginBottom: 16,
+  },
+  guestPhoneInputRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16,
+  },
+  guestPhoneInput: {
+    flex: 1,
+  },
+  addGuestButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: "rgba(34, 197, 94, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addGuestButtonDisabled: {
+    opacity: 0.3,
+  },
+  guestList: {
+    gap: 8,
+  },
+  guestListTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.9)",
+    marginBottom: 8,
+  },
+  guestItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    borderRadius: 8,
+    padding: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  guestPhone: {
+    flex: 1,
+    fontSize: 14,
+    color: "#fff",
+  },
+  removeGuestButton: {
+    padding: 4,
   },
   reserveButton: {
     flexDirection: "row",

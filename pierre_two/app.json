@@ -53,7 +53,9 @@
       "router": {},
       "eas": {
         "projectId": "4e65bba3-9d05-4b27-9300-a81a9b8181be"
-      }
+      },
+      "apiUrl": "http://172.20.10.5:3000",
+      "stripePublishableKey": "pk_test_51SNYzEIyXBlTTF3RmSRveZFwJPPkaKiG7MUacAZTSTkEyo2iqyqpWkUIaZ3TIkH2enw0qYApvWBQlUp0r4TzYXzb009O0oylKv"
     }
   }
 }

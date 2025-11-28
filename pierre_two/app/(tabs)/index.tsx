@@ -25,8 +25,15 @@ import { useModal } from "@/hooks/useModal";
 import { Event, Table, TableReservation } from "@/types";
 import { useLocalSearchParams } from "expo-router";
 
-// Helper function to get API URL
+// Helper function to get API URL with environment variable support
 const getApiUrl = () => {
+  // Use production URL from app.json extra config if available
+  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  // Fall back to local development
   const isDevice = Constants.isDevice;
   const isSimulator =
     Constants.deviceName?.includes("Simulator") ||

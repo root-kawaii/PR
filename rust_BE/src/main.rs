@@ -82,6 +82,8 @@ use crate::controllers::table_controller::{
     add_payment_to_reservation,
     link_ticket_to_reservation,
     get_tickets_for_reservation,
+    create_payment_intent,
+    create_reservation_with_payment,
 };
 
 pub fn create_router(app_state: Arc<AppState>) -> Router {
@@ -122,6 +124,8 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/reservations/table/:table_id", get(get_reservations_by_table))
         .route("/reservations/:reservation_id/payments", post(add_payment_to_reservation))
         .route("/reservations/:reservation_id/tickets", post(link_ticket_to_reservation).get(get_tickets_for_reservation))
+        .route("/reservations/create-payment-intent", post(create_payment_intent))
+        .route("/reservations/create-with-payment", post(create_reservation_with_payment))
         // Payment routes
         .route("/payments", get(get_all_payments).post(post_payment))
         .route("/payments/:id", get(get_payment).delete(delete_payment))

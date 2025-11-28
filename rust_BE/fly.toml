@@ -1,0 +1,20 @@
+app = "pierre-two-backend"
+primary_region = "fra"  # Frankfurt (close to your Supabase EU region)
+
+[build]
+
+[env]
+  PORT = "3000"
+  HOST = "0.0.0.0"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0  # Free tier: scale to zero when not in use
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

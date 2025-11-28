@@ -26,7 +26,8 @@ pub use table::{
     TableReservation, CreateTableReservationRequest, UpdateTableReservationRequest,
     TableReservationResponse, TableReservationWithDetailsResponse, TableReservationsResponse, TableReservationsWithDetailsResponse,
     TableSummary, TableReservationPayment, TableReservationTicket,
-    AddPaymentToReservationRequest, LinkTicketToReservationRequest
+    AddPaymentToReservationRequest, LinkTicketToReservationRequest,
+    CreateReservationWithPaymentRequest, CreatePaymentIntentRequest, CreatePaymentIntentResponse
 };
 
 pub struct AppState {

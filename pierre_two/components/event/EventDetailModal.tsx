@@ -24,8 +24,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "@/context/AuthContext";
 import { Alert } from "react-native";
 
-// Platform-aware API URL (same logic as useGenres/useClubs)
+// Platform-aware API URL with environment variable support
 const getApiUrl = () => {
+  // Use production URL from app.json extra config if available
+  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  // Fall back to local development
   const isDevice = Constants.isDevice;
   const isSimulator =
     Constants.deviceName?.includes("Simulator") ||

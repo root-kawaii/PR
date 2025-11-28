@@ -4,7 +4,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { SymbolWeight } from 'expo-symbols';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
-type IconSymbolName =
+export type IconSymbolName =
   | 'house.fill'
   | 'paperplane.fill'
   | 'chevron.left.forwardslash.chevron.right'
@@ -32,7 +32,8 @@ type IconSymbolName =
   | 'square.stack.3d.up.fill'
   | 'music.note'
   | 'bell.fill'
-  | 'arrow.right.square.fill';
+  | 'arrow.right.square.fill'
+  | 'plus.circle.fill';
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
@@ -68,6 +69,7 @@ const MAPPING = {
   'music.note': 'music-note',
   'bell.fill': 'notifications',
   'arrow.right.square.fill': 'logout',
+  'plus.circle.fill': 'add-circle',
 } as const;
 
 /**

@@ -16,30 +16,36 @@ pub enum PaymentStatus {
 pub struct PaymentEntity {
     pub id: Uuid,
     pub sender_id: Uuid,
-    pub receiver_id: Uuid,  
+    pub receiver_id: Uuid,
     pub amount: Decimal,
     pub status: PaymentStatus,
     pub insert_date: chrono::NaiveDateTime,
     pub update_date: Option<chrono::NaiveDateTime>,
+    pub stripe_payment_intent_id: Option<String>,
+    pub user_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct PaymentRequest {
     pub sender_id: Uuid,
-    pub receiver_id: Uuid,  
+    pub receiver_id: Uuid,
     pub amount: Decimal,
-    pub insert_date: Option<NaiveDateTime>,  
+    pub insert_date: Option<NaiveDateTime>,
     pub update_date: Option<NaiveDateTime>,
+    pub stripe_payment_intent_id: Option<String>,
+    pub user_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PaymentResponse{
     pub id: Uuid,
     pub sender_id: Uuid,
-    pub receiver_id: Uuid,  
+    pub receiver_id: Uuid,
     pub amount: Decimal,
-    pub insert_date: NaiveDateTime,  
+    pub insert_date: NaiveDateTime,
     pub update_date: Option<NaiveDateTime>,
+    pub stripe_payment_intent_id: Option<String>,
+    pub user_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, serde::Deserialize)]

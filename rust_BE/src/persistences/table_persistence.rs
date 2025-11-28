@@ -1,4 +1,4 @@
-use crate::models::{Table, TableReservation, TableReservationPayment, TableReservationTicket};
+use crate::models::{Table, TableReservation};
 use sqlx::PgPool;
 use uuid::Uuid;
 use rust_decimal::Decimal;
@@ -441,38 +441,27 @@ pub async fn delete_reservation(pool: &PgPool, reservation_id: Uuid) -> Result<b
 }
 
 // ============================================================================
-// Payment tracking
+// Array-based operations (replacing junction tables)
 // ============================================================================
 
-/// Add a payment to a reservation
+/// Add a payment to a reservation's payment_ids array
 pub async fn add_payment_to_reservation(
     pool: &PgPool,
     reservation_id: Uuid,
     payment_id: Uuid,
     amount: Decimal,
 ) -> Result<(), sqlx::Error> {
-    // Insert into junction table
-    sqlx::query(
-        r#"
-        INSERT INTO table_reservation_payments (reservation_id, payment_id, amount)
-        VALUES ($1, $2, $3)
-        "#,
-    )
-    .bind(reservation_id)
-    .bind(payment_id)
-    .bind(amount)
-    .execute(pool)
-    .await?;
-
-    // Update the amount_paid in the reservation
+    // Append payment_id to payment_ids array and update amount_paid
     sqlx::query(
         r#"
         UPDATE table_reservations
-        SET amount_paid = amount_paid + $1,
+        SET payment_ids = array_append(COALESCE(payment_ids, '{}'), $1),
+            amount_paid = amount_paid + $2,
             updated_at = NOW()
-        WHERE id = $2
+        WHERE id = $3
         "#,
     )
+    .bind(payment_id)
     .bind(amount)
     .bind(reservation_id)
     .execute(pool)
@@ -481,84 +470,46 @@ pub async fn add_payment_to_reservation(
     Ok(())
 }
 
-/// Get payments for a reservation
-pub async fn get_payments_for_reservation(
-    pool: &PgPool,
-    reservation_id: Uuid,
-) -> Result<Vec<TableReservationPayment>, sqlx::Error> {
-    let payments = sqlx::query_as::<_, TableReservationPayment>(
-        r#"
-        SELECT * FROM table_reservation_payments
-        WHERE reservation_id = $1
-        ORDER BY created_at DESC
-        "#,
-    )
-    .bind(reservation_id)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(payments)
-}
-
-// ============================================================================
-// Ticket linking
-// ============================================================================
-
-/// Link a ticket to a reservation
-pub async fn link_ticket_to_reservation(
+/// Add a ticket to a reservation's ticket_ids array
+pub async fn add_ticket_to_reservation(
     pool: &PgPool,
     reservation_id: Uuid,
     ticket_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO table_reservation_tickets (reservation_id, ticket_id)
-        VALUES ($1, $2)
+        UPDATE table_reservations
+        SET ticket_ids = array_append(COALESCE(ticket_ids, '{}'), $1),
+            updated_at = NOW()
+        WHERE id = $2
         "#,
     )
-    .bind(reservation_id)
     .bind(ticket_id)
+    .bind(reservation_id)
     .execute(pool)
     .await?;
 
     Ok(())
 }
 
-/// Get tickets for a reservation
-pub async fn get_tickets_for_reservation(
+/// Add a guest user to a reservation's guest_user_ids array
+pub async fn add_guest_to_reservation(
     pool: &PgPool,
     reservation_id: Uuid,
-) -> Result<Vec<Uuid>, sqlx::Error> {
-    let ticket_ids = sqlx::query_scalar::<_, Uuid>(
+    guest_user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
         r#"
-        SELECT ticket_id FROM table_reservation_tickets
-        WHERE reservation_id = $1
-        ORDER BY created_at DESC
+        UPDATE table_reservations
+        SET guest_user_ids = array_append(COALESCE(guest_user_ids, '{}'), $1),
+            updated_at = NOW()
+        WHERE id = $2
         "#,
     )
+    .bind(guest_user_id)
     .bind(reservation_id)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(ticket_ids)
-}
-
-/// Unlink a ticket from a reservation
-pub async fn unlink_ticket_from_reservation(
-    pool: &PgPool,
-    reservation_id: Uuid,
-    ticket_id: Uuid,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        DELETE FROM table_reservation_tickets
-        WHERE reservation_id = $1 AND ticket_id = $2
-        "#,
-    )
-    .bind(reservation_id)
-    .bind(ticket_id)
     .execute(pool)
     .await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(())
 }

@@ -60,6 +60,22 @@ pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<Option<User
     Ok(user)
 }
 
+/// Find a user by phone number
+pub async fn find_user_by_phone(pool: &PgPool, phone_number: &str) -> Result<Option<User>> {
+    let user = sqlx::query_as::<_, User>(
+        r#"
+        SELECT id, email, password_hash, name, phone_number, avatar_url, created_at, updated_at
+        FROM users
+        WHERE phone_number = $1
+        "#,
+    )
+    .bind(phone_number)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(user)
+}
+
 /// Update user's last login timestamp (optional feature)
 pub async fn update_last_login(pool: &PgPool, user_id: Uuid) -> Result<()> {
     sqlx::query(

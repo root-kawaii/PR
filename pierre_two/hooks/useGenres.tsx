@@ -3,8 +3,15 @@ import { Genre } from '@/types';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// Platform-aware API URL (same logic as AuthContext)
+// Platform-aware API URL with environment variable support
 const getApiUrl = () => {
+  // Use production URL from app.json extra config if available
+  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  // Fall back to local development
   const isDevice = Constants.isDevice;
   const isSimulator = Constants.deviceName?.includes('Simulator') ||
                       Constants.deviceName?.includes('Emulator');

@@ -10,7 +10,7 @@ pub async fn load_all_payments_service(
     filters: PaymentFilter,
 ) -> Result<Vec<PaymentEntity>, StatusCode> {
     let mut query = QueryBuilder::<Postgres>::new(
-        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date FROM payments WHERE 1=1"
+        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids FROM payments WHERE 1=1"
     );
     
     if let Some(sender_id) = filters.sender_id {
@@ -38,7 +38,7 @@ pub async fn load_all_payments_service(
 
 pub async fn load_payment_service(id: Uuid, app_state: &AppState) -> Result<PaymentEntity, StatusCode> {
     sqlx::query_as::<_, PaymentEntity>(
-        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date FROM payments WHERE id = $1"
+        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids FROM payments WHERE id = $1"
     )
     .bind(id)
     .fetch_optional(&app_state.db_pool)
@@ -98,9 +98,9 @@ pub async fn create_payment_service(
     
     // Step 2: Store payment in database with Stripe payment intent ID
     let payment_entity = sqlx::query_as::<_, PaymentEntity>(
-        "INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id"
+        "INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids"
     )
     .bind(id)
     .bind(&payload.sender_id)
@@ -110,6 +110,7 @@ pub async fn create_payment_service(
     .bind(payload.insert_date.unwrap_or_else(|| chrono::Utc::now().naive_utc()))
     .bind(payload.update_date.unwrap_or_else(|| chrono::Utc::now().naive_utc()))
     .bind(payment_intent.id.to_string()) // Store Stripe payment intent ID
+    .bind(&payload.user_ids) // Store user IDs array
     .fetch_one(&app_state.db_pool)
     .await
     .map_err(|e| {

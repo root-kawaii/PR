@@ -104,6 +104,9 @@ pub struct TableReservation {
     pub reservation_code: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub guest_user_ids: Option<Vec<Uuid>>,
+    pub payment_ids: Option<Vec<Uuid>>,
+    pub ticket_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,6 +114,20 @@ pub struct CreateTableReservationRequest {
     pub table_id: String,
     pub event_id: String,
     pub num_people: i32,
+    pub contact_name: String,
+    pub contact_email: String,
+    pub contact_phone: String,
+    pub special_requests: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateReservationWithPaymentRequest {
+    pub table_id: String,
+    pub event_id: String,
+    pub owner_user_id: String,
+    pub guest_phone_numbers: Vec<String>,
+    pub payment_amount: f64,
+    pub stripe_payment_intent_id: String,
     pub contact_name: String,
     pub contact_email: String,
     pub contact_phone: String,
@@ -257,4 +274,24 @@ pub struct TableReservationTicket {
 #[derive(Debug, Deserialize)]
 pub struct LinkTicketToReservationRequest {
     pub ticket_id: String,
+}
+
+// ============================================================================
+// Payment Intent Creation (for Stripe)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePaymentIntentRequest {
+    pub table_id: String,
+    pub event_id: String,
+    pub owner_user_id: String,
+    pub guest_phone_numbers: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatePaymentIntentResponse {
+    pub client_secret: String,
+    pub payment_intent_id: String,
+    pub amount: String, // Formatted as "X.XX €"
 }

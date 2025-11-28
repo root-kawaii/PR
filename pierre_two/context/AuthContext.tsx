@@ -4,13 +4,16 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 
-// Platform-aware API URL
+// Platform-aware API URL with environment variable support
 const getApiUrl = () => {
-  // Check if running on a physical device
-  // Constants.isDevice is true on physical devices, false/undefined on simulators
-  const isDevice = Constants.isDevice;
+  // Use production URL from app.json extra config if available
+  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+  if (apiUrl) {
+    return apiUrl;
+  }
 
-  // For development, you can also check deviceName
+  // Fall back to local development
+  const isDevice = Constants.isDevice;
   const isSimulator = Constants.deviceName?.includes('Simulator') ||
                       Constants.deviceName?.includes('Emulator');
 

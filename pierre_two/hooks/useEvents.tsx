@@ -3,8 +3,15 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { Event } from '@/types';
 
-// Platform-aware API URL (same logic as useGenres/useClubs)
+// Platform-aware API URL with environment variable support
 const getApiUrl = () => {
+  // Use production URL from app.json extra config if available
+  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  // Fall back to local development
   const isDevice = Constants.isDevice;
   const isSimulator = Constants.deviceName?.includes('Simulator') ||
                       Constants.deviceName?.includes('Emulator');
@@ -42,11 +49,15 @@ export const useEvents = () => {
       if (!silent) {
         setLoading(true);
       }
+      console.log('🔍 Fetching events from:', `${API_URL}/events`);
       const res = await fetch(`${API_URL}/events`);
+      console.log('📡 Response status:', res.status);
       const data = await res.json();
+      console.log('📦 Events received:', data.events?.length || 0);
       setEvents(data.events || []);
       setError(null);
     } catch (e) {
+      console.error('❌ Error fetching events:', e);
       setError('Failed to fetch events');
       setEvents([]);
     } finally {
