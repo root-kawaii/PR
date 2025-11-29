@@ -64,7 +64,6 @@ export const TableReservationModal = ({
   const { user } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [numPeople, setNumPeople] = useState(1);
-  const [customAmount, setCustomAmount] = useState("");
   const [nome, setNome] = useState("");
   const [cognome, setCognome] = useState("");
   const [email, setEmail] = useState("");
@@ -77,7 +76,6 @@ export const TableReservationModal = ({
   useEffect(() => {
     if (visible && table) {
       setNumPeople(1);
-      setCustomAmount("");
       setNome("");
       setCognome("");
       setEmail(user?.email || "");
@@ -97,11 +95,9 @@ export const TableReservationModal = ({
     (table.minSpend || "0").replace(/[^0-9.]/g, "")
   );
 
-  // Use custom amount if set, otherwise calculate from number of people
+  // Calculate total cost based on number of people
   const calculatedAmount = minSpendPerPerson * numPeople;
-  const totalCost = customAmount
-    ? parseFloat(customAmount).toFixed(2)
-    : calculatedAmount.toFixed(2);
+  const totalCost = calculatedAmount.toFixed(2);
 
   const minPeople = Math.ceil(
     parseFloat((table.totalCost || "0").replace(/[^0-9.]/g, "")) /
@@ -113,21 +109,13 @@ export const TableReservationModal = ({
   const incrementPeople = () => {
     if (numPeople < table.capacity) {
       setNumPeople(numPeople + 1);
-      setCustomAmount(""); // Clear custom amount when using buttons
     }
   };
 
   const decrementPeople = () => {
     if (numPeople > 1) {
       setNumPeople(numPeople - 1);
-      setCustomAmount(""); // Clear custom amount when using buttons
     }
-  };
-
-  const handleAmountChange = (value: string) => {
-    // Only allow numbers and decimal point
-    const filtered = value.replace(/[^0-9.]/g, "");
-    setCustomAmount(filtered);
   };
 
   const handleReservation = async () => {
@@ -136,6 +124,16 @@ export const TableReservationModal = ({
       Alert.alert(
         "Campi obbligatori",
         "Compila tutti i campi obbligatori (Nome, Cognome, Email, Telefono)"
+      );
+      return;
+    }
+
+    // Validate that if numPeople > 1, guest phone numbers are provided
+    const requiredGuests = numPeople - 1; // Owner is already counted
+    if (guestPhones.length < requiredGuests) {
+      Alert.alert(
+        "Numeri ospiti richiesti",
+        `Hai selezionato ${numPeople} ${numPeople === 1 ? 'persona' : 'persone'}. Devi fornire ${requiredGuests} ${requiredGuests === 1 ? 'numero di telefono ospite' : 'numeri di telefono ospiti'}.`
       );
       return;
     }
@@ -380,28 +378,6 @@ export const TableReservationModal = ({
                     <ThemedText style={styles.peopleButtonText}>+</ThemedText>
                   </TouchableOpacity>
                 </View>
-              </View>
-
-              {/* Amount input */}
-              <View style={styles.amountInputContainer}>
-                <ThemedText style={styles.amountInputLabel}>
-                  Il tuo importo (€)
-                </ThemedText>
-                <View style={styles.amountInputWrapper}>
-                  <ThemedText style={styles.euroPrefix}>€</ThemedText>
-                  <TextInput
-                    style={styles.amountInput}
-                    placeholder={calculatedAmount.toFixed(2)}
-                    placeholderTextColor="#666"
-                    value={customAmount}
-                    onChangeText={handleAmountChange}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-                <ThemedText style={styles.minSpendText}>
-                  Minimo {table.minSpend} per persona • Minimo totale: €
-                  {minTotalSpend.toFixed(2)}
-                </ThemedText>
               </View>
 
               {/* Table Info Box */}

@@ -1,0 +1,1 @@
+ALTER TABLE table_reservations ADD COLUMN IF NOT EXISTS ticket_ids UUID[];

@@ -473,11 +473,11 @@ pub async fn get_tickets_for_reservation(
 pub async fn create_payment_intent(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreatePaymentIntentRequest>,
-) -> Result<Json<CreatePaymentIntentResponse>, StatusCode> {
+) -> Result<Json<CreatePaymentIntentResponse>, (StatusCode, String)> {
     // Parse UUIDs
-    let table_id = Uuid::parse_str(&req.table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let event_id = Uuid::parse_str(&req.event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let owner_user_id = Uuid::parse_str(&req.owner_user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let table_id = Uuid::parse_str(&req.table_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
+    let event_id = Uuid::parse_str(&req.event_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
+    let owner_user_id = Uuid::parse_str(&req.owner_user_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
 
     // Step 1: Look up guest users by phone numbers to validate they exist
     let mut guest_user_ids: Vec<Uuid> = Vec::new();
@@ -485,12 +485,13 @@ pub async fn create_payment_intent(
         match user_persistence::find_user_by_phone(&state.db_pool, phone).await {
             Ok(Some(user)) => guest_user_ids.push(user.id),
             Ok(None) => {
-                eprintln!("User not found for phone: {}", phone);
-                return Err(StatusCode::BAD_REQUEST);
+                let error_msg = format!("Utente non trovato per il numero di telefono: {}", phone);
+                eprintln!("{}", error_msg);
+                return Err((StatusCode::BAD_REQUEST, error_msg));
             }
             Err(e) => {
                 eprintln!("Database error looking up user: {}", e);
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string()));
             }
         }
     }
@@ -498,7 +499,7 @@ pub async fn create_payment_intent(
     // Step 2: Get table to calculate payment amount
     let table = match table_persistence::get_table_by_id(&state.db_pool, table_id).await {
         Ok(t) => t,
-        Err(_) => return Err(StatusCode::NOT_FOUND),
+        Err(_) => return Err((StatusCode::NOT_FOUND, "Tavolo non trovato".to_string())),
     };
 
     // Calculate total amount: min_spend × (owner + guests)
@@ -510,7 +511,7 @@ pub async fn create_payment_intent(
     let amount_in_cents = total_amount.to_f64()
         .ok_or_else(|| {
             eprintln!("Invalid amount: {}", total_amount);
-            StatusCode::INTERNAL_SERVER_ERROR
+            (StatusCode::INTERNAL_SERVER_ERROR, "Importo non valido".to_string())
         })? * 100.0;
 
     let mut params = CreatePaymentIntent::new(amount_in_cents as i64, Currency::EUR);
@@ -538,7 +539,7 @@ pub async fn create_payment_intent(
         .await
         .map_err(|e| {
             eprintln!("Stripe API error: {:?}", e);
-            StatusCode::BAD_GATEWAY
+            (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
         })?;
 
     println!("✅ Stripe Payment Intent created: {}", payment_intent.id);
@@ -548,7 +549,7 @@ pub async fn create_payment_intent(
     let client_secret = payment_intent.client_secret
         .ok_or_else(|| {
             eprintln!("No client_secret in PaymentIntent response");
-            StatusCode::INTERNAL_SERVER_ERROR
+            (StatusCode::INTERNAL_SERVER_ERROR, "Risposta di pagamento non valida".to_string())
         })?;
 
     Ok(Json(CreatePaymentIntentResponse {
