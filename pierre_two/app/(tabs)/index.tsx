@@ -11,7 +11,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar } from "react-native-calendars";
-import Constants from "expo-constants";
 import { ThemedView } from "@/components/themed-view";
 import { SearchBar } from "@/components/home/SearchBar";
 import { EventCard } from "@/components/home/EventCard";
@@ -24,30 +23,7 @@ import { useEvents } from "@/hooks/useEvents";
 import { useModal } from "@/hooks/useModal";
 import { Event, Table, TableReservation } from "@/types";
 import { useLocalSearchParams } from "expo-router";
-
-// Helper function to get API URL with environment variable support
-const getApiUrl = () => {
-  // Use production URL from app.json extra config if available
-  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
-  if (apiUrl) {
-    return apiUrl;
-  }
-
-  // Fall back to local development
-  const isDevice = Constants.isDevice;
-  const isSimulator =
-    Constants.deviceName?.includes("Simulator") ||
-    Constants.deviceName?.includes("Emulator");
-
-  if (isSimulator === true) {
-    if (Platform.OS === "android") return "http://10.0.2.2:3000";
-    return "http://127.0.0.1:3000";
-  }
-  if (isDevice === true || (isDevice !== false && !isSimulator)) {
-    return "http://172.20.10.5:3000";
-  }
-  return "http://127.0.0.1:3000";
-};
+import { API_URL } from "@/config/api";
 
 export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -107,13 +83,13 @@ export default function HomeScreen() {
   const extractEventDate = (dateStr: string): string | null => {
     try {
       // Handle ISO format: '2024-12-27T23:00:00' or '2024-12-27'
-      if (dateStr.includes('T')) {
-        return dateStr.split('T')[0];
+      if (dateStr.includes("T")) {
+        return dateStr.split("T")[0];
       }
 
       // Handle date with space separator: '2024-12-27 23:00:00'
-      if (dateStr.includes(' ') && !dateStr.includes('|')) {
-        const datePart = dateStr.split(' ')[0];
+      if (dateStr.includes(" ") && !dateStr.includes("|")) {
+        const datePart = dateStr.split(" ")[0];
         // Verify it's in YYYY-MM-DD format
         if (datePart.match(/^\d{4}-\d{2}-\d{2}$/)) {
           return datePart;
@@ -129,14 +105,17 @@ export default function HomeScreen() {
       // This is a legacy format that should not be in the database
       // Just skip these events for now
       if (dateStr.match(/^\d{1,2}\s+[A-Z]{3}/)) {
-        console.warn('Skipping event with legacy Italian date format:', dateStr);
+        console.warn(
+          "Skipping event with legacy Italian date format:",
+          dateStr
+        );
         return null;
       }
 
-      console.warn('Unexpected date format:', dateStr);
+      console.warn("Unexpected date format:", dateStr);
       return null;
     } catch (e) {
-      console.error('Error extracting date:', dateStr, e);
+      console.error("Error extracting date:", dateStr, e);
       return null;
     }
   };
@@ -193,9 +172,9 @@ export default function HomeScreen() {
     try {
       // Parse date string manually to avoid timezone issues
       // dateStr format: 'YYYY-MM-DD'
-      const parts = dateStr.split('-');
+      const parts = dateStr.split("-");
       if (parts.length !== 3) {
-        throw new Error('Invalid date format');
+        throw new Error("Invalid date format");
       }
 
       const year = parseInt(parts[0], 10);
@@ -203,7 +182,7 @@ export default function HomeScreen() {
       const day = parseInt(parts[2], 10);
 
       if (isNaN(year) || isNaN(month) || isNaN(day)) {
-        throw new Error('Invalid date components');
+        throw new Error("Invalid date components");
       }
 
       const date = new Date(year, month - 1, day);
@@ -213,7 +192,7 @@ export default function HomeScreen() {
 
       return `${dayName}, ${day} ${monthName}`;
     } catch (e) {
-      console.error('Error formatting date header:', dateStr, e);
+      console.error("Error formatting date header:", dateStr, e);
       return dateStr; // Fallback to showing the raw date string
     }
   };
@@ -225,8 +204,6 @@ export default function HomeScreen() {
   };
 
   const handleReservationCodeSubmit = async (code: string) => {
-    const API_URL = getApiUrl();
-
     try {
       const response = await fetch(`${API_URL}/reservations/code/${code}`);
 

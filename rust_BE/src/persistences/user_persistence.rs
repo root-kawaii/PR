@@ -1,4 +1,5 @@
 use crate::models::User;
+use chrono::NaiveDate;
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
@@ -9,12 +10,13 @@ pub async fn create_user(
     password_hash: String,
     name: String,
     phone_number: Option<String>,
+    date_of_birth: NaiveDate,
 ) -> Result<User> {
     let user = sqlx::query_as::<_, User>(
         r#"
-        INSERT INTO users (id, email, password_hash, name, phone_number, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-        RETURNING id, email, password_hash, name, phone_number, avatar_url, created_at, updated_at
+        INSERT INTO users (id, email, password_hash, name, phone_number, date_of_birth, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        RETURNING id, email, password_hash, name, phone_number, avatar_url, date_of_birth, created_at, updated_at
         "#,
     )
     .bind(Uuid::new_v4())
@@ -22,6 +24,7 @@ pub async fn create_user(
     .bind(password_hash)
     .bind(name)
     .bind(phone_number)
+    .bind(date_of_birth)
     .fetch_one(pool)
     .await?;
 
@@ -32,7 +35,7 @@ pub async fn create_user(
 pub async fn find_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User>> {
     let user = sqlx::query_as::<_, User>(
         r#"
-        SELECT id, email, password_hash, name, phone_number, avatar_url, created_at, updated_at
+        SELECT id, email, password_hash, name, phone_number, avatar_url, date_of_birth, created_at, updated_at
         FROM users
         WHERE email = $1
         "#,
@@ -48,7 +51,7 @@ pub async fn find_user_by_email(pool: &PgPool, email: &str) -> Result<Option<Use
 pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<Option<User>> {
     let user = sqlx::query_as::<_, User>(
         r#"
-        SELECT id, email, password_hash, name, phone_number, avatar_url, created_at, updated_at
+        SELECT id, email, password_hash, name, phone_number, avatar_url, date_of_birth, created_at, updated_at
         FROM users
         WHERE id = $1
         "#,
@@ -64,7 +67,7 @@ pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<Option<User
 pub async fn find_user_by_phone(pool: &PgPool, phone_number: &str) -> Result<Option<User>> {
     let user = sqlx::query_as::<_, User>(
         r#"
-        SELECT id, email, password_hash, name, phone_number, avatar_url, created_at, updated_at
+        SELECT id, email, password_hash, name, phone_number, avatar_url, date_of_birth, created_at, updated_at
         FROM users
         WHERE phone_number = $1
         "#,
@@ -96,7 +99,7 @@ pub async fn update_last_login(pool: &PgPool, user_id: Uuid) -> Result<()> {
 pub async fn get_all_users(pool: &PgPool) -> Result<Vec<User>> {
     let users = sqlx::query_as::<_, User>(
         r#"
-        SELECT id, email, password_hash, name, phone_number, avatar_url, created_at, updated_at
+        SELECT id, email, password_hash, name, phone_number, avatar_url, date_of_birth, created_at, updated_at
         FROM users
         ORDER BY created_at DESC
         "#,

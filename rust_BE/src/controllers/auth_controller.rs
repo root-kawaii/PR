@@ -47,6 +47,7 @@ pub async fn register(
         password_hash,
         payload.name,
         payload.phone_number,
+        payload.date_of_birth,
     )
     .await
     {

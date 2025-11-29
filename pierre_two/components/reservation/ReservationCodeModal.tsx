@@ -1,7 +1,7 @@
 // ====================================
 // components/reservation/ReservationCodeModal.tsx
 // ====================================
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Modal,
   View,
@@ -11,9 +11,9 @@ import {
   ActivityIndicator,
   Keyboard,
   TouchableWithoutFeedback,
-} from 'react-native';
-import { ThemedText } from '@/components/themed-text';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+} from "react-native";
+import { ThemedText } from "@/components/themed-text";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 
 type ReservationCodeModalProps = {
   visible: boolean;
@@ -26,33 +26,33 @@ export const ReservationCodeModal = ({
   onClose,
   onSubmit,
 }: ReservationCodeModalProps) => {
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleSubmit = async () => {
     if (!code.trim()) {
-      setError('Inserisci un codice prenotazione');
+      setError("Inserisci un codice prenotazione");
       return;
     }
 
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
       await onSubmit(code.trim());
-      setCode('');
-      setError('');
+      setCode("");
+      setError("");
     } catch (err: any) {
-      setError(err.message || 'Prenotazione non trovata');
+      setError(err.message || "Prenotazione non trovata");
     } finally {
       setLoading(false);
     }
   };
 
   const handleClose = () => {
-    setCode('');
-    setError('');
+    setCode("");
+    setError("");
     onClose();
   };
 
@@ -71,7 +71,10 @@ export const ReservationCodeModal = ({
                 {/* Header */}
                 <View style={styles.header}>
                   <ThemedText style={styles.title}>Inserisci Codice</ThemedText>
-                  <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+                  <TouchableOpacity
+                    onPress={handleClose}
+                    style={styles.closeButton}
+                  >
                     <IconSymbol name="xmark" size={24} color="#9ca3af" />
                   </TouchableOpacity>
                 </View>
@@ -79,7 +82,8 @@ export const ReservationCodeModal = ({
                 {/* Content */}
                 <View style={styles.content}>
                   <ThemedText style={styles.description}>
-                    Inserisci il codice della prenotazione per visualizzare i dettagli e contribuire al pagamento.
+                    Inserisci il codice della prenotazione per visualizzare i
+                    dettagli e contribuire al pagamento.
                   </ThemedText>
 
                   <TextInput
@@ -89,7 +93,7 @@ export const ReservationCodeModal = ({
                     value={code}
                     onChangeText={(text) => {
                       setCode(text);
-                      setError('');
+                      setError("");
                     }}
                     autoCapitalize="characters"
                     autoCorrect={false}
@@ -98,7 +102,11 @@ export const ReservationCodeModal = ({
 
                   {error ? (
                     <View style={styles.errorContainer}>
-                      <IconSymbol name="exclamationmark.triangle.fill" size={16} color="#ef4444" />
+                      <IconSymbol
+                        name="exclamationmark.triangle.fill"
+                        size={16}
+                        color="#ef4444"
+                      />
                       <ThemedText style={styles.errorText}>{error}</ThemedText>
                     </View>
                   ) : null}
@@ -111,18 +119,26 @@ export const ReservationCodeModal = ({
                     onPress={handleClose}
                     disabled={loading}
                   >
-                    <ThemedText style={styles.cancelButtonText}>Annulla</ThemedText>
+                    <ThemedText style={styles.cancelButtonText}>
+                      Annulla
+                    </ThemedText>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.button, styles.submitButton, loading && styles.buttonDisabled]}
+                    style={[
+                      styles.button,
+                      styles.submitButton,
+                      loading && styles.buttonDisabled,
+                    ]}
                     onPress={handleSubmit}
                     disabled={loading}
                   >
                     {loading ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <ThemedText style={styles.submitButtonText}>Cerca</ThemedText>
+                      <ThemedText style={styles.submitButtonText}>
+                        Cerca
+                      </ThemedText>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -138,31 +154,31 @@ export const ReservationCodeModal = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
   modal: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: "#1a1a1a",
     borderRadius: 20,
-    width: '100%',
+    width: "100%",
     maxWidth: 400,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
+    borderColor: "#2a2a2a",
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#2a2a2a',
+    borderBottomColor: "#2a2a2a",
   },
   title: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: "700",
+    color: "#fff",
   },
   closeButton: {
     padding: 4,
@@ -172,33 +188,33 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: "#9ca3af",
     marginBottom: 20,
     lineHeight: 20,
   },
   input: {
-    backgroundColor: '#0f0f0f',
+    backgroundColor: "#0f0f0f",
     borderWidth: 1,
-    borderColor: '#2a2a2a',
+    borderColor: "#2a2a2a",
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
+    color: "#fff",
+    fontWeight: "600",
     letterSpacing: 1,
   },
   errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 12,
     gap: 8,
   },
   errorText: {
     fontSize: 13,
-    color: '#ef4444',
+    color: "#ef4444",
   },
   actions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     padding: 20,
     gap: 12,
   },
@@ -206,24 +222,24 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   cancelButton: {
-    backgroundColor: '#2a2a2a',
+    backgroundColor: "#2a2a2a",
   },
   cancelButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#9ca3af',
+    fontWeight: "600",
+    color: "#9ca3af",
   },
   submitButton: {
-    backgroundColor: '#ec4899',
+    backgroundColor: "#ec4899",
   },
   submitButtonText: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: "700",
+    color: "#fff",
   },
   buttonDisabled: {
     opacity: 0.6,

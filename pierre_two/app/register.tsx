@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function RegisterScreen() {
   const [name, setName] = useState('');
@@ -9,13 +10,15 @@ export default function RegisterScreen() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState<Date | undefined>(undefined);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { register } = useAuth();
   const router = useRouter();
 
   const handleRegister = async () => {
     // Validation
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !dateOfBirth) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
@@ -42,12 +45,25 @@ export default function RegisterScreen() {
         email: email.trim(),
         password,
         phone_number: phone.trim() || undefined,
+        date_of_birth: dateOfBirth.toISOString().split('T')[0],
       });
       router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Registration Failed', error.message || 'Could not create account');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const formatDate = (date: Date | undefined) => {
+    if (!date) return 'Not Set';
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setDateOfBirth(selectedDate);
     }
   };
 
@@ -91,6 +107,26 @@ export default function RegisterScreen() {
               keyboardType="phone-pad"
               editable={!isLoading}
             />
+
+            <TouchableOpacity
+              style={styles.input}
+              onPress={() => setShowDatePicker(true)}
+              disabled={isLoading}
+            >
+              <Text style={dateOfBirth ? styles.datePickerText : styles.datePickerPlaceholder}>
+                {dateOfBirth ? formatDate(dateOfBirth) : 'Date of Birth'}
+              </Text>
+            </TouchableOpacity>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={dateOfBirth || new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={onDateChange}
+                maximumDate={new Date()}
+              />
+            )}
 
             <TextInput
               style={styles.input}
@@ -200,5 +236,13 @@ const styles = StyleSheet.create({
     color: '#6C63FF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  datePickerText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  datePickerPlaceholder: {
+    color: '#999',
+    fontSize: 16,
   },
 });

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -12,6 +12,7 @@ pub struct User {
     pub name: String,
     pub phone_number: Option<String>,
     pub avatar_url: Option<String>,
+    pub date_of_birth: Option<NaiveDate>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -23,6 +24,7 @@ pub struct UserResponse {
     pub name: String,
     pub phone_number: Option<String>,
     pub avatar_url: Option<String>,
+    pub date_of_birth: Option<NaiveDate>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -35,6 +37,7 @@ impl From<User> for UserResponse {
             name: user.name,
             phone_number: user.phone_number,
             avatar_url: user.avatar_url,
+            date_of_birth: user.date_of_birth,
             created_at: user.created_at,
             updated_at: user.updated_at,
         }
@@ -47,6 +50,7 @@ pub struct RegisterRequest {
     pub password: String,
     pub name: String,
     pub phone_number: Option<String>,
+    pub date_of_birth: NaiveDate,
 }
 
 #[derive(Debug, Deserialize)]

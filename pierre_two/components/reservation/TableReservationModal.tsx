@@ -19,8 +19,8 @@ import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Table, Event } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
-import Constants from 'expo-constants';
-import { useStripe } from '@stripe/stripe-react-native';
+import { useStripe } from "@stripe/stripe-react-native";
+import { API_URL } from "@/config/api";
 
 type TableReservationModalProps = {
   visible: boolean;
@@ -28,32 +28,6 @@ type TableReservationModalProps = {
   event: Event | null;
   onClose: () => void;
 };
-
-// Platform-aware API URL with environment variable support
-const getApiUrl = () => {
-  // Use production URL from app.json extra config if available
-  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
-  if (apiUrl) {
-    return apiUrl;
-  }
-
-  // Fall back to local development
-  const isDevice = Constants.isDevice;
-  const isSimulator = Constants.deviceName?.includes('Simulator') ||
-                      Constants.deviceName?.includes('Emulator');
-
-  if (isSimulator) {
-    return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://127.0.0.1:3000';
-  }
-
-  if (isDevice) {
-    return 'http://172.20.10.5:3000';
-  }
-
-  return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://127.0.0.1:3000';
-};
-
-const API_URL = getApiUrl();
 
 export const TableReservationModal = ({
   visible,
@@ -133,7 +107,13 @@ export const TableReservationModal = ({
     if (guestPhones.length < requiredGuests) {
       Alert.alert(
         "Numeri ospiti richiesti",
-        `Hai selezionato ${numPeople} ${numPeople === 1 ? 'persona' : 'persone'}. Devi fornire ${requiredGuests} ${requiredGuests === 1 ? 'numero di telefono ospite' : 'numeri di telefono ospiti'}.`
+        `Hai selezionato ${numPeople} ${
+          numPeople === 1 ? "persona" : "persone"
+        }. Devi fornire ${requiredGuests} ${
+          requiredGuests === 1
+            ? "numero di telefono ospite"
+            : "numeri di telefono ospiti"
+        }.`
       );
       return;
     }
@@ -160,7 +140,7 @@ export const TableReservationModal = ({
 
     try {
       // Step 1: Create Stripe PaymentIntent
-      console.log('Creating payment intent...');
+      console.log("Creating payment intent...");
       const paymentIntentResponse = await fetch(
         `${API_URL}/reservations/create-payment-intent`,
         {
@@ -179,23 +159,26 @@ export const TableReservationModal = ({
 
       if (!paymentIntentResponse.ok) {
         const errorText = await paymentIntentResponse.text();
-        console.error('Payment intent error:', errorText);
+        console.error("Payment intent error:", errorText);
         throw new Error(`Failed to create payment intent: ${errorText}`);
       }
 
       const paymentIntentData = await paymentIntentResponse.json();
-      console.log('Payment intent created:', paymentIntentData.paymentIntentId);
+      console.log("Payment intent created:", paymentIntentData.paymentIntentId);
 
       // Step 2: Initialize and present Stripe payment sheet
       const { error: initError } = await initPaymentSheet({
         paymentIntentClientSecret: paymentIntentData.clientSecret,
-        merchantDisplayName: 'Pierre Two',
-        returnURL: 'pierre-two://stripe-redirect',
+        merchantDisplayName: "Pierre Two",
+        returnURL: "pierre-two://stripe-redirect",
       });
 
       if (initError) {
-        console.error('Payment sheet init error:', initError);
-        Alert.alert('Errore', 'Impossibile inizializzare il pagamento. Riprova.');
+        console.error("Payment sheet init error:", initError);
+        Alert.alert(
+          "Errore",
+          "Impossibile inizializzare il pagamento. Riprova."
+        );
         setLoading(false);
         return;
       }
@@ -203,18 +186,18 @@ export const TableReservationModal = ({
       const { error: presentError } = await presentPaymentSheet();
 
       if (presentError) {
-        if (presentError.code !== 'Canceled') {
-          console.error('Payment sheet present error:', presentError);
-          Alert.alert('Errore', 'Pagamento non riuscito. Riprova.');
+        if (presentError.code !== "Canceled") {
+          console.error("Payment sheet present error:", presentError);
+          Alert.alert("Errore", "Pagamento non riuscito. Riprova.");
         }
         setLoading(false);
         return;
       }
 
-      console.log('Payment successful');
+      console.log("Payment successful");
 
       // Step 3: Create reservation with payment
-      console.log('Creating reservation with payment...');
+      console.log("Creating reservation with payment...");
       const reservationResponse = await fetch(
         `${API_URL}/reservations/create-with-payment`,
         {
@@ -239,12 +222,12 @@ export const TableReservationModal = ({
 
       if (!reservationResponse.ok) {
         const errorText = await reservationResponse.text();
-        console.error('Reservation error:', errorText);
+        console.error("Reservation error:", errorText);
         throw new Error("Failed to create reservation");
       }
 
       const data = await reservationResponse.json();
-      console.log('Reservation created:', data);
+      console.log("Reservation created:", data);
 
       Alert.alert(
         "Prenotazione Confermata!",
@@ -298,247 +281,285 @@ export const TableReservationModal = ({
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <View>
                 {/* Table Info Card */}
-            <View style={styles.tableInfoCard}>
-              <View style={styles.locationRow}>
-                <IconSymbol name="location.fill" size={16} color="#fff" />
-                <ThemedText style={styles.tableName}>
-                  {table.name} - {table.zone || "Molto"}
-                </ThemedText>
-              </View>
-
-              {/* Event Info */}
-              <View style={styles.eventInfo}>
-                <ThemedText style={styles.eventTitle}>{event.title}</ThemedText>
-                <ThemedText style={styles.eventVenue}>{event.venue}</ThemedText>
-                <ThemedText style={styles.eventDate}>{event.date}</ThemedText>
-              </View>
-
-              {/* Characteristics */}
-              <View style={styles.characteristicsSection}>
-                <ThemedText style={styles.sectionTitle}>
-                  Caratteristiche Tavolo:
-                </ThemedText>
-                {table.features?.map((feature, index) => (
-                  <View key={index} style={styles.featureRow}>
-                    <ThemedText style={styles.bulletPoint}>•</ThemedText>
-                    <ThemedText style={styles.featureText}>
-                      {feature}
-                    </ThemedText>
-                  </View>
-                ))}
-                {table.locationDescription && (
-                  <View style={styles.featureRow}>
-                    <ThemedText style={styles.bulletPoint}>•</ThemedText>
-                    <ThemedText style={styles.featureText}>
-                      {table.locationDescription}
-                    </ThemedText>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            {/* Spend Selector */}
-            <View style={styles.spendSection}>
-              <ThemedText style={styles.spendTitle}>
-                Quanto Vuoi Spendere?
-              </ThemedText>
-
-              {/* Number of people selector */}
-              <View style={styles.peopleSelectorContainer}>
-                <ThemedText style={styles.peopleSelectorLabel}>
-                  Numero di persone
-                </ThemedText>
-                <View style={styles.peopleSelector}>
-                  <TouchableOpacity
-                    onPress={decrementPeople}
-                    style={[
-                      styles.peopleButton,
-                      numPeople <= 1 && styles.peopleButtonDisabled,
-                    ]}
-                    disabled={numPeople <= 1}
-                  >
-                    <ThemedText style={styles.peopleButtonText}>−</ThemedText>
-                  </TouchableOpacity>
-
-                  <View style={styles.peopleDisplay}>
-                    <ThemedText style={styles.peopleNumber}>
-                      {numPeople}
+                <View style={styles.tableInfoCard}>
+                  <View style={styles.locationRow}>
+                    <IconSymbol name="location.fill" size={16} color="#fff" />
+                    <ThemedText style={styles.tableName}>
+                      {table.name} - {table.zone || "Molto"}
                     </ThemedText>
                   </View>
 
-                  <TouchableOpacity
-                    onPress={incrementPeople}
-                    style={[
-                      styles.peopleButton,
-                      numPeople >= table.capacity &&
-                        styles.peopleButtonDisabled,
-                    ]}
-                    disabled={numPeople >= table.capacity}
-                  >
-                    <ThemedText style={styles.peopleButtonText}>+</ThemedText>
-                  </TouchableOpacity>
+                  {/* Event Info */}
+                  <View style={styles.eventInfo}>
+                    <ThemedText style={styles.eventTitle}>
+                      {event.title}
+                    </ThemedText>
+                    <ThemedText style={styles.eventVenue}>
+                      {event.venue}
+                    </ThemedText>
+                    <ThemedText style={styles.eventDate}>
+                      {event.date}
+                    </ThemedText>
+                  </View>
+
+                  {/* Characteristics */}
+                  <View style={styles.characteristicsSection}>
+                    <ThemedText style={styles.sectionTitle}>
+                      Caratteristiche Tavolo:
+                    </ThemedText>
+                    {table.features?.map((feature, index) => (
+                      <View key={index} style={styles.featureRow}>
+                        <ThemedText style={styles.bulletPoint}>•</ThemedText>
+                        <ThemedText style={styles.featureText}>
+                          {feature}
+                        </ThemedText>
+                      </View>
+                    ))}
+                    {table.locationDescription && (
+                      <View style={styles.featureRow}>
+                        <ThemedText style={styles.bulletPoint}>•</ThemedText>
+                        <ThemedText style={styles.featureText}>
+                          {table.locationDescription}
+                        </ThemedText>
+                      </View>
+                    )}
+                  </View>
                 </View>
-              </View>
 
-              {/* Table Info Box */}
-              <View style={styles.infoBox}>
-                <ThemedText style={styles.infoTitle}>Riepilogo</ThemedText>
-
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>Persone:</ThemedText>
-                  <ThemedText style={styles.infoValue}>{numPeople}</ThemedText>
-                </View>
-
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>
-                    Importo per persona:
+                {/* Spend Selector */}
+                <View style={styles.spendSection}>
+                  <ThemedText style={styles.spendTitle}>
+                    Quanto Vuoi Spendere?
                   </ThemedText>
-                  <ThemedText style={styles.infoValue}>
-                    €{(parseFloat(totalCost) / numPeople).toFixed(2)}
-                  </ThemedText>
-                </View>
 
-                <View style={[styles.infoRow, styles.totalRow]}>
-                  <ThemedText style={styles.totalLabel}>
-                    Totale da pagare:
-                  </ThemedText>
-                  <ThemedText style={[styles.infoValue, styles.highlightValue]}>
-                    €{totalCost}
-                  </ThemedText>
-                </View>
-              </View>
-            </View>
-
-            {/* Personal Information */}
-            <View style={styles.personalInfoSection}>
-              <ThemedText style={styles.sectionTitle}>
-                Informazioni Personali
-              </ThemedText>
-
-              <View style={styles.inputRow}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Nome"
-                  placeholderTextColor="#9ca3af"
-                  value={nome}
-                  onChangeText={setNome}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Cognome"
-                  placeholderTextColor="#9ca3af"
-                  value={cognome}
-                  onChangeText={setCognome}
-                />
-              </View>
-
-              <TextInput
-                style={[styles.input, styles.fullWidthInput]}
-                placeholder="Email"
-                placeholderTextColor="#9ca3af"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-
-              <TextInput
-                style={[styles.input, styles.fullWidthInput]}
-                placeholder="Telefono"
-                placeholderTextColor="#9ca3af"
-                value={telefono}
-                onChangeText={setTelefono}
-                keyboardType="phone-pad"
-              />
-
-              <ThemedText style={styles.requiredText}>
-                ⚠ Compila tutti i campi obbligatori (Nome, Cognome, Email,
-                Telefono)
-              </ThemedText>
-            </View>
-
-            {/* Guest Phone Numbers */}
-            <View style={styles.guestPhonesSection}>
-              <ThemedText style={styles.sectionTitle}>
-                Invita Ospiti (Opzionale)
-              </ThemedText>
-              <ThemedText style={styles.guestPhonesSubtitle}>
-                Aggiungi i numeri di telefono degli ospiti che condivideranno il tavolo
-              </ThemedText>
-
-              {/* Guest Phone Input */}
-              <View style={styles.guestPhoneInputRow}>
-                <TextInput
-                  style={[styles.input, styles.guestPhoneInput]}
-                  placeholder="+39 123 456 7890"
-                  placeholderTextColor="#9ca3af"
-                  value={newGuestPhone}
-                  onChangeText={setNewGuestPhone}
-                  keyboardType="phone-pad"
-                />
-                <TouchableOpacity
-                  style={[
-                    styles.addGuestButton,
-                    !newGuestPhone.trim() && styles.addGuestButtonDisabled,
-                  ]}
-                  onPress={() => {
-                    if (newGuestPhone.trim()) {
-                      setGuestPhones([...guestPhones, newGuestPhone.trim()]);
-                      setNewGuestPhone("");
-                    }
-                  }}
-                  disabled={!newGuestPhone.trim()}
-                >
-                  <IconSymbol name="plus.circle.fill" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Guest List */}
-              {guestPhones.length > 0 && (
-                <View style={styles.guestList}>
-                  <ThemedText style={styles.guestListTitle}>
-                    Ospiti aggiunti ({guestPhones.length}):
-                  </ThemedText>
-                  {guestPhones.map((phone, index) => (
-                    <View key={index} style={styles.guestItem}>
-                      <IconSymbol name="person.3.fill" size={16} color="#fff" />
-                      <ThemedText style={styles.guestPhone}>{phone}</ThemedText>
+                  {/* Number of people selector */}
+                  <View style={styles.peopleSelectorContainer}>
+                    <ThemedText style={styles.peopleSelectorLabel}>
+                      Numero di persone
+                    </ThemedText>
+                    <View style={styles.peopleSelector}>
                       <TouchableOpacity
-                        onPress={() => {
-                          setGuestPhones(guestPhones.filter((_, i) => i !== index));
-                        }}
-                        style={styles.removeGuestButton}
+                        onPress={decrementPeople}
+                        style={[
+                          styles.peopleButton,
+                          numPeople <= 1 && styles.peopleButtonDisabled,
+                        ]}
+                        disabled={numPeople <= 1}
                       >
-                        <IconSymbol name="xmark" size={20} color="#ef4444" />
+                        <ThemedText style={styles.peopleButtonText}>
+                          −
+                        </ThemedText>
+                      </TouchableOpacity>
+
+                      <View style={styles.peopleDisplay}>
+                        <ThemedText style={styles.peopleNumber}>
+                          {numPeople}
+                        </ThemedText>
+                      </View>
+
+                      <TouchableOpacity
+                        onPress={incrementPeople}
+                        style={[
+                          styles.peopleButton,
+                          numPeople >= table.capacity &&
+                            styles.peopleButtonDisabled,
+                        ]}
+                        disabled={numPeople >= table.capacity}
+                      >
+                        <ThemedText style={styles.peopleButtonText}>
+                          +
+                        </ThemedText>
                       </TouchableOpacity>
                     </View>
-                  ))}
+                  </View>
+
+                  {/* Table Info Box */}
+                  <View style={styles.infoBox}>
+                    <ThemedText style={styles.infoTitle}>Riepilogo</ThemedText>
+
+                    <View style={styles.infoRow}>
+                      <ThemedText style={styles.infoLabel}>Persone:</ThemedText>
+                      <ThemedText style={styles.infoValue}>
+                        {numPeople}
+                      </ThemedText>
+                    </View>
+
+                    <View style={styles.infoRow}>
+                      <ThemedText style={styles.infoLabel}>
+                        Importo per persona:
+                      </ThemedText>
+                      <ThemedText style={styles.infoValue}>
+                        €{(parseFloat(totalCost) / numPeople).toFixed(2)}
+                      </ThemedText>
+                    </View>
+
+                    <View style={[styles.infoRow, styles.totalRow]}>
+                      <ThemedText style={styles.totalLabel}>
+                        Totale da pagare:
+                      </ThemedText>
+                      <ThemedText
+                        style={[styles.infoValue, styles.highlightValue]}
+                      >
+                        €{totalCost}
+                      </ThemedText>
+                    </View>
+                  </View>
                 </View>
-              )}
-            </View>
 
-            {/* Reserve Button */}
-            <TouchableOpacity
-              style={[
-                styles.reserveButton,
-                loading && styles.reserveButtonDisabled,
-              ]}
-              onPress={handleReservation}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <IconSymbol name="checkmark.circle" size={20} color="#fff" />
-                  <ThemedText style={styles.reserveButtonText}>
-                    UNISCITI AL TAVOLO
+                {/* Personal Information */}
+                <View style={styles.personalInfoSection}>
+                  <ThemedText style={styles.sectionTitle}>
+                    Informazioni Personali
                   </ThemedText>
-                </>
-              )}
-            </TouchableOpacity>
 
-            <View style={{ height: 40 }} />
+                  <View style={styles.inputRow}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Nome"
+                      placeholderTextColor="#9ca3af"
+                      value={nome}
+                      onChangeText={setNome}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Cognome"
+                      placeholderTextColor="#9ca3af"
+                      value={cognome}
+                      onChangeText={setCognome}
+                    />
+                  </View>
+
+                  <TextInput
+                    style={[styles.input, styles.fullWidthInput]}
+                    placeholder="Email"
+                    placeholderTextColor="#9ca3af"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+
+                  <TextInput
+                    style={[styles.input, styles.fullWidthInput]}
+                    placeholder="Telefono"
+                    placeholderTextColor="#9ca3af"
+                    value={telefono}
+                    onChangeText={setTelefono}
+                    keyboardType="phone-pad"
+                  />
+
+                  <ThemedText style={styles.requiredText}>
+                    ⚠ Compila tutti i campi obbligatori (Nome, Cognome, Email,
+                    Telefono)
+                  </ThemedText>
+                </View>
+
+                {/* Guest Phone Numbers */}
+                <View style={styles.guestPhonesSection}>
+                  <ThemedText style={styles.sectionTitle}>
+                    Invita Ospiti (Opzionale)
+                  </ThemedText>
+                  <ThemedText style={styles.guestPhonesSubtitle}>
+                    Aggiungi i numeri di telefono degli ospiti che
+                    condivideranno il tavolo
+                  </ThemedText>
+
+                  {/* Guest Phone Input */}
+                  <View style={styles.guestPhoneInputRow}>
+                    <TextInput
+                      style={[styles.input, styles.guestPhoneInput]}
+                      placeholder="+39 123 456 7890"
+                      placeholderTextColor="#9ca3af"
+                      value={newGuestPhone}
+                      onChangeText={setNewGuestPhone}
+                      keyboardType="phone-pad"
+                    />
+                    <TouchableOpacity
+                      style={[
+                        styles.addGuestButton,
+                        !newGuestPhone.trim() && styles.addGuestButtonDisabled,
+                      ]}
+                      onPress={() => {
+                        if (newGuestPhone.trim()) {
+                          setGuestPhones([
+                            ...guestPhones,
+                            newGuestPhone.trim(),
+                          ]);
+                          setNewGuestPhone("");
+                        }
+                      }}
+                      disabled={!newGuestPhone.trim()}
+                    >
+                      <IconSymbol
+                        name="plus.circle.fill"
+                        size={24}
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Guest List */}
+                  {guestPhones.length > 0 && (
+                    <View style={styles.guestList}>
+                      <ThemedText style={styles.guestListTitle}>
+                        Ospiti aggiunti ({guestPhones.length}):
+                      </ThemedText>
+                      {guestPhones.map((phone, index) => (
+                        <View key={index} style={styles.guestItem}>
+                          <IconSymbol
+                            name="person.3.fill"
+                            size={16}
+                            color="#fff"
+                          />
+                          <ThemedText style={styles.guestPhone}>
+                            {phone}
+                          </ThemedText>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setGuestPhones(
+                                guestPhones.filter((_, i) => i !== index)
+                              );
+                            }}
+                            style={styles.removeGuestButton}
+                          >
+                            <IconSymbol
+                              name="xmark"
+                              size={20}
+                              color="#ef4444"
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {/* Reserve Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.reserveButton,
+                    loading && styles.reserveButtonDisabled,
+                  ]}
+                  onPress={handleReservation}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <IconSymbol
+                        name="checkmark.circle"
+                        size={20}
+                        color="#fff"
+                      />
+                      <ThemedText style={styles.reserveButtonText}>
+                        UNISCITI AL TAVOLO
+                      </ThemedText>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <View style={{ height: 40 }} />
               </View>
             </TouchableWithoutFeedback>
           </ScrollView>

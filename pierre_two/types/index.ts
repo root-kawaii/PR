@@ -10,7 +10,9 @@ export type Event = {
   endTime?: string;
   price?: string;
   description?: string;
-  matterportId?: string;
+  matterportId?: string; // Legacy support
+  tourProvider?: 'kuula' | 'matterport' | 'cloudpano';
+  tourId?: string;
   tables?: Table[];
 };
 
@@ -77,6 +79,7 @@ export type User = {
   name: string;
   phone_number?: string;
   avatar_url?: string;
+  date_of_birth?: string;
   created_at: string;
   updated_at: string;
 };
@@ -86,6 +89,7 @@ export type RegisterRequest = {
   password: string;
   name: string;
   phone_number?: string;
+  date_of_birth: string;
 };
 
 export type LoginRequest = {
