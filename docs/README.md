@@ -12,6 +12,7 @@ This documentation provides quick context and reference for the Pierre Two proje
 - [API Reference](./06-api-reference.md)
 - [Development Setup](./07-development-setup.md)
 - [Data Models](./08-data-models.md)
+- [Stripe Payments](./09-stripe-payments.md)
 
 ## Project Summary
 

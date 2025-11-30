@@ -475,3 +475,98 @@ Without Twilio configuration:
 - Build optimization and code cleanup
 
 All features are production-ready and tested with real Italian phone number.
+
+---
+
+## Additional Improvements
+
+### Pull-to-Refresh for Empty Ticket States
+
+**Issue**: Pull-to-refresh only worked when tickets were displayed, not in loading/error/empty states
+
+**File**: `pierre_two/app/(tabs)/tickets.tsx`
+
+**Solution**: Restructured component to wrap all content states in ScrollView with RefreshControl
+
+**Changes**:
+```typescript
+<ScrollView
+  showsVerticalScrollIndicator={false}
+  contentContainerStyle={[
+    styles.scrollContent,
+    (loading || error || filteredTickets.length === 0) && styles.scrollContentCentered
+  ]}
+  refreshControl={
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      tintColor="#db2777"
+      colors={["#db2777"]}
+      progressViewOffset={60}
+    />
+  }
+>
+  {/* All states: loading, error, empty, populated */}
+</ScrollView>
+```
+
+**New Style**:
+```typescript
+scrollContentCentered: {
+  flexGrow: 1,
+  justifyContent: 'center',
+}
+```
+
+**Effect**:
+- ✅ Pull-to-refresh works in all states
+- ✅ Empty state content remains centered
+- ✅ Consistent UX across all ticket states
+
+---
+
+## Stripe Payment Authorization & Capture
+
+### Overview
+Implemented complete backend system for Stripe payment authorization and capture, enabling 7-day fund holds for table reservations.
+
+**See**: `docs/daily-progress/2025-11-30-stripe-authorization-capture.md` for full details
+**See**: `docs/09-stripe-payments.md` for implementation guide
+
+### Quick Summary
+
+**Features Implemented**:
+1. ✅ Database schema with authorization tracking fields
+2. ✅ Payment models with new enums (PaymentStatus, PaymentCaptureMethod)
+3. ✅ Three service functions: authorize, capture, cancel
+4. ✅ Three API endpoints: POST /payments/authorize, POST /payments/:id/capture, POST /payments/:id/cancel
+5. ✅ Full and partial capture support
+
+**Use Case**:
+- Customer reserves table → funds authorized (held for 7 days)
+- Customer shows up → payment captured
+- Customer cancels → authorization cancelled, no charge
+
+**API Endpoints**:
+```bash
+# Create authorization
+POST /payments/authorize
+{ "sender_id": "uuid", "receiver_id": "uuid", "amount": 100.00 }
+
+# Capture payment
+POST /payments/{id}/capture
+{ "amount": 100.00 }  # Optional: for partial capture
+
+# Cancel authorization
+POST /payments/{id}/cancel
+```
+
+**Files Changed**:
+- `DB/migrations/021_add_payment_authorization_fields.sql` - Database schema
+- `rust_BE/src/models/payment.rs` - New enums and fields
+- `rust_BE/src/persistences/payment_persistence.rs` - Service functions
+- `rust_BE/src/controllers/payment_controller.rs` - API endpoints
+- `rust_BE/src/main.rs` - Router configuration
+- `rust_BE/src/models/mod.rs` - Type exports
+
+**Build Status**: ✅ Successful compilation (17 warnings, down from 26)

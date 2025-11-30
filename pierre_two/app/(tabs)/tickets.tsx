@@ -109,41 +109,45 @@ export default function TicketsScreen() {
           </TouchableOpacity>
         </View>
 
-        {loading ? (
-          <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#db2777" />
-            <Text style={styles.loadingText}>Loading your tickets...</Text>
-          </View>
-        ) : error ? (
-          <View style={styles.centerContainer}>
-            <IconSymbol name="exclamationmark.triangle.fill" size={48} color="#ef4444" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : filteredTickets.length === 0 ? (
-          <View style={styles.centerContainer}>
-            <IconSymbol name="ticket.fill" size={64} color="#444" />
-            <Text style={styles.emptyText}>No {filter} tickets</Text>
-            <Text style={styles.emptySubtext}>
-              {filter === 'current'
-                ? 'You have no upcoming events'
-                : 'No past tickets found'}
-            </Text>
-          </View>
-        ) : (
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor="#db2777"
-                colors={["#db2777"]}
-                progressViewOffset={60}
-              />
-            }
-          >
-            {filteredTickets.map((ticket) => {
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.scrollContent,
+            (loading || error || filteredTickets.length === 0) && styles.scrollContentCentered
+          ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#db2777"
+              colors={["#db2777"]}
+              progressViewOffset={60}
+            />
+          }
+        >
+          {loading ? (
+            <View style={styles.centerContainer}>
+              <ActivityIndicator size="large" color="#db2777" />
+              <Text style={styles.loadingText}>Loading your tickets...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.centerContainer}>
+              <IconSymbol name="exclamationmark.triangle.fill" size={48} color="#ef4444" />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : filteredTickets.length === 0 ? (
+            <View style={styles.centerContainer}>
+              <IconSymbol name="ticket.fill" size={64} color="#444" />
+              <Text style={styles.emptyText}>No {filter} tickets</Text>
+              <Text style={styles.emptySubtext}>
+                {filter === 'current'
+                  ? 'You have no upcoming events'
+                  : 'No past tickets found'}
+              </Text>
+            </View>
+          ) : (
+            <>
+              {filteredTickets.map((ticket) => {
               const isExpanded = expandedTicket === ticket.id;
 
               return (
@@ -261,8 +265,9 @@ export default function TicketsScreen() {
             })}
 
             <View style={{ height: 20 }} />
-          </ScrollView>
-        )}
+            </>
+          )}
+        </ScrollView>
       </ThemedView>
     </SafeAreaView>
   );
@@ -356,6 +361,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+  },
+  scrollContentCentered: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   ticketCard: {
     borderRadius: 20,
