@@ -1,0 +1,225 @@
+warning: unused imports: `delete` and `put`
+ --> src/main.rs:7:26
+  |
+7 |     routing::{get, post, put, delete},
+  |                          ^^^  ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused imports: `TableReservationPayment` and `TableReservationTicket`
+  --> src/models/mod.rs:28:19
+   |
+28 |     TableSummary, TableReservationPayment, TableReservationTicket,
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `response::IntoResponse`
+ --> src/controllers/auth_controller.rs:5:52
+  |
+5 | use axum::{extract::State, http::StatusCode, Json, response::IntoResponse};
+  |                                                    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Duration` and `Utc`
+  --> src/controllers/auth_controller.rs:10:14
+   |
+10 | use chrono::{Utc, Duration};
+   |              ^^^  ^^^^^^^^
+
+warning: unused import: `axum::Json`
+ --> src/persistences/event_persistence.rs:4:5
+  |
+4 | use axum::Json;
+  |     ^^^^^^^^^^
+
+warning: unused import: `Decimal`
+ --> src/persistences/payment_persistence.rs:2:20
+  |
+2 | use rust_decimal::{Decimal, prelude::ToPrimitive};
+  |                    ^^^^^^^
+
+warning: unused import: `axum::Json`
+ --> src/persistences/payment_persistence.rs:5:5
+  |
+5 | use axum::Json;
+  |     ^^^^^^^^^^
+
+warning: unused import: `chrono::Utc`
+ --> src/persistences/table_persistence.rs:5:5
+  |
+5 | use chrono::Utc;
+  |     ^^^^^^^^^^^
+
+warning: unused import: `Serialize`
+ --> src/services/sms_service.rs:2:26
+  |
+2 | use serde::{Deserialize, Serialize};
+  |                          ^^^^^^^^^
+
+warning: unused imports: `delete_events`, `get_all_events as get_all_events_old`, `get_events as get_events_old`, and `post_events`
+  --> src/main.rs:28:5
+   |
+28 |     get_all_events as get_all_events_old,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+29 |     get_events as get_events_old,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+30 |     post_events,
+   |     ^^^^^^^^^^^
+31 |     delete_events,
+   |     ^^^^^^^^^^^^^
+
+warning: fields `title`, `description`, `video_url`, `insert_date`, and `update_date` are never read
+  --> src/models/event.rs:18:9
+   |
+17 | pub struct EventRequest {
+   |            ------------ fields in this struct
+18 |     pub title: String,
+   |         ^^^^^
+19 |     pub description: String,
+   |         ^^^^^^^^^^^
+20 |     pub video_url: Option<String>,
+   |         ^^^^^^^^^
+21 |     pub insert_date: Option<chrono::NaiveDateTime>,
+   |         ^^^^^^^^^^^
+22 |     pub update_date: Option<chrono::NaiveDateTime>,
+   |         ^^^^^^^^^^^
+   |
+   = note: `EventRequest` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: field `stripe_payment_intent_id` is never read
+  --> src/models/payment.rs:35:9
+   |
+29 | pub struct PaymentRequest {
+   |            -------------- field in this struct
+...
+35 |     pub stripe_payment_intent_id: Option<String>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `PaymentRequest` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: function `get_all_events` is never used
+  --> src/controllers/event_controller.rs:18:14
+   |
+18 | pub async fn get_all_events(
+   |              ^^^^^^^^^^^^^^
+
+warning: function `get_events` is never used
+  --> src/controllers/event_controller.rs:25:14
+   |
+25 | pub async fn get_events(
+   |              ^^^^^^^^^^
+
+warning: function `post_events` is never used
+  --> src/controllers/event_controller.rs:33:14
+   |
+33 | pub async fn post_events(
+   |              ^^^^^^^^^^^
+
+warning: function `delete_events` is never used
+  --> src/controllers/event_controller.rs:41:14
+   |
+41 | pub async fn delete_events(
+   |              ^^^^^^^^^^^^^
+
+warning: function `me` is never used
+   --> src/controllers/auth_controller.rs:121:14
+    |
+121 | pub async fn me(
+    |              ^^
+
+warning: function `load_all_events_service` is never used
+ --> src/persistences/event_persistence.rs:6:14
+  |
+6 | pub async fn load_all_events_service(app_state: &AppState) -> Result<Vec<EventEntity>, StatusCode> {
+  |              ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `load_event_service` is never used
+  --> src/persistences/event_persistence.rs:18:14
+   |
+18 | pub async fn load_event_service(id: Uuid, app_state: &AppState) -> Result<EventEntity, StatusCode> {
+   |              ^^^^^^^^^^^^^^^^^^
+
+warning: function `create_event_service` is never used
+  --> src/persistences/event_persistence.rs:32:14
+   |
+32 | pub async fn create_event_service(payload: EventRequest, app_state: &AppState) -> Result<EventEntity, StatusCode> {
+   |              ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `erase_event_service` is never used
+  --> src/persistences/event_persistence.rs:95:14
+   |
+95 | pub async fn erase_event_service(id: Uuid, app_state: &AppState) -> Result<u64, StatusCode> {
+   |              ^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_all_users` is never used
+  --> src/persistences/user_persistence.rs:99:14
+   |
+99 | pub async fn get_all_users(pool: &PgPool) -> Result<Vec<User>> {
+   |              ^^^^^^^^^^^^^
+
+warning: function `delete_user` is never used
+   --> src/persistences/user_persistence.rs:114:14
+    |
+114 | pub async fn delete_user(pool: &PgPool, user_id: Uuid) -> Result<()> {
+    |              ^^^^^^^^^^^
+
+warning: function `get_tickets_by_user_id` is never used
+  --> src/persistences/ticket_persistence.rs:21:14
+   |
+21 | pub async fn get_tickets_by_user_id(pool: &PgPool, user_id: Uuid) -> Result<Vec<Ticket>> {
+   |              ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_reservations_by_user_id` is never used
+   --> src/persistences/table_persistence.rs:207:14
+    |
+207 | pub async fn get_reservations_by_user_id(pool: &PgPool, user_id: Uuid) -> Result<Vec<TableReservation>, sqlx::Error> {
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_token` is never used
+  --> src/utils/jwt.rs:32:8
+   |
+32 | pub fn validate_token(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+   |        ^^^^^^^^^^^^^^
+
+warning: `rust_BE` (bin "rust_BE") generated 26 warnings (run `cargo fix --bin "rust_BE"` to apply 10 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s
+     Running `target/debug/rust_BE`
+✅ Stripe API Key loaded
+✅ JWT Secret loaded
+✅ Connected to PostgreSQL database
+🚀 Server running on http://0.0.0.0:3000
+   Local: http://127.0.0.1:3000
+   Network: http://172.20.10.5:3000
+📝 Available endpoints:
+   POST           /auth/register
+   POST           /auth/login
+   POST           /auth/send-sms-verification
+   POST           /auth/verify-sms-code
+   GET/POST       /events
+   GET/PUT/DELETE /events/:id
+   GET/POST       /genres
+   GET/PUT/DELETE /genres/:id
+   GET/POST       /clubs
+   GET/PUT/DELETE /clubs/:id
+   GET/POST       /tickets
+   GET/PUT/DELETE /tickets/:id
+   GET            /tickets/code/:code
+   GET            /tickets/user/:user_id
+   GET/POST       /tables
+   GET/PUT/DELETE /tables/:id
+   GET            /tables/event/:event_id
+   GET            /tables/event/:event_id/available
+   GET            /reservations
+   GET/PUT/DELETE /reservations/:id
+   GET            /reservations/code/:code
+   GET/POST       /reservations/user/:user_id
+   GET            /reservations/table/:table_id
+   POST           /reservations/:reservation_id/payments
+   GET/POST       /reservations/:reservation_id/tickets
+   GET/POST       /payments
+   GET/DELETE     /payments/:id
+❌ Failed to send verification SMS: {"code":20003,"message":"Authenticate","more_info":"https://www.twilio.com/docs/errors/20003","status":401}
+SMS sending error: Twilio Verify API error: {"code":20003,"message":"Authenticate","more_info":"https://www.twilio.com/docs/errors/20003","status":401}
+❌ Failed to send verification SMS: {"code":20003,"message":"Authenticate","more_info":"https://www.twilio.com/docs/errors/20003","status":401}
+SMS sending error: Twilio Verify API error: {"code":20003,"message":"Authenticate","more_info":"https://www.twilio.com/docs/errors/20003","status":401}
+❌ Failed to send verification SMS: {"code":20003,"message":"Authenticate","more_info":"https://www.twilio.com/docs/errors/20003","status":401}
+SMS sending error: Twilio Verify API error: {"code":20003,"message":"Authenticate","more_info":"https://www.twilio.com/docs/errors/20003","status":401}

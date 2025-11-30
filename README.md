@@ -1,5 +1,8 @@
 ### TODO
 
+- Enable reload for tickets even when i dont have any
+- Check for memory leaks in backend with system activity
+
 - Focus on UI
   -- Calendar on search bar
   -- remove clubs and genres -> do day by day view
