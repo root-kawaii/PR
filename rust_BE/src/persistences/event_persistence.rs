@@ -1,7 +1,6 @@
 use crate::models::{EventEntity, EventRequest, AppState};
 use uuid::Uuid;
 use axum::http::StatusCode;
-use axum::Json;
 
 pub async fn load_all_events_service(app_state: &AppState) -> Result<Vec<EventEntity>, StatusCode> {
     sqlx::query_as::<_, EventEntity>(

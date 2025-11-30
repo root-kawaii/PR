@@ -2,7 +2,6 @@ use crate::models::{Table, TableReservation};
 use sqlx::PgPool;
 use uuid::Uuid;
 use rust_decimal::Decimal;
-use chrono::Utc;
 
 // ============================================================================
 // Tables CRUD
@@ -293,26 +292,49 @@ pub async fn get_reservation_with_details_by_code(
 }
 
 /// Get reservations with table and event details joined (for user view)
-/// Split into 16 fields to fit SQLx tuple limit
+/// Returns in two 16-field queries to work around SQLx tuple limit
 pub async fn get_reservations_with_details_by_user_id(
     pool: &PgPool,
     user_id: Uuid,
-) -> Result<Vec<(Uuid, String, String, i32, Decimal, Decimal, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>, String, i32, Decimal, String, String)>, sqlx::Error> {
-    let results = sqlx::query_as::<_, (Uuid, String, String, i32, Decimal, Decimal, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>, String, i32, Decimal, String, String)>(
+) -> Result<Vec<(Uuid, String, String, i32, Decimal, Decimal, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>, Uuid, String, Option<String>, i32, Decimal)>, sqlx::Error> {
+    // Query part 1: reservation + table details (16 fields)
+    let results = sqlx::query_as::<_, (Uuid, String, String, i32, Decimal, Decimal, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>, Uuid, String, Option<String>, i32, Decimal)>(
         r#"
         SELECT
             r.id, r.reservation_code, r.status, r.num_people, r.total_amount, r.amount_paid,
             r.contact_name, r.contact_email, r.contact_phone, r.special_requests, r.created_at,
-            t.name as table_name, t.capacity, t.min_spend,
-            e.title as event_title, e.image
+            t.id as table_id, t.name as table_name, t.zone as table_zone, t.capacity, t.min_spend
         FROM table_reservations r
         INNER JOIN tables t ON r.table_id = t.id
-        INNER JOIN events e ON r.event_id = e.id
         WHERE r.user_id = $1
         ORDER BY r.created_at DESC
         "#,
     )
     .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(results)
+}
+
+/// Get event details by reservation IDs
+pub async fn get_event_details_by_reservation_ids(
+    pool: &PgPool,
+    reservation_ids: Vec<Uuid>,
+) -> Result<Vec<(Uuid, Uuid, String, String, String, String)>, sqlx::Error> {
+    // Query: reservation_id, event details (6 fields)
+    let results = sqlx::query_as::<_, (Uuid, Uuid, String, String, String, String)>(
+        r#"
+        SELECT
+            r.id as reservation_id,
+            e.id as event_id, e.title as event_title, e.venue as event_venue,
+            e.date as event_date, e.image as event_image
+        FROM table_reservations r
+        INNER JOIN events e ON r.event_id = e.id
+        WHERE r.id = ANY($1)
+        "#,
+    )
+    .bind(&reservation_ids)
     .fetch_all(pool)
     .await?;
 

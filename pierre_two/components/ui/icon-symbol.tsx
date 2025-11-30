@@ -33,7 +33,18 @@ export type IconSymbolName =
   | 'music.note'
   | 'bell.fill'
   | 'arrow.right.square.fill'
-  | 'plus.circle.fill';
+  | 'plus.circle.fill'
+  | 'table.furniture'
+  | 'phone'
+  | 'lock'
+  | 'envelope'
+  | 'globe'
+  | 'questionmark.circle'
+  | 'doc.text'
+  | 'info.circle'
+  | 'eurosign'
+  | 'plus'
+  | 'minus';
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
@@ -70,6 +81,17 @@ const MAPPING = {
   'bell.fill': 'notifications',
   'arrow.right.square.fill': 'logout',
   'plus.circle.fill': 'add-circle',
+  'table.furniture': 'table-restaurant',
+  'phone': 'phone',
+  'lock': 'lock',
+  'envelope': 'email',
+  'globe': 'language',
+  'questionmark.circle': 'help',
+  'doc.text': 'description',
+  'info.circle': 'info',
+  'eurosign': 'euro',
+  'plus': 'add',
+  'minus': 'remove',
 } as const;
 
 /**

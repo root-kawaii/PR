@@ -57,8 +57,14 @@ export const TableReservationDetailModal = ({
     }
   };
 
+  // Calculate remaining capacity
+  const tableCapacity = reservation.table?.capacity || 0;
+  const currentPeople = reservation.numPeople || 0;
+  const remainingCapacity = tableCapacity - currentPeople;
+  const canAddPeople = remainingCapacity > 0;
+
   const incrementPeople = () => {
-    if (numPeople < reservation.numPeople) {
+    if (numPeople < remainingCapacity) {
       setNumPeople(numPeople + 1);
     }
   };
@@ -234,6 +240,80 @@ export const TableReservationDetailModal = ({
               </View>
             )}
 
+            {/* Table Capacity */}
+            <View style={styles.section}>
+              <ThemedText style={styles.sectionTitle}>
+                Capienza Tavolo
+              </ThemedText>
+              <View style={styles.card}>
+                <View style={styles.capacityRow}>
+                  <View style={styles.capacityInfo}>
+                    <ThemedText style={styles.capacityLabel}>
+                      Persone Attuali
+                    </ThemedText>
+                    <ThemedText style={styles.capacityValue}>
+                      {currentPeople}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.capacityDivider} />
+                  <View style={styles.capacityInfo}>
+                    <ThemedText style={styles.capacityLabel}>
+                      Capacità Massima
+                    </ThemedText>
+                    <ThemedText style={styles.capacityValue}>
+                      {tableCapacity}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.capacityDivider} />
+                  <View style={styles.capacityInfo}>
+                    <ThemedText style={styles.capacityLabel}>
+                      Posti Disponibili
+                    </ThemedText>
+                    <ThemedText style={[
+                      styles.capacityValue,
+                      { color: remainingCapacity > 0 ? '#10b981' : '#ef4444' }
+                    ]}>
+                      {remainingCapacity}
+                    </ThemedText>
+                  </View>
+                </View>
+                {!canAddPeople && (
+                  <View style={styles.fullCapacityBanner}>
+                    <IconSymbol name="exclamationmark.triangle.fill" size={16} color="#f59e0b" />
+                    <ThemedText style={styles.fullCapacityText}>
+                      Tavolo al completo
+                    </ThemedText>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* Participants */}
+            {reservation.participants && reservation.participants.length > 0 && (
+              <View style={styles.section}>
+                <ThemedText style={styles.sectionTitle}>
+                  Partecipanti ({reservation.participants.length})
+                </ThemedText>
+                <View style={styles.card}>
+                  {reservation.participants.map((participant) => (
+                    <View key={participant.userId} style={styles.participantRow}>
+                      <View style={styles.participantIcon}>
+                        <IconSymbol name="person" size={20} color="#ec4899" />
+                      </View>
+                      <View style={styles.participantInfo}>
+                        <ThemedText style={styles.participantName}>
+                          {participant.userName}
+                        </ThemedText>
+                        <ThemedText style={styles.participantDetails}>
+                          {participant.numPeople} {participant.numPeople === 1 ? 'persona' : 'persone'} • {participant.amountPaid}
+                        </ThemedText>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {/* Reservation Details */}
             <View style={styles.section}>
               <ThemedText style={styles.sectionTitle}>
@@ -242,10 +322,10 @@ export const TableReservationDetailModal = ({
               <View style={styles.card}>
                 <View style={styles.infoRow}>
                   <ThemedText style={styles.infoLabel}>
-                    Numero persone
+                    Nome contatto
                   </ThemedText>
                   <ThemedText style={styles.infoValue}>
-                    {reservation.numPeople}
+                    {reservation.contactName}
                   </ThemedText>
                 </View>
                 <View style={styles.infoRow}>
@@ -333,13 +413,14 @@ export const TableReservationDetailModal = ({
             </View>
 
             {/* Payment Contribution */}
-            {amountRemaining > 0 && reservation.status !== "cancelled" && (
+            {canAddPeople && amountRemaining > 0 && reservation.status !== "cancelled" && (
               <View style={styles.section}>
                 <ThemedText style={styles.sectionTitle}>
-                  Contribuisci al Pagamento
+                  Aggiungi Persone
                 </ThemedText>
                 <View style={styles.card}>
                   <ThemedText style={styles.contributionDescription}>
+                    Ci sono ancora {remainingCapacity} {remainingCapacity === 1 ? 'posto disponibile' : 'posti disponibili'} al tavolo.
                     Seleziona per quante persone vuoi pagare la quota minima di{" "}
                     {reservation.table?.minSpend} a persona.
                   </ThemedText>
@@ -347,7 +428,7 @@ export const TableReservationDetailModal = ({
                   {/* People Counter */}
                   <View style={styles.counterContainer}>
                     <ThemedText style={styles.counterLabel}>
-                      Numero di persone
+                      Numero di persone da aggiungere
                     </ThemedText>
                     <View style={styles.counter}>
                       <TouchableOpacity
@@ -372,17 +453,17 @@ export const TableReservationDetailModal = ({
                       <TouchableOpacity
                         style={[
                           styles.counterButton,
-                          numPeople >= reservation.numPeople &&
+                          numPeople >= remainingCapacity &&
                             styles.counterButtonDisabled,
                         ]}
                         onPress={incrementPeople}
-                        disabled={numPeople >= reservation.numPeople}
+                        disabled={numPeople >= remainingCapacity}
                       >
                         <IconSymbol
                           name="plus"
                           size={20}
                           color={
-                            numPeople >= reservation.numPeople
+                            numPeople >= remainingCapacity
                               ? "#6b7280"
                               : "#fff"
                           }
@@ -614,6 +695,78 @@ const styles = StyleSheet.create({
     color: "#d1d5db",
     marginTop: 6,
     lineHeight: 18,
+  },
+  capacityRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 12,
+  },
+  capacityInfo: {
+    flex: 1,
+    alignItems: "center",
+  },
+  capacityLabel: {
+    fontSize: 11,
+    color: "#9ca3af",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  capacityValue: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  capacityDivider: {
+    width: 1,
+    backgroundColor: "#2a2a2a",
+    marginHorizontal: 8,
+  },
+  fullCapacityBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
+  },
+  fullCapacityText: {
+    fontSize: 13,
+    color: "#f59e0b",
+    fontWeight: "600",
+  },
+  participantRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a2a",
+  },
+  participantIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(236, 72, 153, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  participantInfo: {
+    flex: 1,
+  },
+  participantName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 2,
+  },
+  participantDetails: {
+    fontSize: 13,
+    color: "#9ca3af",
   },
   paymentRow: {
     flexDirection: "row",

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use dotenv::dotenv;
 use sqlx::PgPool;
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{get, post},
     Router,
 };
 use tower_http::cors::{CorsLayer, Any};
@@ -14,6 +14,7 @@ mod models;
 mod controllers;
 mod persistences;
 mod utils;
+mod services;
 
 // Import specific items from your modules
 use crate::models::AppState;
@@ -22,12 +23,6 @@ use crate::controllers::payment_controller::{
     get_payment,
     post_payment,
     delete_payment,
-};
-use crate::controllers::event_controller::{
-    get_all_events as get_all_events_old,
-    get_events as get_events_old,
-    post_events,
-    delete_events,
 };
 use crate::controllers::event_new_controller::{
     get_all_events,
@@ -39,6 +34,8 @@ use crate::controllers::event_new_controller::{
 use crate::controllers::auth_controller::{
     register,
     login,
+    send_sms_verification,
+    verify_sms_code,
 };
 use crate::controllers::genre_controller::{
     get_all_genres,
@@ -97,6 +94,8 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         // Auth routes
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
+        .route("/auth/send-sms-verification", post(send_sms_verification))
+        .route("/auth/verify-sms-code", post(verify_sms_code))
         // Event routes (new schema)
         .route("/events", get(get_all_events).post(create_event))
         .route("/events/:id", get(get_event).put(update_event).delete(delete_event))
@@ -184,6 +183,8 @@ async fn main() {
     println!("📝 Available endpoints:");
     println!("   POST           /auth/register");
     println!("   POST           /auth/login");
+    println!("   POST           /auth/send-sms-verification");
+    println!("   POST           /auth/verify-sms-code");
     println!("   GET/POST       /events");
     println!("   GET/PUT/DELETE /events/:id");
     println!("   GET/POST       /genres");

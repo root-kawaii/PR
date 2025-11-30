@@ -25,7 +25,7 @@ pub use table::{
     Table, CreateTableRequest, UpdateTableRequest, TableResponse, TablesResponse,
     TableReservation, CreateTableReservationRequest, UpdateTableReservationRequest,
     TableReservationResponse, TableReservationWithDetailsResponse, TableReservationsResponse, TableReservationsWithDetailsResponse,
-    TableSummary, TableReservationPayment, TableReservationTicket,
+    TableSummary,
     AddPaymentToReservationRequest, LinkTicketToReservationRequest,
     CreateReservationWithPaymentRequest, CreatePaymentIntentRequest, CreatePaymentIntentResponse
 };

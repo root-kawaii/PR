@@ -1,8 +1,7 @@
 use crate::models::{PaymentEntity, PaymentRequest, PaymentStatus, PaymentFilter, AppState};
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 use uuid::Uuid;
 use axum::http::StatusCode;
-use axum::Json;
 use sqlx::{QueryBuilder, Postgres};
 
 pub async fn load_all_payments_service(

@@ -1,2 +1,19 @@
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
+*.env
+
+# Dependencies
 node_modules/
+
+# API keys and credentials
+*secret*
+*credential*
+*.pem
+*.p12
+*.key
+*.mobileprovision
+
+# macOS
+.DS_Storerust_BE/server.log

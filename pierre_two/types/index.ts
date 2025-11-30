@@ -42,6 +42,12 @@ export type TableReservation = {
   contactPhone: string;
   specialRequests?: string;
   createdAt: string;
+  participants?: Array<{
+    userId: string;
+    userName: string;
+    numPeople: number;
+    amountPaid: string;
+  }>;
   table?: {
     id: string;
     name: string;

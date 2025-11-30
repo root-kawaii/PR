@@ -14,7 +14,7 @@ import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Event, Table } from "@/types";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "@/context/AuthContext";
 import { Alert } from "react-native";
@@ -36,6 +36,13 @@ export const EventDetailModal = ({
   const { user } = useAuth();
   const [showTableReservation, setShowTableReservation] = useState(false);
 
+  // Reset table reservation modal when main modal closes
+  useEffect(() => {
+    if (!visible) {
+      setShowTableReservation(false);
+    }
+  }, [visible]);
+
   const handleBuyTicket = () => {
     if (!user) {
       Alert.alert("Login Required", "Please login to reserve a table", [
@@ -52,7 +59,7 @@ export const EventDetailModal = ({
   if (!event) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalContainer} edges={["top"]}>
         <ThemedView style={styles.modalContent}>
           <View style={styles.modalHeader}>

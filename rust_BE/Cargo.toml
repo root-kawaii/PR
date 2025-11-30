@@ -36,3 +36,6 @@ jsonwebtoken = "9"
 
 # Random number generation (for ticket codes)
 rand = "0.8"
+
+# Twilio for SMS verification
+reqwest = { version = "0.11", features = ["json"] }

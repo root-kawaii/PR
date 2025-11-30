@@ -67,7 +67,7 @@ export default function HomeScreen() {
     const tableToReserve = table || selectedEvent?.tables?.[0] || null;
     setSelectedTable(tableToReserve);
     eventModal.close();
-    reservationModal.open();
+    setTimeout(() => reservationModal.open(), 300);
   };
 
   const handleCalendarPress = () => {

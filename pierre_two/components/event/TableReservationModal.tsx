@@ -15,6 +15,7 @@ import { Event, Table } from "@/types";
 import { useState, useEffect, useRef } from "react";
 import { WebView } from "react-native-webview";
 import { API_URL } from "@/config/api";
+import { TableReservationModal as PaymentModal } from "@/components/reservation/TableReservationModal";
 
 type TableReservationModalProps = {
   visible: boolean;
@@ -33,12 +34,18 @@ export const TableReservationModal = ({
   const [loadingTables, setLoadingTables] = useState(false);
   const webViewRef = useRef<WebView>(null);
   const [matterportLoaded, setMatterportLoaded] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // Fetch tables when modal opens
   useEffect(() => {
     if (visible && event) {
       fetchTables();
       setMatterportLoaded(false);
+    } else {
+      // Reset payment modal state when main modal closes
+      setShowPaymentModal(false);
+      setSelectedTable(null);
     }
   }, [visible, event]);
 
@@ -71,7 +78,7 @@ export const TableReservationModal = ({
   if (!event) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalContainer} edges={["top"]}>
         <ThemedView style={styles.modalContent}>
           <ScrollView showsVerticalScrollIndicator={false}>
@@ -124,7 +131,12 @@ export const TableReservationModal = ({
                       styles.tableCard,
                       !table.available && styles.tableCardUnavailable,
                     ]}
-                    onPress={() => table.available && onReserveTable(table)}
+                    onPress={() => {
+                      if (table.available) {
+                        setSelectedTable(table);
+                        setShowPaymentModal(true);
+                      }
+                    }}
                     activeOpacity={table.available ? 0.7 : 1}
                     disabled={!table.available}
                   >
@@ -178,6 +190,17 @@ export const TableReservationModal = ({
           </TouchableOpacity>
         </ThemedView>
       </SafeAreaView>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        visible={showPaymentModal}
+        table={selectedTable}
+        event={event}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setSelectedTable(null);
+        }}
+      />
     </Modal>
   );
 };

@@ -38,10 +38,6 @@ export const TableReservationModal = ({
   const { user } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [numPeople, setNumPeople] = useState(1);
-  const [nome, setNome] = useState("");
-  const [cognome, setCognome] = useState("");
-  const [email, setEmail] = useState("");
-  const [telefono, setTelefono] = useState("");
   const [guestPhones, setGuestPhones] = useState<string[]>([]);
   const [newGuestPhone, setNewGuestPhone] = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,14 +46,10 @@ export const TableReservationModal = ({
   useEffect(() => {
     if (visible && table) {
       setNumPeople(1);
-      setNome("");
-      setCognome("");
-      setEmail(user?.email || "");
-      setTelefono("");
       setGuestPhones([]);
       setNewGuestPhone("");
     }
-  }, [visible, table, user]);
+  }, [visible, table]);
 
   // Return early if no table or event - don't render anything
   if (!table || !event) {
@@ -94,30 +86,6 @@ export const TableReservationModal = ({
 
   const handleReservation = async () => {
     // Validation
-    if (!nome.trim() || !cognome.trim() || !email.trim() || !telefono.trim()) {
-      Alert.alert(
-        "Campi obbligatori",
-        "Compila tutti i campi obbligatori (Nome, Cognome, Email, Telefono)"
-      );
-      return;
-    }
-
-    // Validate that if numPeople > 1, guest phone numbers are provided
-    const requiredGuests = numPeople - 1; // Owner is already counted
-    if (guestPhones.length < requiredGuests) {
-      Alert.alert(
-        "Numeri ospiti richiesti",
-        `Hai selezionato ${numPeople} ${
-          numPeople === 1 ? "persona" : "persone"
-        }. Devi fornire ${requiredGuests} ${
-          requiredGuests === 1
-            ? "numero di telefono ospite"
-            : "numeri di telefono ospiti"
-        }.`
-      );
-      return;
-    }
-
     if (!user) {
       Alert.alert("Errore", "Devi effettuare il login per prenotare un tavolo");
       return;
@@ -212,9 +180,9 @@ export const TableReservationModal = ({
             guest_phone_numbers: guestPhones,
             payment_amount: amount,
             stripe_payment_intent_id: paymentIntentData.paymentIntentId,
-            contact_name: `${nome} ${cognome}`,
-            contact_email: email,
-            contact_phone: telefono,
+            contact_name: user.name,
+            contact_email: user.email,
+            contact_phone: user.phone_number || "",
             special_requests: null,
           }),
         }
@@ -406,62 +374,38 @@ export const TableReservationModal = ({
                   </View>
                 </View>
 
-                {/* Personal Information */}
+                {/* Your Info */}
                 <View style={styles.personalInfoSection}>
                   <ThemedText style={styles.sectionTitle}>
-                    Informazioni Personali
+                    Le Tue Informazioni
                   </ThemedText>
-
-                  <View style={styles.inputRow}>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Nome"
-                      placeholderTextColor="#9ca3af"
-                      value={nome}
-                      onChangeText={setNome}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Cognome"
-                      placeholderTextColor="#9ca3af"
-                      value={cognome}
-                      onChangeText={setCognome}
-                    />
+                  <View style={styles.userInfoDisplay}>
+                    <View style={styles.userInfoRow}>
+                      <IconSymbol name="person" size={16} color="#ec4899" />
+                      <ThemedText style={styles.userInfoText}>{user?.name}</ThemedText>
+                    </View>
+                    <View style={styles.userInfoRow}>
+                      <IconSymbol name="checkmark.circle" size={16} color="#ec4899" />
+                      <ThemedText style={styles.userInfoText}>{user?.email}</ThemedText>
+                    </View>
+                    {user?.phone_number && (
+                      <View style={styles.userInfoRow}>
+                        <IconSymbol name="checkmark.circle" size={16} color="#ec4899" />
+                        <ThemedText style={styles.userInfoText}>{user.phone_number}</ThemedText>
+                      </View>
+                    )}
                   </View>
-
-                  <TextInput
-                    style={[styles.input, styles.fullWidthInput]}
-                    placeholder="Email"
-                    placeholderTextColor="#9ca3af"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-
-                  <TextInput
-                    style={[styles.input, styles.fullWidthInput]}
-                    placeholder="Telefono"
-                    placeholderTextColor="#9ca3af"
-                    value={telefono}
-                    onChangeText={setTelefono}
-                    keyboardType="phone-pad"
-                  />
-
-                  <ThemedText style={styles.requiredText}>
-                    ⚠ Compila tutti i campi obbligatori (Nome, Cognome, Email,
-                    Telefono)
-                  </ThemedText>
                 </View>
 
                 {/* Guest Phone Numbers */}
                 <View style={styles.guestPhonesSection}>
                   <ThemedText style={styles.sectionTitle}>
-                    Invita Ospiti (Opzionale)
+                    Invita Ospiti
                   </ThemedText>
                   <ThemedText style={styles.guestPhonesSubtitle}>
                     Aggiungi i numeri di telefono degli ospiti che
-                    condivideranno il tavolo
+                    condivideranno il tavolo. Puoi anche pagare per più persone
+                    senza invitarle adesso.
                   </ThemedText>
 
                   {/* Guest Phone Input */}
@@ -820,6 +764,22 @@ const styles = StyleSheet.create({
   },
   fullWidthInput: {
     marginBottom: 12,
+  },
+  userInfoDisplay: {
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  userInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  userInfoText: {
+    fontSize: 14,
+    color: "#fff",
+    fontWeight: "500",
   },
   requiredText: {
     fontSize: 11,
