@@ -6,7 +6,7 @@ pub mod event_new;
 pub use event_new::{Event, CreateEventRequest, UpdateEventRequest, EventResponse};
 
 pub mod payment;
-pub use payment::{PaymentEntity, PaymentRequest, PaymentFilter, PaymentStatus};
+pub use payment::{PaymentEntity, PaymentRequest, PaymentFilter, PaymentStatus, PaymentCaptureMethod, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentResponse};
 
 pub mod user;
 pub use user::{User, UserResponse, RegisterRequest, LoginRequest, AuthResponse, Claims};

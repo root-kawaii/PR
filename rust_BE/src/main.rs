@@ -22,6 +22,9 @@ use crate::controllers::payment_controller::{
     get_all_payments,
     get_payment,
     post_payment,
+    post_authorized_payment,
+    capture_payment,
+    cancel_payment,
     delete_payment,
 };
 use crate::controllers::event_new_controller::{
@@ -127,7 +130,10 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/reservations/create-with-payment", post(create_reservation_with_payment))
         // Payment routes
         .route("/payments", get(get_all_payments).post(post_payment))
+        .route("/payments/authorize", post(post_authorized_payment))
         .route("/payments/:id", get(get_payment).delete(delete_payment))
+        .route("/payments/:id/capture", post(capture_payment))
+        .route("/payments/:id/cancel", post(cancel_payment))
         .with_state(app_state)
         .layer(cors)
 }
