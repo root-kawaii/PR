@@ -364,7 +364,7 @@ PR/
     ├── app/
     │   ├── _layout.tsx (updated)
     │   ├── login.tsx
-    │   ├── register.tsx
+    │   ├── register.ts
     │   └── (tabs)/
     │       └── profile.tsx (updated)
     ├── types/

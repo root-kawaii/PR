@@ -13,6 +13,7 @@ This documentation provides quick context and reference for the Pierre Two proje
 - [Development Setup](./07-development-setup.md)
 - [Data Models](./08-data-models.md)
 - [Stripe Payments](./09-stripe-payments.md)
+- [CI/CD Setup](./10-ci-cd-setup.md)
 
 ## Project Summary
 
