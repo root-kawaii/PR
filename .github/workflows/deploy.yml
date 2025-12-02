@@ -39,14 +39,18 @@ jobs:
         run: |
           cd DB/migrations
 
+          # Force IPv4 resolution
+          export PGHOST=$(getent ahostsv4 "${{ secrets.SUPABASE_HOST }}" | head -1 | awk '{print $1}')
+          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+          export PGUSER="postgres"
+          export PGDATABASE="postgres"
+          export PGSSLMODE="require"
+
           # Get list of migration files
           MIGRATION_FILES=$(ls -1 *.sql | sort)
 
           # Get already applied migrations from database
-          # Use IPv4 to avoid IPv6 connectivity issues
-          APPLIED_MIGRATIONS=$(PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}" psql \
-            "postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require" \
-            -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" 2>/dev/null || echo "")
+          APPLIED_MIGRATIONS=$(psql -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" 2>/dev/null || echo "")
 
           # Find pending migrations
           PENDING_MIGRATIONS=""
@@ -70,11 +74,15 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Use connection string for IPv4
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
+          # Force IPv4 resolution
+          export PGHOST=$(getent ahostsv4 "${{ secrets.SUPABASE_HOST }}" | head -1 | awk '{print $1}')
+          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+          export PGUSER="postgres"
+          export PGDATABASE="postgres"
+          export PGSSLMODE="require"
 
           # Create schema_migrations table if it doesn't exist
-          psql "$DB_URL" -c "CREATE TABLE IF NOT EXISTS schema_migrations (
+          psql -c "CREATE TABLE IF NOT EXISTS schema_migrations (
             id SERIAL PRIMARY KEY,
             migration_name VARCHAR(255) UNIQUE NOT NULL,
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -84,10 +92,10 @@ jobs:
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
             echo "Running migration: $migration"
 
-            psql "$DB_URL" -f "$migration"
+            psql -f "$migration"
 
             # Record migration as applied
-            psql "$DB_URL" -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
+            psql -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
 
             echo "✓ Migration $migration completed"
           done
@@ -99,9 +107,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: migrations
     if: |
-      always() &&
-      (needs.migrations.result == 'success' || needs.migrations.result == 'skipped') &&
-      github.event.inputs.deploy_backend == 'true'
+      github.event.inputs.deploy_backend == 'true' &&
+      (needs.migrations.result == 'success' || needs.migrations.result == 'skipped' || needs.migrations.result == 'failure')
 
     steps:
       - name: Checkout code
