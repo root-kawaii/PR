@@ -39,18 +39,14 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Force IPv4 resolution
-          export PGHOST=$(getent ahostsv4 "${{ secrets.SUPABASE_HOST }}" | head -1 | awk '{print $1}')
-          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
-          export PGUSER="postgres"
-          export PGDATABASE="postgres"
-          export PGSSLMODE="require"
+          # Build connection string
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
 
           # Get list of migration files
           MIGRATION_FILES=$(ls -1 *.sql | sort)
 
           # Get already applied migrations from database
-          APPLIED_MIGRATIONS=$(psql -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" 2>/dev/null || echo "")
+          APPLIED_MIGRATIONS=$(psql "$DB_URL" -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" 2>/dev/null || echo "")
 
           # Find pending migrations
           PENDING_MIGRATIONS=""
@@ -74,15 +70,11 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Force IPv4 resolution
-          export PGHOST=$(getent ahostsv4 "${{ secrets.SUPABASE_HOST }}" | head -1 | awk '{print $1}')
-          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
-          export PGUSER="postgres"
-          export PGDATABASE="postgres"
-          export PGSSLMODE="require"
+          # Build connection string
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
 
           # Create schema_migrations table if it doesn't exist
-          psql -c "CREATE TABLE IF NOT EXISTS schema_migrations (
+          psql "$DB_URL" -c "CREATE TABLE IF NOT EXISTS schema_migrations (
             id SERIAL PRIMARY KEY,
             migration_name VARCHAR(255) UNIQUE NOT NULL,
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -92,10 +84,10 @@ jobs:
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
             echo "Running migration: $migration"
 
-            psql -f "$migration"
+            psql "$DB_URL" -f "$migration"
 
             # Record migration as applied
-            psql -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
+            psql "$DB_URL" -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
 
             echo "✓ Migration $migration completed"
           done
