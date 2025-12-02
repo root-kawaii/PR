@@ -43,10 +43,9 @@ jobs:
           MIGRATION_FILES=$(ls -1 *.sql | sort)
 
           # Get already applied migrations from database
+          # Use IPv4 to avoid IPv6 connectivity issues
           APPLIED_MIGRATIONS=$(PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}" psql \
-            -U postgres \
-            -h "${{ secrets.SUPABASE_HOST }}" \
-            -d postgres \
+            "postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require" \
             -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" 2>/dev/null || echo "")
 
           # Find pending migrations
@@ -71,33 +70,24 @@ jobs:
         run: |
           cd DB/migrations
 
+          # Use connection string for IPv4
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
+
           # Create schema_migrations table if it doesn't exist
-          PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}" psql \
-            -U postgres \
-            -h "${{ secrets.SUPABASE_HOST }}" \
-            -d postgres \
-            -c "CREATE TABLE IF NOT EXISTS schema_migrations (
-              id SERIAL PRIMARY KEY,
-              migration_name VARCHAR(255) UNIQUE NOT NULL,
-              applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );"
+          psql "$DB_URL" -c "CREATE TABLE IF NOT EXISTS schema_migrations (
+            id SERIAL PRIMARY KEY,
+            migration_name VARCHAR(255) UNIQUE NOT NULL,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );"
 
           # Run each pending migration
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
             echo "Running migration: $migration"
 
-            PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}" psql \
-              -U postgres \
-              -h "${{ secrets.SUPABASE_HOST }}" \
-              -d postgres \
-              -f "$migration"
+            psql "$DB_URL" -f "$migration"
 
             # Record migration as applied
-            PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}" psql \
-              -U postgres \
-              -h "${{ secrets.SUPABASE_HOST }}" \
-              -d postgres \
-              -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
+            psql "$DB_URL" -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
 
             echo "✓ Migration $migration completed"
           done
@@ -188,8 +178,8 @@ jobs:
       - name: Trigger EAS development build
         working-directory: ./pierre_two
         run: |
-          echo "Starting EAS development build..."
-          eas build --platform ios --profile development --non-interactive --no-wait
+          echo "Starting EAS preview build..."
+          eas build --platform ios --profile preview --non-interactive --no-wait
 
       - name: Revert to localhost endpoint
         if: always()
