@@ -138,10 +138,14 @@ jobs:
       always() &&
       (needs.deploy_backend.result == 'success' || needs.deploy_backend.result == 'skipped') &&
       github.event.inputs.build_app == 'true'
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -178,8 +182,8 @@ jobs:
       - name: Trigger EAS development build
         working-directory: ./pierre_two
         run: |
-          echo "Starting EAS preview build..."
-          eas build --platform ios --profile preview --non-interactive --no-wait
+          echo "Starting EAS preview build for Android..."
+          eas build --platform android --profile preview --non-interactive --no-wait
 
       - name: Revert to localhost endpoint
         if: always()
