@@ -34,12 +34,19 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Resolve hostname to IPv4 only using dig
-          SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A | head -1)
+          # Resolve hostname to IPv4 only using nslookup
+          SUPABASE_IP=$(nslookup -type=A "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}')
 
           # Validate we got an IP
           if [ -z "$SUPABASE_IP" ]; then
             echo "Failed to resolve hostname to IPv4"
+            echo "Attempting fallback resolution..."
+            # Fallback: try without -type flag, filter out IPv6 addresses (containing :)
+            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}' | grep -v ':')
+          fi
+
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "All resolution methods failed"
             exit 1
           fi
 
@@ -76,12 +83,19 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Resolve hostname to IPv4 only using dig
-          SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A | head -1)
+          # Resolve hostname to IPv4 only using nslookup
+          SUPABASE_IP=$(nslookup -type=A "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}')
 
           # Validate we got an IP
           if [ -z "$SUPABASE_IP" ]; then
             echo "Failed to resolve hostname to IPv4"
+            echo "Attempting fallback resolution..."
+            # Fallback: try without -type flag, filter out IPv6 addresses (containing :)
+            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}' | grep -v ':')
+          fi
+
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "All resolution methods failed"
             exit 1
           fi
 
