@@ -34,26 +34,11 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Resolve hostname to IPv4 only using nslookup
-          SUPABASE_IP=$(nslookup -type=A "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}')
+          # Use Supabase connection string directly (supports IPv4/IPv6)
+          # Format: postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[region].pooler.supabase.com:5432/postgres
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
 
-          # Validate we got an IP
-          if [ -z "$SUPABASE_IP" ]; then
-            echo "Failed to resolve hostname to IPv4"
-            echo "Attempting fallback resolution..."
-            # Fallback: try without -type flag, filter out IPv6 addresses (containing :)
-            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}' | grep -v ':')
-          fi
-
-          if [ -z "$SUPABASE_IP" ]; then
-            echo "All resolution methods failed"
-            exit 1
-          fi
-
-          echo "Connecting to Supabase at IPv4: $SUPABASE_IP"
-
-          # Build connection string with IP address
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${SUPABASE_IP}:5432/postgres?sslmode=require"
+          echo "Connecting to Supabase..."
 
           # Get list of migration files
           MIGRATION_FILES=$(ls -1 *.sql | sort)
@@ -83,26 +68,11 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Resolve hostname to IPv4 only using nslookup
-          SUPABASE_IP=$(nslookup -type=A "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}')
+          # Use Supabase connection string directly (Session pooler handles IPv4/IPv6)
+          # Format: postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[region].pooler.supabase.com:5432/postgres
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
 
-          # Validate we got an IP
-          if [ -z "$SUPABASE_IP" ]; then
-            echo "Failed to resolve hostname to IPv4"
-            echo "Attempting fallback resolution..."
-            # Fallback: try without -type flag, filter out IPv6 addresses (containing :)
-            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}' | grep -v ':')
-          fi
-
-          if [ -z "$SUPABASE_IP" ]; then
-            echo "All resolution methods failed"
-            exit 1
-          fi
-
-          echo "Connecting to Supabase at IPv4: $SUPABASE_IP"
-
-          # Build connection string with IP address
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${SUPABASE_IP}:5432/postgres?sslmode=require"
+          echo "Connecting to Supabase..."
 
           # Create schema_migrations table if it doesn't exist
           echo "📋 Creating schema_migrations table..."
