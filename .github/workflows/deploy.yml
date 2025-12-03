@@ -37,22 +37,32 @@ jobs:
           # Force IPv4 by resolving hostname first
           # Supabase Session pooler requires IPv4 connections
           echo "Resolving Supabase hostname to IPv4..."
-          SUPABASE_IP=$(getent ahosts "${{ secrets.SUPABASE_HOST }}" | grep STREAM | awk '{print $1}' | grep -v ':' | head -n1)
 
-          # Fallback to dig if getent doesn't work or returns IPv6
+          # Try getent first
+          SUPABASE_IP=$(getent ahosts "${{ secrets.SUPABASE_HOST }}" 2>/dev/null | grep STREAM | awk '{print $1}' | grep -v ':' | head -n1 || echo "")
+
+          # Fallback to dig
           if [ -z "$SUPABASE_IP" ]; then
             echo "Trying dig..."
-            SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A | grep -v '\.$' | head -n1)
+            SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A 2>/dev/null | head -n1 || echo "")
           fi
 
-          # Final fallback to nslookup
+          # Fallback to host command
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "Trying host..."
+            SUPABASE_IP=$(host -t A "${{ secrets.SUPABASE_HOST }}" 2>/dev/null | grep "has address" | head -n1 | awk '{print $NF}' || echo "")
+          fi
+
+          # Final fallback to nslookup with better parsing
           if [ -z "$SUPABASE_IP" ]; then
             echo "Trying nslookup..."
-            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}' | grep -v ':')
+            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" 2>/dev/null | grep -i "^Address:" | tail -1 | awk '{print $2}' | grep -v ':' || echo "")
           fi
 
           if [ -z "$SUPABASE_IP" ]; then
             echo "❌ Failed to resolve hostname to IPv4"
+            echo "Debug: Trying nslookup output..."
+            nslookup "${{ secrets.SUPABASE_HOST }}" || true
             exit 1
           fi
 
@@ -94,22 +104,32 @@ jobs:
           # Force IPv4 by resolving hostname first
           # Supabase Session pooler requires IPv4 connections
           echo "Resolving Supabase hostname to IPv4..."
-          SUPABASE_IP=$(getent ahosts "${{ secrets.SUPABASE_HOST }}" | grep STREAM | awk '{print $1}' | grep -v ':' | head -n1)
 
-          # Fallback to dig if getent doesn't work or returns IPv6
+          # Try getent first
+          SUPABASE_IP=$(getent ahosts "${{ secrets.SUPABASE_HOST }}" 2>/dev/null | grep STREAM | awk '{print $1}' | grep -v ':' | head -n1 || echo "")
+
+          # Fallback to dig
           if [ -z "$SUPABASE_IP" ]; then
             echo "Trying dig..."
-            SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A | grep -v '\.$' | head -n1)
+            SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A 2>/dev/null | head -n1 || echo "")
           fi
 
-          # Final fallback to nslookup
+          # Fallback to host command
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "Trying host..."
+            SUPABASE_IP=$(host -t A "${{ secrets.SUPABASE_HOST }}" 2>/dev/null | grep "has address" | head -n1 | awk '{print $NF}' || echo "")
+          fi
+
+          # Final fallback to nslookup with better parsing
           if [ -z "$SUPABASE_IP" ]; then
             echo "Trying nslookup..."
-            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}' | grep -v ':')
+            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" 2>/dev/null | grep -i "^Address:" | tail -1 | awk '{print $2}' | grep -v ':' || echo "")
           fi
 
           if [ -z "$SUPABASE_IP" ]; then
             echo "❌ Failed to resolve hostname to IPv4"
+            echo "Debug: Trying nslookup output..."
+            nslookup "${{ secrets.SUPABASE_HOST }}" || true
             exit 1
           fi
 
