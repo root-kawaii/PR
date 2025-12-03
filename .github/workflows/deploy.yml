@@ -39,9 +39,10 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.PGPASSWORD }}
           PGHOST: ${{ secrets.PGHOST }}
-          PGUSER: postgres
+          PGUSER: ${{ secrets.PGUSER }}
           PGDATABASE: postgres
           PGSSLMODE: require
+          PGPORT: 6543
         run: |
           cd DB/migrations
 
