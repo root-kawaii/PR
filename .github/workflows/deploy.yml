@@ -29,11 +29,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
       - name: Check for pending migrations
         id: check_migrations
         run: |
@@ -45,8 +40,8 @@ jobs:
           # Get list of migration files
           MIGRATION_FILES=$(ls -1 *.sql | sort)
 
-          # Get already applied migrations from database
-          APPLIED_MIGRATIONS=$(psql "$DB_URL" -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" 2>/dev/null || echo "")
+          # Get already applied migrations from database using Docker
+          APPLIED_MIGRATIONS=$(echo "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" | docker run --rm -i postgres:15 psql "$DB_URL" -t 2>/dev/null || echo "")
 
           # Find pending migrations
           PENDING_MIGRATIONS=""
@@ -74,20 +69,20 @@ jobs:
           DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
 
           # Create schema_migrations table if it doesn't exist
-          psql "$DB_URL" -c "CREATE TABLE IF NOT EXISTS schema_migrations (
+          echo "CREATE TABLE IF NOT EXISTS schema_migrations (
             id SERIAL PRIMARY KEY,
             migration_name VARCHAR(255) UNIQUE NOT NULL,
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          );"
+          );" | docker run --rm -i postgres:15 psql "$DB_URL" > /dev/null 2>&1
 
           # Run each pending migration
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
             echo "Running migration: $migration"
 
-            psql "$DB_URL" -f "$migration"
+            docker run --rm -i postgres:15 psql "$DB_URL" < "$migration"
 
             # Record migration as applied
-            psql "$DB_URL" -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
+            echo "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');" | docker run --rm -i postgres:15 psql "$DB_URL"
 
             echo "✓ Migration $migration completed"
           done
