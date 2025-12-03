@@ -34,8 +34,15 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Resolve hostname to IPv4 only
-          SUPABASE_IP=$(getent ahostsv4 "${{ secrets.SUPABASE_HOST }}" | awk '{print $1; exit}')
+          # Resolve hostname to IPv4 only using dig
+          SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A | head -1)
+
+          # Validate we got an IP
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "Failed to resolve hostname to IPv4"
+            exit 1
+          fi
+
           echo "Connecting to Supabase at IPv4: $SUPABASE_IP"
 
           # Build connection string with IP address
@@ -69,8 +76,15 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Resolve hostname to IPv4 only
-          SUPABASE_IP=$(getent ahostsv4 "${{ secrets.SUPABASE_HOST }}" | awk '{print $1; exit}')
+          # Resolve hostname to IPv4 only using dig
+          SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A | head -1)
+
+          # Validate we got an IP
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "Failed to resolve hostname to IPv4"
+            exit 1
+          fi
+
           echo "Connecting to Supabase at IPv4: $SUPABASE_IP"
 
           # Build connection string with IP address
