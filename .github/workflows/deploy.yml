@@ -34,9 +34,32 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Use Supabase connection string directly (supports IPv4/IPv6)
-          # Format: postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[region].pooler.supabase.com:5432/postgres
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
+          # Force IPv4 by resolving hostname first
+          # Supabase Session pooler requires IPv4 connections
+          echo "Resolving Supabase hostname to IPv4..."
+          SUPABASE_IP=$(getent ahosts "${{ secrets.SUPABASE_HOST }}" | grep STREAM | awk '{print $1}' | grep -v ':' | head -n1)
+
+          # Fallback to dig if getent doesn't work or returns IPv6
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "Trying dig..."
+            SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A | grep -v '\.$' | head -n1)
+          fi
+
+          # Final fallback to nslookup
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "Trying nslookup..."
+            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}' | grep -v ':')
+          fi
+
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "❌ Failed to resolve hostname to IPv4"
+            exit 1
+          fi
+
+          echo "✓ Resolved to IPv4: $SUPABASE_IP"
+
+          # Build connection string with IPv4 address
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${SUPABASE_IP}:5432/postgres?sslmode=require"
 
           echo "Connecting to Supabase..."
 
@@ -68,9 +91,32 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Use Supabase connection string directly (Session pooler handles IPv4/IPv6)
-          # Format: postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[region].pooler.supabase.com:5432/postgres
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
+          # Force IPv4 by resolving hostname first
+          # Supabase Session pooler requires IPv4 connections
+          echo "Resolving Supabase hostname to IPv4..."
+          SUPABASE_IP=$(getent ahosts "${{ secrets.SUPABASE_HOST }}" | grep STREAM | awk '{print $1}' | grep -v ':' | head -n1)
+
+          # Fallback to dig if getent doesn't work or returns IPv6
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "Trying dig..."
+            SUPABASE_IP=$(dig +short "${{ secrets.SUPABASE_HOST }}" A | grep -v '\.$' | head -n1)
+          fi
+
+          # Final fallback to nslookup
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "Trying nslookup..."
+            SUPABASE_IP=$(nslookup "${{ secrets.SUPABASE_HOST }}" | grep -A1 "Name:" | grep "Address:" | tail -1 | awk '{print $2}' | grep -v ':')
+          fi
+
+          if [ -z "$SUPABASE_IP" ]; then
+            echo "❌ Failed to resolve hostname to IPv4"
+            exit 1
+          fi
+
+          echo "✓ Resolved to IPv4: $SUPABASE_IP"
+
+          # Build connection string with IPv4 address
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${SUPABASE_IP}:5432/postgres?sslmode=require"
 
           echo "Connecting to Supabase..."
 
