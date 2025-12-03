@@ -44,12 +44,13 @@ jobs:
           PGSSLMODE: require
           PGPORT: 6543
         run: |
+          cd DB/migrations
           echo "Using port: $PGPORT"
           echo "Using host: $PGHOST"
           echo "Using user: $PGUSER"
           cd DB/migrations
           # ... rest of your script
-          cd DB/migrations
+
 
           echo "Connecting to Supabase..."
 
