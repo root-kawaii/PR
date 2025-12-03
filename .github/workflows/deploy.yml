@@ -42,7 +42,7 @@ jobs:
           PGUSER: ${{ secrets.PGUSER }}
           PGDATABASE: postgres
           PGSSLMODE: require
-          PGPORT: 6543
+          PGPORT: 5432
         run: |
           cd DB/migrations
 
