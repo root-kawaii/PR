@@ -69,22 +69,25 @@ jobs:
           DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
 
           # Create schema_migrations table if it doesn't exist
+          echo "📋 Creating schema_migrations table..."
           echo "CREATE TABLE IF NOT EXISTS schema_migrations (
             id SERIAL PRIMARY KEY,
             migration_name VARCHAR(255) UNIQUE NOT NULL,
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          );" | docker run --rm -i postgres:15 psql "$DB_URL" > /dev/null 2>&1
+          );" | docker run --rm -i postgres:15 psql "$DB_URL"
 
           # Run each pending migration
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
-            echo "Running migration: $migration"
+            echo "▶️  Running migration: $migration"
 
-            cat "$migration" | docker run --rm -i postgres:15 psql "$DB_URL"
-
-            # Record migration as applied
-            echo "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');" | docker run --rm -i postgres:15 psql "$DB_URL"
-
-            echo "✓ Migration $migration completed"
+            if cat "$migration" | docker run --rm -i postgres:15 psql "$DB_URL" > /dev/null 2>&1; then
+              # Record migration as applied
+              echo "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');" | docker run --rm -i postgres:15 psql "$DB_URL" > /dev/null 2>&1
+              echo "✅ Migration $migration completed"
+            else
+              echo "❌ Migration $migration failed"
+              exit 1
+            fi
           done
 
           echo "All migrations completed successfully"
