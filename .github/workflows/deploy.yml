@@ -1,20 +1,20 @@
 name: Deploy Backend & Build App
 
 on:
-  workflow_dispatch:  # Manual trigger via GitHub UI
+  workflow_dispatch:
     inputs:
       run_migrations:
-        description: 'Run database migrations'
+        description: "Run database migrations"
         required: false
         type: boolean
         default: true
       deploy_backend:
-        description: 'Deploy backend to Fly.io'
+        description: "Deploy backend to Fly.io"
         required: false
         type: boolean
         default: true
       build_app:
-        description: 'Trigger EAS development build'
+        description: "Trigger EAS development build"
         required: false
         type: boolean
         default: true
@@ -29,26 +29,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - name: Check for pending migrations
         id: check_migrations
+        env:
+          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          PGHOST: ${{ secrets.PGHOST }}
+          PGUSER: postgres
+          PGDATABASE: postgres
+          PGSSLMODE: require
         run: |
           cd DB/migrations
 
-          # Supabase Session pooler connection
-          # The hostname only has IPv6 DNS, but the pooler proxies to IPv4
-          # We need to use socat or IPv6 tunneling, OR update SUPABASE_HOST to use pooler hostname
-
           echo "Connecting to Supabase..."
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
-
-          # Use socat to proxy IPv6 to IPv4 inside Docker container
-          # OR: Install and use postgres client with IPv6 support
 
           # Get list of migration files
-          MIGRATION_FILES=$(ls -1 *.sql | sort)
+          MIGRATION_FILES=$(ls -1 *.sql 2>/dev/null | sort || echo "")
 
-          # Get already applied migrations - use network host mode to access IPv6
-          APPLIED_MIGRATIONS=$(echo "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" | docker run --rm -i --network host postgres:15 psql "$DB_URL" -t 2>/dev/null || echo "")
+          if [ -z "$MIGRATION_FILES" ]; then
+            echo "No migration files found"
+            echo "has_pending=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get already applied migrations
+          APPLIED_MIGRATIONS=$(psql -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" 2>/dev/null || echo "")
 
           # Find pending migrations
           PENDING_MIGRATIONS=""
@@ -62,35 +71,36 @@ jobs:
             echo "No pending migrations found"
             echo "has_pending=false" >> $GITHUB_OUTPUT
           else
-            echo "Pending migrations: $PENDING_MIGRATIONS"
+            echo "Pending migrations:$PENDING_MIGRATIONS"
             echo "has_pending=true" >> $GITHUB_OUTPUT
             echo "pending_list=$PENDING_MIGRATIONS" >> $GITHUB_OUTPUT
           fi
 
       - name: Run pending migrations
         if: steps.check_migrations.outputs.has_pending == 'true'
+        env:
+          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          PGHOST: ${{ secrets.PGHOST }}
+          PGUSER: postgres
+          PGDATABASE: postgres
+          PGSSLMODE: require
         run: |
           cd DB/migrations
 
-          # Supabase Session pooler connection
-          echo "Connecting to Supabase..."
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
-
           # Create schema_migrations table if it doesn't exist
           echo "📋 Creating schema_migrations table..."
-          echo "CREATE TABLE IF NOT EXISTS schema_migrations (
+          psql -c "CREATE TABLE IF NOT EXISTS schema_migrations (
             id SERIAL PRIMARY KEY,
             migration_name VARCHAR(255) UNIQUE NOT NULL,
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          );" | docker run --rm -i --network host postgres:15 psql "$DB_URL"
+          );"
 
           # Run each pending migration
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
             echo "▶️  Running migration: $migration"
 
-            if cat "$migration" | docker run --rm -i --network host postgres:15 psql "$DB_URL" > /dev/null 2>&1; then
-              # Record migration as applied
-              echo "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');" | docker run --rm -i --network host postgres:15 psql "$DB_URL" > /dev/null 2>&1
+            if psql -f "$migration"; then
+              psql -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
               echo "✅ Migration $migration completed"
             else
               echo "❌ Migration $migration failed"
@@ -155,8 +165,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: pierre_two/package-lock.json
 
       - name: Install dependencies
