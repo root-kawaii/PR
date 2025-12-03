@@ -34,8 +34,12 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Build connection string
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
+          # Resolve hostname to IPv4 only
+          SUPABASE_IP=$(getent ahostsv4 "${{ secrets.SUPABASE_HOST }}" | awk '{print $1; exit}')
+          echo "Connecting to Supabase at IPv4: $SUPABASE_IP"
+
+          # Build connection string with IP address
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${SUPABASE_IP}:5432/postgres?sslmode=require"
 
           # Get list of migration files
           MIGRATION_FILES=$(ls -1 *.sql | sort)
@@ -65,8 +69,12 @@ jobs:
         run: |
           cd DB/migrations
 
-          # Build connection string
-          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:5432/postgres?sslmode=require"
+          # Resolve hostname to IPv4 only
+          SUPABASE_IP=$(getent ahostsv4 "${{ secrets.SUPABASE_HOST }}" | awk '{print $1; exit}')
+          echo "Connecting to Supabase at IPv4: $SUPABASE_IP"
+
+          # Build connection string with IP address
+          DB_URL="postgresql://postgres:${{ secrets.SUPABASE_DB_PASSWORD }}@${SUPABASE_IP}:5432/postgres?sslmode=require"
 
           # Create schema_migrations table if it doesn't exist
           echo "📋 Creating schema_migrations table..."
