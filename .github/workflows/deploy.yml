@@ -45,12 +45,6 @@ jobs:
           PGPORT: 6543
         run: |
           cd DB/migrations
-          echo "Using port: $PGPORT"
-          echo "Using host: $PGHOST"
-          echo "Using user: $PGUSER"
-          cd DB/migrations
-          # ... rest of your script
-
 
           echo "Connecting to Supabase..."
 
@@ -88,9 +82,10 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.PGPASSWORD }}
           PGHOST: ${{ secrets.PGHOST }}
-          PGUSER: postgres
+          PGUSER: ${{ secrets.PGUSER }}
           PGDATABASE: postgres
           PGSSLMODE: require
+          PGPORT: 6543
         run: |
           cd DB/migrations
 
