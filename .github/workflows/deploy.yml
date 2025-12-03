@@ -79,7 +79,7 @@ jobs:
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
             echo "Running migration: $migration"
 
-            docker run --rm -i postgres:15 psql "$DB_URL" < "$migration"
+            cat "$migration" | docker run --rm -i postgres:15 psql "$DB_URL"
 
             # Record migration as applied
             echo "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');" | docker run --rm -i postgres:15 psql "$DB_URL"
