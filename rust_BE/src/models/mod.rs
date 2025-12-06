@@ -30,8 +30,11 @@ pub use table::{
     CreateReservationWithPaymentRequest, CreatePaymentIntentRequest, CreatePaymentIntentResponse
 };
 
+use crate::idempotency::IdempotencyService;
+
 pub struct AppState {
     pub db_pool: sqlx::PgPool,
     pub stripe_client: stripe::Client,
     pub jwt_secret: String,
+    pub idempotency_service: IdempotencyService,
 }

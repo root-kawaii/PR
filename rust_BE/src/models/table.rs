@@ -120,7 +120,7 @@ pub struct CreateTableReservationRequest {
     pub special_requests: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct CreateReservationWithPaymentRequest {
     pub table_id: String,
     pub event_id: String,
@@ -132,6 +132,7 @@ pub struct CreateReservationWithPaymentRequest {
     pub contact_email: String,
     pub contact_phone: String,
     pub special_requests: Option<String>,
+    pub idempotency_key: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -280,12 +281,13 @@ pub struct LinkTicketToReservationRequest {
 // Payment Intent Creation (for Stripe)
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct CreatePaymentIntentRequest {
     pub table_id: String,
     pub event_id: String,
     pub owner_user_id: String,
     pub guest_phone_numbers: Vec<String>,
+    pub idempotency_key: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]

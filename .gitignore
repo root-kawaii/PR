@@ -16,4 +16,8 @@ node_modules/
 *.mobileprovision
 
 # macOS
-.DS_Storerust_BE/server.log
+.DS_Store
+
+# Logs
+rust_BE/logs/*.log
+rust_BE/server.log

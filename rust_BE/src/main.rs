@@ -6,8 +6,10 @@ use sqlx::PgPool;
 use axum::{
     routing::{get, post},
     Router,
+    middleware::from_fn,
 };
 use tower_http::cors::{CorsLayer, Any};
+use tracing::{info, error};
 
 // Declare your modules
 mod models;
@@ -15,9 +17,13 @@ mod controllers;
 mod persistences;
 mod utils;
 mod services;
+mod idempotency;
+mod logging;
+mod middleware;
 
 // Import specific items from your modules
 use crate::models::AppState;
+use crate::idempotency::{IdempotencyService, IdempotencyConfig};
 use crate::controllers::payment_controller::{
     get_all_payments,
     get_payment,
@@ -93,6 +99,9 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Configure request ID middleware
+    let (set_request_id, propagate_request_id) = crate::middleware::request_id::request_id_layer();
+
     Router::new()
         // Auth routes
         .route("/auth/register", post(register))
@@ -135,6 +144,9 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/payments/:id/capture", post(capture_payment))
         .route("/payments/:id/cancel", post(cancel_payment))
         .with_state(app_state)
+        .layer(from_fn(crate::middleware::request_id::trace_request))
+        .layer(set_request_id)
+        .layer(propagate_request_id)
         .layer(cors)
 }
 
@@ -150,31 +162,65 @@ pub async fn create_pool() -> PgPool {
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    
+
+    // Initialize logging first - MUST keep guard alive for entire program
+    let _log_guard = crate::logging::init_logging();
+    info!("Logging system initialized");
+
     // Load Stripe API key
     let stripe_api_key = env::var("STRIPE_SECRET_KEY")
         .or_else(|_| env::var("STRIPE_API_KEY"))
         .expect("STRIPE_SECRET_KEY or STRIPE_API_KEY must be set in .env");
 
     let stripe_client = stripe::Client::new(stripe_api_key);
-    println!("✅ Stripe API Key loaded");
+    info!("Stripe API Key loaded");
 
     // Load JWT secret
     let jwt_secret = env::var("JWT_SECRET")
         .unwrap_or_else(|_| "your-secret-key-change-this-in-production".to_string());
-    println!("✅ JWT Secret loaded");
+    info!("JWT Secret loaded");
 
     // Create database pool
     let db_pool = create_pool().await;
-    println!("✅ Connected to PostgreSQL database");
+    info!("Connected to PostgreSQL database");
 
-    // Create application state with db_pool, stripe_client, and jwt_secret
+    // Initialize idempotency service
+    let idempotency_config = IdempotencyConfig::default();
+    let idempotency_service = IdempotencyService::new(db_pool.clone(), idempotency_config);
+    info!("Idempotency service initialized");
+
+    // Create application state with db_pool, stripe_client, jwt_secret, and idempotency_service
     let app_state = Arc::new(AppState {
-        db_pool,
+        db_pool: db_pool.clone(),
         stripe_client,
         jwt_secret,
+        idempotency_service,
     });
-    
+
+    // Spawn periodic cleanup job for expired idempotency records
+    let cleanup_pool = db_pool.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Every hour
+
+        loop {
+            interval.tick().await;
+
+            match sqlx::query("SELECT cleanup_expired_idempotency_keys()")
+                .execute(&cleanup_pool)
+                .await
+            {
+                Ok(result) => {
+                    let rows = result.rows_affected();
+                    if rows > 0 {
+                        info!(deleted_records = rows, "Idempotency cleanup completed");
+                    }
+                }
+                Err(e) => error!(error = %e, "Idempotency cleanup failed"),
+            }
+        }
+    });
+    info!("Idempotency cleanup job started (runs hourly)");
+
     // Create router with AppState
     let app = create_router(app_state);
 
@@ -183,37 +229,9 @@ async fn main() {
         .await
         .unwrap();
 
-    println!("🚀 Server running on http://0.0.0.0:3000");
-    println!("   Local: http://127.0.0.1:3000");
-    println!("   Network: http://172.20.10.5:3000");
-    println!("📝 Available endpoints:");
-    println!("   POST           /auth/register");
-    println!("   POST           /auth/login");
-    println!("   POST           /auth/send-sms-verification");
-    println!("   POST           /auth/verify-sms-code");
-    println!("   GET/POST       /events");
-    println!("   GET/PUT/DELETE /events/:id");
-    println!("   GET/POST       /genres");
-    println!("   GET/PUT/DELETE /genres/:id");
-    println!("   GET/POST       /clubs");
-    println!("   GET/PUT/DELETE /clubs/:id");
-    println!("   GET/POST       /tickets");
-    println!("   GET/PUT/DELETE /tickets/:id");
-    println!("   GET            /tickets/code/:code");
-    println!("   GET            /tickets/user/:user_id");
-    println!("   GET/POST       /tables");
-    println!("   GET/PUT/DELETE /tables/:id");
-    println!("   GET            /tables/event/:event_id");
-    println!("   GET            /tables/event/:event_id/available");
-    println!("   GET            /reservations");
-    println!("   GET/PUT/DELETE /reservations/:id");
-    println!("   GET            /reservations/code/:code");
-    println!("   GET/POST       /reservations/user/:user_id");
-    println!("   GET            /reservations/table/:table_id");
-    println!("   POST           /reservations/:reservation_id/payments");
-    println!("   GET/POST       /reservations/:reservation_id/tickets");
-    println!("   GET/POST       /payments");
-    println!("   GET/DELETE     /payments/:id");
-    
+    info!("Server starting on http://0.0.0.0:3000");
+    info!("  Local: http://127.0.0.1:3000");
+    info!("  Network: http://172.20.10.5:3000");
+
     axum::serve(listener, app).await.unwrap();
 }
