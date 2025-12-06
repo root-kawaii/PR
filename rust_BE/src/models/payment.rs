@@ -42,7 +42,7 @@ pub struct PaymentEntity {
     pub captured_amount: Option<Decimal>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct PaymentRequest {
     pub sender_id: Uuid,
     pub receiver_id: Uuid,
@@ -51,6 +51,7 @@ pub struct PaymentRequest {
     pub update_date: Option<NaiveDateTime>,
     pub stripe_payment_intent_id: Option<String>,
     pub user_ids: Option<Vec<Uuid>>,
+    pub idempotency_key: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,9 +75,10 @@ pub struct PaymentFilter {
     // Add any other filterable fields here
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct CapturePaymentRequest {
     pub amount: Option<Decimal>,  // Optional: for partial capture
+    pub idempotency_key: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
