@@ -10,9 +10,10 @@ export type Event = {
   endTime?: string;
   price?: string;
   description?: string;
-  matterportId?: string; // Legacy support
-  tourProvider?: 'kuula' | 'matterport' | 'cloudpano';
-  tourId?: string;
+  matterportId?: string; // Legacy support - DEPRECATED
+  tourProvider?: 'marzipano' | 'kuula' | 'matterport' | 'cloudpano';
+  tourId?: string; // DEPRECATED for Marzipano (uses marzipanoScenes instead)
+  marzipanoScenes?: MarzipanoScene[]; // NEW: Marzipano 360° viewer configuration
   tables?: Table[];
 };
 
@@ -27,6 +28,7 @@ export type Table = {
   available: boolean;
   locationDescription?: string;
   features?: string[];
+  marzipanoPosition?: MarzipanoPosition; // NEW: Hotspot position in 360° view
 };
 
 export type TableReservation = {
@@ -124,4 +126,40 @@ export type Ticket = {
     image: string;
     status?: string;
   };
+};
+
+// Marzipano 360° Viewer Types
+
+export type MarzipanoScene = {
+  id: string;
+  name: string; // Display name (e.g., "Main Floor", "VIP Room")
+  imageUrl: string; // URL to equirectangular 360° image
+  initialView?: MarzipanoView; // Default camera position when scene loads
+  hotspots: MarzipanoHotspot[];
+};
+
+export type MarzipanoView = {
+  yaw: number; // Horizontal rotation in radians (0 = forward)
+  pitch: number; // Vertical rotation in radians (0 = horizon, + = up, - = down)
+  fov: number; // Field of view in radians (e.g., 1.5708 = 90°)
+};
+
+export type MarzipanoHotspot = {
+  id: string;
+  type: 'table' | 'scene-link'; // Table selection or scene navigation
+  yaw: number; // Horizontal position in radians
+  pitch: number; // Vertical position in radians
+  // For table hotspots
+  tableId?: string;
+  tableName?: string;
+  available?: boolean;
+  // For scene-link hotspots
+  targetSceneId?: string;
+  label?: string; // Display text (e.g., "→ VIP Room")
+};
+
+export type MarzipanoPosition = {
+  sceneId: string; // Which scene this position is in
+  yaw: number; // Horizontal position in radians
+  pitch: number; // Vertical position in radians
 };
