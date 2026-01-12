@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Marzipano 360° Viewer</title>
+  <script src="https://unpkg.com/marzipano@0.10.2/dist/marzipano.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    #pano {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transition: opacity 0.3s ease;
+    }
+
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-size: 16px;
+      text-align: center;
+      z-index: 10;
+    }
+
+    .loading-spinner {
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top: 3px solid #ec4899;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .scene-indicator {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 5;
+    }
+
+    /* Hotspot Styles */
+    .hotspot {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      margin-left: -30px;
+      margin-top: -30px;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    .hotspot:hover {
+      transform: scale(1.1);
+    }
+
+    .hotspot:active {
+      transform: scale(0.95);
+    }
+
+    /* Table Hotspot - Available */
+    .hotspot.table.available {
+      background: rgba(16, 185, 129, 0.95);
+      color: #fff;
+      border: 3px solid #10b981;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    /* Table Hotspot - Unavailable */
+    .hotspot.table.unavailable {
+      background: rgba(107, 114, 128, 0.6);
+      color: rgba(255, 255, 255, 0.7);
+      border: 2px solid #6b7280;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* Scene Link Hotspot */
+    .hotspot.scene-link {
+      background: rgba(255, 255, 255, 0.95);
+      color: #000;
+      border: 2px solid #fff;
+      width: auto;
+      min-width: 80px;
+      padding: 8px 12px;
+      border-radius: 24px;
+      font-size: 14px;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      50% {
+        transform: scale(1.05);
+        opacity: 0.9;
+      }
+    }
+
+    .hotspot-label {
+      font-size: 12px;
+      margin-top: 2px;
+      white-space: nowrap;
+    }
+
+    .hotspot-icon {
+      font-size: 20px;
+      margin-bottom: 2px;
+    }
+
+    .error-message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      text-align: center;
+      padding: 24px;
+      background: rgba(220, 38, 38, 0.9);
+      border-radius: 12px;
+      max-width: 80%;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading">
+    <div class="loading-spinner"></div>
+    <div>Loading 360° tour...</div>
+  </div>
+
+  <div id="pano"></div>
+
+  <div id="sceneIndicator" class="scene-indicator" style="display: none;"></div>
+
+  <script>
+    // Global state
+    let viewer = null;
+    let scenes = [];
+    let currentSceneId = null;
+    let hotspotElements = [];
+    let availabilityMap = {};
+    let currentHotspotContainer = null;
+    let isInitialized = false;
+    let isSwitching = false;
+    let lastClickTime = 0;
+
+    // Initialize viewer when config is injected
+    function initViewer(config) {
+      // PREVENT RE-INITIALIZATION
+      if (isInitialized) {
+        console.log('⚠️ Viewer already initialized, skipping...');
+        return;
+      }
+      isInitialized = true;
+
+      try {
+        notifyReactNative({ type: 'DEBUG', message: '🚀 initViewer: START' });
+
+        scenes = config.scenes || [];
+        availabilityMap = config.availabilityMap || {};
+
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Scenes: ' + scenes.length });
+
+        if (scenes.length === 0) {
+          showError('No scenes configured');
+          return;
+        }
+
+        // Setup Marzipano viewer
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Creating Marzipano viewer...' });
+        const panoElement = document.getElementById('pano');
+        viewer = new Marzipano.Viewer(panoElement, {
+          controls: { mouseViewMode: 'drag' }
+        });
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Viewer created' });
+
+        // Create all scenes
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Creating ' + scenes.length + ' scenes' });
+        scenes.forEach((sceneConfig, index) => {
+          try {
+            notifyReactNative({ type: 'DEBUG', message: '🚀 Creating scene ' + (index + 1) });
+            createScene(sceneConfig);
+            notifyReactNative({ type: 'DEBUG', message: '✅ Scene ' + (index + 1) + ' done' });
+          } catch (err) {
+            notifyReactNative({ type: 'ERROR', message: 'Scene create error: ' + err.message });
+            throw err;
+          }
+        });
+        notifyReactNative({ type: 'DEBUG', message: '🚀 All scenes created' });
+
+        // Initialize first scene inline (calling switchToScene causes recursion issues)
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Getting scene list...' });
+        const sceneList = viewer.listScenes();
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Scene list length: ' + sceneList.length });
+
+        const scene = sceneList[0];
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Got first scene' });
+
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Calling scene.switchTo...' });
+        scene.switchTo({ transitionDuration: 0 });
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Scene switched' });
+
+        currentSceneId = scenes[0].id;
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Getting hotspot container...' });
+        currentHotspotContainer = scene.hotspotContainer();
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Got container' });
+
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Updating indicator...' });
+        updateSceneIndicator(scenes[0].name);
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Creating hotspots...' });
+        createHotspots(scenes[0].hotspots || []);
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Hotspots created' });
+
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Hiding loading...' });
+        hideLoading();
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Notifying VIEWER_READY' });
+        notifyReactNative({ type: 'VIEWER_READY' });
+      } catch (error) {
+        // Reset flag on error so retry is possible
+        isInitialized = false;
+        console.error('❌ Init error:', error);
+        showError('Failed to initialize viewer: ' + error.message);
+      }
+    }
+
+    function createScene(sceneConfig) {
+      const { id, name, imageUrl, initialView = {yaw: 0, pitch: 0, fov: Math.PI/2} } = sceneConfig;
+
+      notifyReactNative({ type: 'DEBUG', message: `   Creating source for: ${imageUrl}` });
+      const source = Marzipano.ImageUrlSource.fromString(imageUrl);
+
+      notifyReactNative({ type: 'DEBUG', message: '   Creating geometry' });
+      const geometry = new Marzipano.EquirectGeometry([{ width: 4096 }]);
+
+      notifyReactNative({ type: 'DEBUG', message: '   Creating view limiter' });
+      const limiter = Marzipano.RectilinearView.limit.traditional(4096, 100 * Math.PI / 180);
+
+      notifyReactNative({ type: 'DEBUG', message: '   Creating view' });
+      const view = new Marzipano.RectilinearView(initialView, limiter);
+
+      notifyReactNative({ type: 'DEBUG', message: '   Creating scene object' });
+      const scene = viewer.createScene({
+        source: source,
+        geometry: geometry,
+        view: view,
+        pinFirstLevel: true
+      });
+
+      // Store only primitive values to avoid circular references
+      scene._id = id;
+      scene._name = name;
+
+      notifyReactNative({ type: 'DEBUG', message: '   Scene created: ' + id });
+      return scene;
+    }
+
+    // Switch to a different scene
+    function switchToScene(sceneId) {
+      notifyReactNative({ type: 'DEBUG', message: '🔄 switchToScene called with: ' + sceneId });
+
+      if (isSwitching) {
+        notifyReactNative({ type: 'DEBUG', message: '⚠️ Already switching, ignoring' });
+        return;
+      }
+      isSwitching = true;
+
+      try {
+        notifyReactNative({ type: 'DEBUG', message: '🔄 switchToScene: START' });
+
+      const sceneConfig = scenes.find(s => s.id === sceneId);
+      if (!sceneConfig) {
+        notifyReactNative({ type: 'ERROR', message: 'Scene config not found: ' + sceneId });
+        isSwitching = false;
+        return;
+      }
+      notifyReactNative({ type: 'DEBUG', message: '🔄 Found scene config' });
+
+      const sceneList = viewer.listScenes();
+      notifyReactNative({ type: 'DEBUG', message: '🔄 Viewer has ' + sceneList.length + ' scenes' });
+
+      const scene = sceneList.find(s => s._id === sceneId);
+      if (!scene) {
+        notifyReactNative({ type: 'ERROR', message: 'Marzipano scene not found: ' + sceneId });
+        return;
+      }
+      notifyReactNative({ type: 'DEBUG', message: '🔄 Found Marzipano scene' });
+
+      // Skip fade for initial load
+      const isInitialLoad = currentSceneId === null;
+      notifyReactNative({ type: 'DEBUG', message: '🔄 Is initial load: ' + isInitialLoad });
+
+      if (isInitialLoad) {
+        // Direct switch without fade
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Clearing hotspots...' });
+        clearHotspots();
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Hotspots cleared' });
+
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Calling scene.switchTo...' });
+        scene.switchTo({ transitionDuration: 0 });
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Scene switched' });
+
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Getting hotspot container...' });
+        currentHotspotContainer = scene.hotspotContainer();
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Got hotspot container' });
+
+        currentSceneId = sceneId;
+
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Updating indicator...' });
+        updateSceneIndicator(sceneConfig.name);
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Indicator updated' });
+
+        const numHotspots = (sceneConfig.hotspots || []).length;
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Creating ' + numHotspots + ' hotspots...' });
+        createHotspots(sceneConfig.hotspots || []);
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Hotspots created' });
+
+        notifyReactNative({
+          type: 'SCENE_CHANGE',
+          sceneId: sceneId,
+          sceneName: sceneConfig.name
+        });
+        isSwitching = false;
+        console.log('🔄 Scene change notified');
+      } else {
+        // Existing fade logic for subsequent switches
+        const panoElement = document.getElementById('pano');
+        panoElement.style.opacity = '0';
+
+        setTimeout(() => {
+          clearHotspots();
+          scene.switchTo({ transitionDuration: 500 });
+          currentHotspotContainer = scene.hotspotContainer();
+          currentSceneId = sceneId;
+          updateSceneIndicator(sceneConfig.name);
+          createHotspots(sceneConfig.hotspots || []);
+          panoElement.style.opacity = '1';
+          notifyReactNative({
+            type: 'SCENE_CHANGE',
+            sceneId: sceneId,
+            sceneName: sceneConfig.name
+          });
+          isSwitching = false;
+        }, 300);
+      }
+      } catch (error) {
+        isSwitching = false;
+        notifyReactNative({ type: 'ERROR', message: 'Scene switch failed: ' + error.message });
+      }
+    }
+
+    // Create hotspots for current scene
+    function createHotspots(hotspotsConfig) {
+      hotspotsConfig.forEach(hotspot => {
+        createHotspot(hotspot);
+      });
+    }
+
+    // Create a single hotspot
+    function createHotspot(hotspot) {
+      const { id, type, yaw, pitch, tableId, tableName, available, targetSceneId, label } = hotspot;
+
+      // Create hotspot element
+      const element = document.createElement('div');
+      element.className = 'hotspot';
+      element.id = `hotspot-${id}`;
+
+      if (type === 'table') {
+        element.classList.add('table');
+        element.classList.add(available ? 'available' : 'unavailable');
+
+        // Update availability from map if provided
+        const isAvailable = availabilityMap[tableId] !== undefined
+          ? availabilityMap[tableId]
+          : available;
+
+        element.classList.toggle('available', isAvailable);
+        element.classList.toggle('unavailable', !isAvailable);
+
+        element.innerHTML = `
+          <div class="hotspot-icon">${isAvailable ? '✓' : '✕'}</div>
+          <div class="hotspot-label">${tableName || 'Table'}</div>
+        `;
+
+        if (isAvailable) {
+          element.onclick = () => handleTableClick(tableId, tableName);
+        }
+      } else if (type === 'scene-link') {
+        element.classList.add('scene-link');
+        element.innerHTML = `<div>${label || '→'}</div>`;
+
+        notifyReactNative({ type: 'DEBUG', message: 'Scene-link: targetSceneId=' + targetSceneId + ', currentSceneId=' + currentSceneId });
+
+        // Prevent infinite loop: don't link to the same scene
+        if (targetSceneId && targetSceneId !== currentSceneId) {
+          // Store target in data attribute to avoid closure issues
+          element.setAttribute('data-target-scene', targetSceneId);
+          element.onclick = handleSceneLinkClick;
+        } else {
+          // Hotspot points to same scene or has no target - disable it
+          element.style.opacity = '0.5';
+          element.style.pointerEvents = 'none';
+          notifyReactNative({ type: 'DEBUG', message: '⚠️ Scene-link disabled (no target or same scene)' });
+        }
+      }
+
+      // Position hotspot in 3D space using the current container
+      const position = { yaw, pitch };
+      currentHotspotContainer.createHotspot(element, position);
+
+      // Store only necessary data to avoid circular references
+      hotspotElements.push({
+        element,
+        hotspot: {
+          id,
+          type,
+          tableId,
+          tableName
+        }
+      });
+    }
+
+    // Clear all hotspots
+    function clearHotspots() {
+      // Just clear the array - Marzipano automatically cleans up hotspots when switching scenes
+      // Trying to destroy hotspots from the old scene using the current container causes errors
+      hotspotElements = [];
+    }
+
+    // Handle scene-link click
+    function handleSceneLinkClick(e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const now = Date.now();
+      if (now - lastClickTime < 500) {
+        return; // Debounce
+      }
+      lastClickTime = now;
+
+      const targetSceneId = e.currentTarget.getAttribute('data-target-scene');
+      if (!targetSceneId) {
+        notifyReactNative({ type: 'ERROR', message: 'No target scene ID' });
+        return;
+      }
+
+      if (isSwitching) {
+        notifyReactNative({ type: 'DEBUG', message: '⚠️ Already switching' });
+        return;
+      }
+      isSwitching = true;
+
+      notifyReactNative({ type: 'DEBUG', message: '🎯 Scene-link clicked, switching to: ' + targetSceneId });
+
+      // Inline scene switching to avoid function call issues
+      try {
+        const sceneConfig = scenes.find(s => s.id === targetSceneId);
+        if (!sceneConfig) {
+          notifyReactNative({ type: 'ERROR', message: 'Scene not found: ' + targetSceneId });
+          isSwitching = false;
+          return;
+        }
+
+        const sceneList = viewer.listScenes();
+        const scene = sceneList.find(s => s._id === targetSceneId);
+        if (!scene) {
+          notifyReactNative({ type: 'ERROR', message: 'Marzipano scene not found' });
+          isSwitching = false;
+          return;
+        }
+
+        // Fade out, switch, fade in
+        const panoElement = document.getElementById('pano');
+        notifyReactNative({ type: 'DEBUG', message: '🔄 Setting pano opacity to 0' });
+        panoElement.style.opacity = '0';
+
+        setTimeout(() => {
+          try {
+            notifyReactNative({ type: 'DEBUG', message: '🔄 Switching scene in timeout...' });
+            notifyReactNative({ type: 'DEBUG', message: '🔄 About to call clearHotspots...' });
+            clearHotspots();
+            notifyReactNative({ type: 'DEBUG', message: '🔄 clearHotspots returned successfully' });
+            notifyReactNative({ type: 'DEBUG', message: '🔄 Calling scene.switchTo...' });
+            scene.switchTo({ transitionDuration: 500 }, function() {
+              notifyReactNative({ type: 'DEBUG', message: '🔄 Scene transition complete, setting up hotspots...' });
+              currentHotspotContainer = scene.hotspotContainer();
+              currentSceneId = targetSceneId;
+              updateSceneIndicator(sceneConfig.name);
+              createHotspots(sceneConfig.hotspots || []);
+
+              // Fade in after scene is fully loaded
+              setTimeout(() => {
+                notifyReactNative({ type: 'DEBUG', message: '🔄 Setting pano opacity to 1' });
+                panoElement.style.opacity = '1';
+                notifyReactNative({ type: 'DEBUG', message: '🔄 Pano opacity set, current value: ' + panoElement.style.opacity });
+                notifyReactNative({
+                  type: 'SCENE_CHANGE',
+                  sceneId: targetSceneId,
+                  sceneName: sceneConfig.name
+                });
+                notifyReactNative({ type: 'DEBUG', message: '🔄 Scene switch complete!' });
+                isSwitching = false;
+              }, 100);
+            });
+          } catch (error) {
+            notifyReactNative({ type: 'ERROR', message: '❌ setTimeout error: ' + error.message });
+            isSwitching = false;
+          }
+        }, 300);
+      } catch (error) {
+        notifyReactNative({ type: 'ERROR', message: 'Scene switch failed: ' + error.message });
+        isSwitching = false;
+      }
+    }
+
+    // Handle table hotspot click
+    function handleTableClick(tableId, tableName) {
+      const now = Date.now();
+      if (now - lastClickTime < 500) {
+        notifyReactNative({ type: 'DEBUG', message: '⚠️ Click too soon, ignoring' });
+        return;
+      }
+      lastClickTime = now;
+
+      notifyReactNative({ type: 'DEBUG', message: '🎯 Table clicked: ' + tableName + ' (' + tableId + ')' });
+      notifyReactNative({
+        type: 'HOTSPOT_CLICK',
+        hotspotType: 'table',
+        tableId: tableId,
+        tableName: tableName
+      });
+    }
+
+    // Update scene indicator
+    function updateSceneIndicator(sceneName) {
+      const indicator = document.getElementById('sceneIndicator');
+      indicator.textContent = `📍 ${sceneName}`;
+      indicator.style.display = 'block';
+    }
+
+    // Update hotspot availability from React Native
+    window.updateHotspotAvailability = function(newAvailabilityMap) {
+      availabilityMap = newAvailabilityMap;
+
+      // Update existing hotspots
+      hotspotElements.forEach(({ element, hotspot }) => {
+        if (hotspot.type === 'table' && hotspot.tableId) {
+          const isAvailable = availabilityMap[hotspot.tableId];
+          if (isAvailable !== undefined) {
+            element.classList.toggle('available', isAvailable);
+            element.classList.toggle('unavailable', !isAvailable);
+
+            const icon = element.querySelector('.hotspot-icon');
+            if (icon) {
+              icon.textContent = isAvailable ? '✓' : '✕';
+            }
+
+            if (isAvailable) {
+              element.style.pointerEvents = 'auto';
+              element.onclick = () => handleTableClick(hotspot.tableId, hotspot.tableName);
+            } else {
+              element.style.pointerEvents = 'none';
+              element.onclick = null;
+            }
+          }
+        }
+      });
+    };
+
+    // Switch scene (called from React Native)
+    window.switchToScene = function(sceneId) {
+      switchToScene(sceneId);
+    };
+
+    // Notify React Native
+    function notifyReactNative(message) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify(message));
+      } else {
+        console.log('Message to RN:', message);
+      }
+    }
+
+    // Show loading indicator
+    function showLoading() {
+      document.getElementById('loading').style.display = 'block';
+    }
+
+    // Hide loading indicator
+    function hideLoading() {
+      document.getElementById('loading').style.display = 'none';
+    }
+
+    // Show error message
+    function showError(message) {
+      hideLoading();
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error-message';
+      errorDiv.innerHTML = `
+        <div style="font-size: 24px; margin-bottom: 8px;">⚠️</div>
+        <div style="font-weight: 600; margin-bottom: 8px;">Error Loading Tour</div>
+        <div style="font-size: 14px;">${message}</div>
+      `;
+      document.body.appendChild(errorDiv);
+
+      notifyReactNative({
+        type: 'ERROR',
+        message: message
+      });
+    }
+
+    // Expose init function globally with guard and comprehensive error handling
+    window.initMarzipanoViewer = function(config) {
+      try {
+        // Use notifyReactNative to ensure logs reach React
+        notifyReactNative({ type: 'DEBUG', message: '📥 window.initMarzipanoViewer called' });
+        notifyReactNative({ type: 'DEBUG', message: '📥 isInitialized: ' + isInitialized });
+        notifyReactNative({ type: 'DEBUG', message: '📥 config type: ' + typeof config });
+
+        if (isInitialized) {
+          notifyReactNative({ type: 'DEBUG', message: '⚠️ Viewer already initialized, ignoring' });
+          return;
+        }
+
+        notifyReactNative({ type: 'DEBUG', message: '📥 Calling initViewer...' });
+        initViewer(config);
+        notifyReactNative({ type: 'DEBUG', message: '📥 initViewer returned' });
+      } catch (error) {
+        notifyReactNative({ type: 'ERROR', message: 'FATAL: ' + error.message });
+        notifyReactNative({ type: 'DEBUG', message: 'Stack: ' + error.stack });
+        showError('Fatal error: ' + error.message);
+      }
+    };
+
+    // Log version for debugging
+    console.log('🟢 HTML LOADED - Version: 2026-01-12-v3');
+
+    // Initial loading state
+    showLoading();
+
+    // Log version
+    notifyReactNative({ type: 'DEBUG', message: '🟢 HTML VERSION: 2026-01-12-v9-OPACITY-DEBUG' });
+
+    // Notify that we're ready for initialization
+    notifyReactNative({ type: 'READY_FOR_INIT' });
+  </script>
+</body>
+</html>
