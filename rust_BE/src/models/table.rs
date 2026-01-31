@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use super::ticket::EventSummary;
 
 // ============================================================================
 // Table Model (represents physical tables at events)
@@ -20,6 +22,7 @@ pub struct Table {
     pub available: bool,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
+    pub marzipano_position: Option<JsonValue>, // NEW: {sceneId, yaw, pitch}
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -33,6 +36,7 @@ pub struct CreateTableRequest {
     pub min_spend: f64, // Frontend sends as number
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
+    pub marzipano_position: Option<JsonValue>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,6 +48,7 @@ pub struct UpdateTableRequest {
     pub available: Option<bool>,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
+    pub marzipano_position: Option<JsonValue>,
 }
 
 #[derive(Debug, Serialize)]
@@ -59,6 +64,7 @@ pub struct TableResponse {
     pub available: bool,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
+    pub marzipano_position: Option<JsonValue>,
 }
 
 impl From<Table> for TableResponse {
@@ -74,6 +80,7 @@ impl From<Table> for TableResponse {
             available: table.available,
             location_description: table.location_description,
             features: table.features,
+            marzipano_position: table.marzipano_position,
         }
     }
 }
@@ -219,16 +226,6 @@ pub struct TableSummary {
     pub min_spend: String,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EventSummary {
-    pub id: String,
-    pub title: String,
-    pub venue: String,
-    pub date: String,
-    pub image: String,
 }
 
 #[derive(Debug, Serialize)]

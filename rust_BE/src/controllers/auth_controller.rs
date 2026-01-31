@@ -59,7 +59,7 @@ pub async fn register(
     };
 
     // Generate JWT token
-    let token = match jwt::generate_token(user.id, user.email.clone(), &state.jwt_secret) {
+    let token = match jwt::generate_token(user.id, user.email.clone(), "user".to_string(), &state.jwt_secret) {
         Ok(token) => token,
         Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
@@ -103,7 +103,7 @@ pub async fn login(
     let _ = user_persistence::update_last_login(&state.db_pool, user.id).await;
 
     // Generate JWT token
-    let token = match jwt::generate_token(user.id, user.email.clone(), &state.jwt_secret) {
+    let token = match jwt::generate_token(user.id, user.email.clone(), "user".to_string(), &state.jwt_secret) {
         Ok(token) => token,
         Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
@@ -116,24 +116,6 @@ pub async fn login(
     Ok(Json(response))
 }
 
-/// Get current user info (requires authentication)
-pub async fn me(
-    State(state): State<AppState>,
-    user_id: String, // This will come from auth middleware
-) -> Result<Json<UserResponse>, StatusCode> {
-    let user_uuid = match uuid::Uuid::parse_str(&user_id) {
-        Ok(uuid) => uuid,
-        Err(_) => return Err(StatusCode::BAD_REQUEST),
-    };
-
-    let user = match user_persistence::find_user_by_id(&state.db_pool, user_uuid).await {
-        Ok(Some(user)) => user,
-        Ok(None) => return Err(StatusCode::NOT_FOUND),
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-    };
-
-    Ok(Json(UserResponse::from(user)))
-}
 
 #[derive(Debug, Deserialize)]
 pub struct SendSmsRequest {

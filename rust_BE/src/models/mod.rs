@@ -1,9 +1,6 @@
 // src/models.rs
 pub mod event;
-pub use event::{EventEntity, EventRequest};
-
-pub mod event_new;
-pub use event_new::{Event, CreateEventRequest, UpdateEventRequest, EventResponse};
+pub use event::{Event, CreateEventRequest, UpdateEventRequest, EventResponse};
 
 pub mod payment;
 pub use payment::{PaymentEntity, PaymentRequest, PaymentFilter, PaymentStatus, PaymentCaptureMethod, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentResponse};
@@ -16,6 +13,8 @@ pub use genre::{Genre, CreateGenreRequest, UpdateGenreRequest, GenreResponse};
 
 pub mod club;
 pub use club::{Club, CreateClubRequest, UpdateClubRequest, ClubResponse};
+
+pub mod club_owner;
 
 pub mod ticket;
 pub use ticket::{Ticket, CreateTicketRequest, UpdateTicketRequest, TicketResponse, TicketWithEventResponse, EventSummary};

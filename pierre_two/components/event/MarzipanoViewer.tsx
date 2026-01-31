@@ -118,6 +118,11 @@ export const MarzipanoViewer = forwardRef<
               tableId: table.id,
               tableName: table.name,
               available: table.available,
+              capacity: table.capacity,
+              minSpend: table.minSpend.replace(' €', ''),
+              totalCost: table.totalCost.replace(' €', ''),
+              features: table.features || [],
+              locationDescription: table.locationDescription,
             })),
         ],
       }));
@@ -173,6 +178,14 @@ export const MarzipanoViewer = forwardRef<
             `🎯 Table hotspot clicked: ${message.tableName} (${message.tableId})`
           );
           onTableClickRef.current(message.tableId);
+          break;
+
+        case "UNAVAILABLE_TABLE_CLICK":
+          console.log(
+            `🎯 Unavailable table clicked: ${message.tableName} (${message.tableId})`
+          );
+          // Show alert or modal with info about unavailable table
+          alert(`${message.tableName} is currently unavailable.\n\nWould you like to:\n• View other available tables\n• Join the waitlist\n• Contact us for more information`);
           break;
 
         case "SCENE_CHANGE":

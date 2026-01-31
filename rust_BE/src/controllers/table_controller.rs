@@ -5,9 +5,8 @@ use crate::models::{
     TableReservationsResponse, TableReservationsWithDetailsResponse,
     AddPaymentToReservationRequest, LinkTicketToReservationRequest,
     CreatePaymentIntentRequest, CreatePaymentIntentResponse,
-    TableSummary, PaymentStatus, CreateTicketRequest,
+    TableSummary, PaymentStatus, CreateTicketRequest, EventSummary,
 };
-use crate::models::table::EventSummary as TableEventSummary;
 use crate::persistences::{table_persistence, user_persistence, ticket_persistence};
 use axum::{
     extract::{Path, State},
@@ -119,6 +118,7 @@ pub async fn create_table(
         min_spend,
         req.location_description,
         req.features,
+        req.marzipano_position,
     )
     .await
     {
@@ -151,6 +151,7 @@ pub async fn update_table(
         req.available,
         req.location_description,
         req.features,
+        req.marzipano_position,
     )
     .await
     {
@@ -272,12 +273,13 @@ pub async fn get_user_reservations_with_details(
                     location_description: None,
                     features: None,
                 },
-                event: TableEventSummary {
+                event: EventSummary {
                     id: event_id.to_string(),
                     title: event_title,
                     venue: event_venue,
                     date: event_date,
                     image: event_image,
+                    status: None,
                 },
             }
         })
@@ -353,12 +355,13 @@ pub async fn get_reservation_by_code(
                     location_description: table.location_description,
                     features: table.features,
                 },
-                event: TableEventSummary {
+                event: EventSummary {
                     id: event_id.to_string(),
                     title: event_title,
                     venue: event_venue,
                     date: event_date,
                     image: event_image,
+                    status: None,
                 },
             }))
         }

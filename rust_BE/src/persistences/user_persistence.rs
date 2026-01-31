@@ -95,32 +95,3 @@ pub async fn update_last_login(pool: &PgPool, user_id: Uuid) -> Result<()> {
     Ok(())
 }
 
-/// Get all users (admin function)
-pub async fn get_all_users(pool: &PgPool) -> Result<Vec<User>> {
-    let users = sqlx::query_as::<_, User>(
-        r#"
-        SELECT id, email, password_hash, name, phone_number, avatar_url, date_of_birth, created_at, updated_at
-        FROM users
-        ORDER BY created_at DESC
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(users)
-}
-
-/// Delete a user by ID
-pub async fn delete_user(pool: &PgPool, user_id: Uuid) -> Result<()> {
-    sqlx::query(
-        r#"
-        DELETE FROM users
-        WHERE id = $1
-        "#,
-    )
-    .bind(user_id)
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}

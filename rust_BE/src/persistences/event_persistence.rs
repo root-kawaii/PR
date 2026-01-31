@@ -1,107 +1,158 @@
-use crate::models::{EventEntity, EventRequest, AppState};
+use crate::models::{Event, CreateEventRequest, UpdateEventRequest};
+use sqlx::{PgPool, Result};
 use uuid::Uuid;
-use axum::http::StatusCode;
 
-pub async fn load_all_events_service(app_state: &AppState) -> Result<Vec<EventEntity>, StatusCode> {
-    sqlx::query_as::<_, EventEntity>(
-        "SELECT id, title, description, completed FROM events"
+/// Get all events
+pub async fn get_all_events(pool: &PgPool) -> Result<Vec<Event>> {
+    let events = sqlx::query_as::<_, Event>(
+        r#"
+        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+               matterport_id, tour_provider, tour_id, marzipano_config, created_at, updated_at
+        FROM events
+        ORDER BY created_at DESC
+        "#,
     )
-    .fetch_all(&app_state.db_pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })
+    .fetch_all(pool)
+    .await?;
+
+    Ok(events)
 }
 
-pub async fn load_event_service(id: Uuid, app_state: &AppState) -> Result<EventEntity, StatusCode> {
-    sqlx::query_as::<_, EventEntity>(
-        "SELECT id, title, description, completed FROM events WHERE id = $1"
+/// Get a single event by ID
+pub async fn get_event_by_id(pool: &PgPool, event_id: Uuid) -> Result<Option<Event>> {
+    let event = sqlx::query_as::<_, Event>(
+        r#"
+        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+               matterport_id, tour_provider, tour_id, marzipano_config, created_at, updated_at
+        FROM events
+        WHERE id = $1
+        "#,
     )
-    .bind(id)
-    .fetch_optional(&app_state.db_pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?
-    .ok_or(StatusCode::NOT_FOUND)
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(event)
 }
 
-pub async fn create_event_service(payload: EventRequest, app_state: &AppState) -> Result<EventEntity, StatusCode> {
-    let id = Uuid::new_v4();
-    sqlx::query_as::<_, EventEntity>(
-        "INSERT INTO events (id, title, description, completed) VALUES ($1, $2, $3, false) RETURNING id, title, description, completed"
+/// Create a new event
+pub async fn create_event(
+    pool: &PgPool,
+    request: CreateEventRequest,
+) -> Result<Event> {
+    let event = sqlx::query_as::<_, Event>(
+        r#"
+        INSERT INTO events (id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+                           matterport_id, tour_provider, tour_id, marzipano_config, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+                  matterport_id, tour_provider, tour_id, marzipano_config, created_at, updated_at
+        "#,
     )
-    .bind(id)
-    .bind(&payload.title)
-    .bind(&payload.description)
-    .fetch_one(&app_state.db_pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })
+    .bind(Uuid::new_v4())
+    .bind(request.title)
+    .bind(request.venue)
+    .bind(request.date)
+    .bind(request.image)
+    .bind(request.status)
+    .bind(request.time)
+    .bind(request.age_limit)
+    .bind(request.end_time)
+    .bind(request.price)
+    .bind(request.description)
+    .bind(request.club_id)
+    .bind(request.matterport_id)
+    .bind(request.tour_provider)
+    .bind(request.tour_id)
+    .bind(request.marzipano_config)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(event)
 }
 
-// pub async fn update_event_service(id: Uuid, payload: UpdateEvent, app_state: &AppState) -> Result<EventEntity, StatusCode> {
-//     let mut query = String::from("UPDATE events SET ");
-//     let mut updates = Vec::new();
-//     let mut param_count = 1;
-//     
-//     if payload.title.is_some() {
-//         updates.push(format!("title = ${}", param_count));
-//         param_count += 1;
-//     }
-//     if payload.description.is_some() {
-//         updates.push(format!("description = ${}", param_count));
-//         param_count += 1;
-//     }
-//     if payload.completed.is_some() {
-//         updates.push(format!("completed = ${}", param_count));
-//         param_count += 1;
-//     }
-//     
-//     if updates.is_empty() {
-//         return load_event_service(id, app_state).await;
-//     }
-//     
-//     query.push_str(&updates.join(", "));
-//     query.push_str(&format!(" WHERE id = ${} RETURNING id, title, description, completed", param_count));
-//     
-//     let mut query_builder = sqlx::query_as::<_, EventEntity>(&query).bind(id);
-//     
-//     if let Some(title) = payload.title {
-//         query_builder = query_builder.bind(title);
-//     }
-//     if let Some(description) = payload.description {
-//         query_builder = query_builder.bind(description);
-//     }
-//     if let Some(completed) = payload.completed {
-//         query_builder = query_builder.bind(completed);
-//     }
-//     
-//     query_builder
-//         .fetch_optional(&app_state.db_pool)
-//         .await
-//         .map_err(|e| {
-//             eprintln!("Database error: {}", e);
-//             StatusCode::INTERNAL_SERVER_ERROR
-//         })?
-//         .ok_or(StatusCode::NOT_FOUND)
-// }
+/// Update an existing event
+pub async fn update_event(
+    pool: &PgPool,
+    event_id: Uuid,
+    request: UpdateEventRequest,
+) -> Result<Option<Event>> {
+    let event = sqlx::query_as::<_, Event>(
+        r#"
+        UPDATE events
+        SET
+            title = COALESCE($1, title),
+            venue = COALESCE($2, venue),
+            date = COALESCE($3, date),
+            image = COALESCE($4, image),
+            status = COALESCE($5, status),
+            time = COALESCE($6, time),
+            age_limit = COALESCE($7, age_limit),
+            end_time = COALESCE($8, end_time),
+            price = COALESCE($9, price),
+            description = COALESCE($10, description),
+            club_id = COALESCE($11, club_id),
+            matterport_id = COALESCE($12, matterport_id),
+            tour_provider = COALESCE($13, tour_provider),
+            tour_id = COALESCE($14, tour_id),
+            marzipano_config = COALESCE($15, marzipano_config),
+            updated_at = NOW()
+        WHERE id = $16
+        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+                  matterport_id, tour_provider, tour_id, marzipano_config, created_at, updated_at
+        "#,
+    )
+    .bind(request.title)
+    .bind(request.venue)
+    .bind(request.date)
+    .bind(request.image)
+    .bind(request.status)
+    .bind(request.time)
+    .bind(request.age_limit)
+    .bind(request.end_time)
+    .bind(request.price)
+    .bind(request.description)
+    .bind(request.club_id)
+    .bind(request.matterport_id)
+    .bind(request.tour_provider)
+    .bind(request.tour_id)
+    .bind(request.marzipano_config)
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await?;
 
-pub async fn erase_event_service(id: Uuid, app_state: &AppState) -> Result<u64, StatusCode> {
-    let result = sqlx::query("DELETE FROM events WHERE id = $1")
-        .bind(id)
-        .execute(&app_state.db_pool)
-        .await;
-    
-    match result {
-        Ok(res) => Ok(res.rows_affected()),
-        Err(e) => {
-            eprintln!("Database error: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
+    Ok(event)
+}
+
+/// Get events by club ID
+pub async fn get_events_by_club_id(pool: &PgPool, club_id: Uuid) -> Result<Vec<Event>> {
+    let events = sqlx::query_as::<_, Event>(
+        r#"
+        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+               matterport_id, tour_provider, tour_id, marzipano_config, created_at, updated_at
+        FROM events
+        WHERE club_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(club_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(events)
+}
+
+/// Delete an event
+pub async fn delete_event(pool: &PgPool, event_id: Uuid) -> Result<bool> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM events
+        WHERE id = $1
+        "#,
+    )
+    .bind(event_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
 }

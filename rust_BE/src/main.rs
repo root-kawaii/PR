@@ -33,7 +33,7 @@ use crate::controllers::payment_controller::{
     cancel_payment,
     delete_payment,
 };
-use crate::controllers::event_new_controller::{
+use crate::controllers::event_controller::{
     get_all_events,
     get_event,
     create_event,
@@ -91,6 +91,15 @@ use crate::controllers::table_controller::{
     create_payment_intent,
     create_reservation_with_payment,
 };
+use crate::controllers::club_owner_controller::{
+    register_club_owner,
+    login_club_owner,
+    get_my_club,
+    get_my_club_events,
+    create_club_event,
+    get_my_club_tables,
+    create_club_table,
+};
 
 pub fn create_router(app_state: Arc<AppState>) -> Router {
     // Configure CORS to allow requests from React Native
@@ -108,6 +117,9 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/auth/login", post(login))
         .route("/auth/send-sms-verification", post(send_sms_verification))
         .route("/auth/verify-sms-code", post(verify_sms_code))
+        // Club owner auth routes
+        .route("/auth/club-owner/register", post(register_club_owner))
+        .route("/auth/club-owner/login", post(login_club_owner))
         // Event routes (new schema)
         .route("/events", get(get_all_events).post(create_event))
         .route("/events/:id", get(get_event).put(update_event).delete(delete_event))
@@ -137,6 +149,10 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/reservations/:reservation_id/tickets", post(link_ticket_to_reservation).get(get_tickets_for_reservation))
         .route("/reservations/create-payment-intent", post(create_payment_intent))
         .route("/reservations/create-with-payment", post(create_reservation_with_payment))
+        // Club owner scoped routes (JWT protected)
+        .route("/owner/club", get(get_my_club))
+        .route("/owner/events", get(get_my_club_events).post(create_club_event))
+        .route("/owner/events/:event_id/tables", get(get_my_club_tables).post(create_club_table))
         // Payment routes
         .route("/payments", get(get_all_payments).post(post_payment))
         .route("/payments/authorize", post(post_authorized_payment))

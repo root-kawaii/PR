@@ -2,6 +2,7 @@ use crate::models::{Table, TableReservation};
 use sqlx::PgPool;
 use uuid::Uuid;
 use rust_decimal::Decimal;
+use serde_json::Value as JsonValue;
 
 // ============================================================================
 // Tables CRUD
@@ -78,13 +79,14 @@ pub async fn create_table(
     min_spend: Decimal,
     location_description: Option<String>,
     features: Option<Vec<String>>,
+    marzipano_position: Option<JsonValue>,
 ) -> Result<Table, sqlx::Error> {
     let total_cost = min_spend * Decimal::from(capacity);
 
     let table = sqlx::query_as::<_, Table>(
         r#"
-        INSERT INTO tables (event_id, name, zone, capacity, min_spend, total_cost, location_description, features)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO tables (event_id, name, zone, capacity, min_spend, total_cost, location_description, features, marzipano_position)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         "#,
     )
@@ -96,6 +98,7 @@ pub async fn create_table(
     .bind(total_cost)
     .bind(location_description)
     .bind(features)
+    .bind(marzipano_position)
     .fetch_one(pool)
     .await?;
 
@@ -113,6 +116,7 @@ pub async fn update_table(
     available: Option<bool>,
     location_description: Option<String>,
     features: Option<Vec<String>>,
+    marzipano_position: Option<JsonValue>,
 ) -> Result<Table, sqlx::Error> {
     // Get the current table to calculate new total_cost if needed
     let current_table = get_table_by_id(pool, table_id).await?;
@@ -132,8 +136,9 @@ pub async fn update_table(
             available = COALESCE($6, available),
             location_description = COALESCE($7, location_description),
             features = COALESCE($8, features),
+            marzipano_position = COALESCE($9, marzipano_position),
             updated_at = NOW()
-        WHERE id = $9
+        WHERE id = $10
         RETURNING *
         "#,
     )
@@ -145,6 +150,7 @@ pub async fn update_table(
     .bind(available)
     .bind(location_description)
     .bind(features)
+    .bind(marzipano_position)
     .bind(table_id)
     .fetch_one(pool)
     .await?;
@@ -196,22 +202,6 @@ pub async fn get_all_reservations(pool: &PgPool) -> Result<Vec<TableReservation>
         ORDER BY created_at DESC
         "#,
     )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(reservations)
-}
-
-/// Get reservations for a user
-pub async fn get_reservations_by_user_id(pool: &PgPool, user_id: Uuid) -> Result<Vec<TableReservation>, sqlx::Error> {
-    let reservations = sqlx::query_as::<_, TableReservation>(
-        r#"
-        SELECT * FROM table_reservations
-        WHERE user_id = $1
-        ORDER BY created_at DESC
-        "#,
-    )
-    .bind(user_id)
     .fetch_all(pool)
     .await?;
 

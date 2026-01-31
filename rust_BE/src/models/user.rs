@@ -67,8 +67,9 @@ pub struct AuthResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,  // User ID
+    pub sub: String,   // User ID or ClubOwner ID
     pub email: String,
-    pub exp: usize,   // Expiration time
-    pub iat: usize,   // Issued at
+    pub role: String,  // "user" or "club_owner"
+    pub exp: usize,    // Expiration time
+    pub iat: usize,    // Issued at
 }
