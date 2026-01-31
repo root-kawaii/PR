@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
 pub struct Club {
@@ -12,6 +12,7 @@ pub struct Club {
     pub address: Option<String>,
     pub phone_number: Option<String>,
     pub website: Option<String>,
+    pub owner_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -24,6 +25,7 @@ pub struct CreateClubRequest {
     pub address: Option<String>,
     pub phone_number: Option<String>,
     pub website: Option<String>,
+    pub owner_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +36,7 @@ pub struct UpdateClubRequest {
     pub address: Option<String>,
     pub phone_number: Option<String>,
     pub website: Option<String>,
+    pub owner_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,6 +45,8 @@ pub struct ClubResponse {
     pub name: String,
     pub subtitle: String,
     pub image: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_id: Option<String>,
 }
 
 impl From<Club> for ClubResponse {
@@ -51,6 +56,7 @@ impl From<Club> for ClubResponse {
             name: club.name,
             subtitle: club.subtitle.unwrap_or_default(),
             image: club.image,
+            owner_id: club.owner_id.map(|id| id.to_string()),
         }
     }
 }

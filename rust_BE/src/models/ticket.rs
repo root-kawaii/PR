@@ -91,6 +91,7 @@ pub struct TicketWithEventResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventSummary {
     pub id: String,
     pub title: String,

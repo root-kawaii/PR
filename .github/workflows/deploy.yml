@@ -1,6 +1,12 @@
 name: Deploy Backend & Build App
 
 on:
+  # Auto-deploy when a version tag is pushed (e.g. git tag v1.0.0 && git push --tags)
+  push:
+    tags:
+      - "v*"
+
+  # Manual trigger with full control
   workflow_dispatch:
     inputs:
       run_migrations:
@@ -17,13 +23,16 @@ on:
         description: "Trigger EAS development build"
         required: false
         type: boolean
-        default: true
+        default: false
 
 jobs:
   migrations:
     name: Run Database Migrations
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.run_migrations == 'true' }}
+    # Run on tag push (always) or manual trigger (if toggled on)
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.event.inputs.run_migrations == 'true'
 
     steps:
       - name: Checkout code
@@ -42,7 +51,7 @@ jobs:
           PGUSER: ${{ secrets.PGUSER }}
           PGDATABASE: postgres
           PGSSLMODE: require
-          PGPORT: 6543
+          PGPORT: 5432
         run: |
           cd DB/migrations
 
@@ -85,12 +94,12 @@ jobs:
           PGUSER: ${{ secrets.PGUSER }}
           PGDATABASE: postgres
           PGSSLMODE: require
-          PGPORT: 6543
+          PGPORT: 5432
         run: |
           cd DB/migrations
 
           # Create schema_migrations table if it doesn't exist
-          echo "📋 Creating schema_migrations table..."
+          echo "Creating schema_migrations table..."
           psql -c "CREATE TABLE IF NOT EXISTS schema_migrations (
             id SERIAL PRIMARY KEY,
             migration_name VARCHAR(255) UNIQUE NOT NULL,
@@ -99,13 +108,13 @@ jobs:
 
           # Run each pending migration
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
-            echo "▶️  Running migration: $migration"
+            echo "Running migration: $migration"
 
             if psql -f "$migration"; then
               psql -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
-              echo "✅ Migration $migration completed"
+              echo "Migration $migration completed"
             else
-              echo "❌ Migration $migration failed"
+              echo "Migration $migration failed"
               exit 1
             fi
           done
@@ -116,9 +125,12 @@ jobs:
     name: Deploy Backend to Fly.io
     runs-on: ubuntu-latest
     needs: migrations
-    if: |
-      github.event.inputs.deploy_backend == 'true' &&
-      (needs.migrations.result == 'success' || needs.migrations.result == 'skipped' || needs.migrations.result == 'failure')
+    # Run on tag push (always) or manual trigger (if toggled on)
+    # Proceeds even if migrations were skipped (no pending)
+    if: >-
+      always() &&
+      (needs.migrations.result == 'success' || needs.migrations.result == 'skipped') &&
+      (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.deploy_backend == 'true')
 
     steps:
       - name: Checkout code
@@ -141,9 +153,9 @@ jobs:
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://pierre-two-backend.fly.dev/health || echo "000")
 
           if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "404" ]; then
-            echo "✓ Backend is responding (HTTP $RESPONSE)"
+            echo "Backend is responding (HTTP $RESPONSE)"
           else
-            echo "⚠ Backend might not be ready yet (HTTP $RESPONSE)"
+            echo "Backend might not be ready yet (HTTP $RESPONSE)"
             exit 1
           fi
 
@@ -151,10 +163,12 @@ jobs:
     name: Build App with EAS
     runs-on: ubuntu-latest
     needs: deploy_backend
-    if: |
+    # Only runs on manual trigger with build_app toggled on — never on tag push
+    if: >-
       always() &&
-      (needs.deploy_backend.result == 'success' || needs.deploy_backend.result == 'skipped') &&
-      github.event.inputs.build_app == 'true'
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.build_app == 'true' &&
+      (needs.deploy_backend.result == 'success' || needs.deploy_backend.result == 'skipped')
     permissions:
       contents: write
 
@@ -193,7 +207,7 @@ jobs:
             fs.writeFileSync('app.json', JSON.stringify(appJson, null, 2) + '\n');
           "
 
-          echo "✓ API endpoint set to production"
+          echo "API endpoint set to production"
           grep -A 2 '"extra"' app.json
 
       - name: Trigger EAS development build
@@ -214,7 +228,7 @@ jobs:
             fs.writeFileSync('app.json', JSON.stringify(appJson, null, 2) + '\n');
           "
 
-          echo "✓ API endpoint reverted to localhost"
+          echo "API endpoint reverted to localhost"
 
       - name: Commit endpoint revert
         if: always()
@@ -242,6 +256,13 @@ jobs:
           echo "# Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "**Triggered by tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Triggered manually**" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           echo "## Jobs Status" >> $GITHUB_STEP_SUMMARY
           echo "- Migrations: ${{ needs.migrations.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Backend Deploy: ${{ needs.deploy_backend.result }}" >> $GITHUB_STEP_SUMMARY
@@ -249,14 +270,14 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ needs.migrations.result }}" = "success" ]; then
-            echo "✅ Database migrations completed" >> $GITHUB_STEP_SUMMARY
+            echo "Database migrations completed" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ "${{ needs.deploy_backend.result }}" = "success" ]; then
-            echo "✅ Backend deployed to https://pierre-two-backend.fly.dev" >> $GITHUB_STEP_SUMMARY
+            echo "Backend deployed to https://pierre-two-backend.fly.dev" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ "${{ needs.build_app.result }}" = "success" ]; then
-            echo "✅ EAS development build triggered" >> $GITHUB_STEP_SUMMARY
+            echo "EAS development build triggered" >> $GITHUB_STEP_SUMMARY
             echo "Check build status at: https://expo.dev" >> $GITHUB_STEP_SUMMARY
           fi

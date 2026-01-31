@@ -1,50 +1,82 @@
-// src/controllers/event_controller.rs (or wherever your handlers are)
+use crate::models::{AppState, CreateEventRequest, UpdateEventRequest, EventResponse};
+use crate::persistences::event_persistence;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     Json,
 };
-use uuid::Uuid;
+use serde::Serialize;
 use std::sync::Arc;
+use uuid::Uuid;
 
-use crate::persistences::event_persistence::{
-    load_all_events_service,
-    load_event_service,
-    create_event_service,
-    erase_event_service,
-};
-use crate::models::{EventEntity, EventRequest, AppState};
+#[derive(Serialize)]
+pub struct EventsResponse {
+    pub events: Vec<EventResponse>,
+}
 
+/// Get all events
 pub async fn get_all_events(
-    State(app_state): State<Arc<AppState>>
-) -> Result<Json<Vec<EventEntity>>, StatusCode> {
-    let events = load_all_events_service(&app_state).await?;
-    Ok(Json(events))
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<EventsResponse>, StatusCode> {
+    match event_persistence::get_all_events(&state.db_pool).await {
+        Ok(events) => {
+            let responses: Vec<EventResponse> = events.into_iter().map(|e| e.into()).collect();
+            Ok(Json(EventsResponse { events: responses }))
+        }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
-pub async fn get_events(
-    Path(id): Path<Uuid>,
-    State(app_state): State<Arc<AppState>>
-) -> Result<Json<EventEntity>, StatusCode> {
-    let event = load_event_service(id, &app_state).await?;
-    Ok(Json(event))
+/// Get a single event by ID
+pub async fn get_event(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<EventResponse>, StatusCode> {
+    let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match event_persistence::get_event_by_id(&state.db_pool, event_id).await {
+        Ok(Some(event)) => Ok(Json(event.into())),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
-pub async fn post_events(
-    State(app_state): State<Arc<AppState>>,
-    Json(payload): Json<EventRequest>
-) -> Result<(StatusCode, Json<EventEntity>), StatusCode> {
-    let event = create_event_service(payload, &app_state).await?;
-    Ok((StatusCode::CREATED, Json(event)))
+/// Create a new event
+pub async fn create_event(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateEventRequest>,
+) -> Result<(StatusCode, Json<EventResponse>), StatusCode> {
+    match event_persistence::create_event(&state.db_pool, payload).await {
+        Ok(event) => Ok((StatusCode::CREATED, Json(event.into()))),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
-pub async fn delete_events(
-    Path(id): Path<Uuid>,
-    State(app_state): State<Arc<AppState>>
-) -> StatusCode {
-    match erase_event_service(id, &app_state).await {
-        Ok(rows) if rows > 0 => StatusCode::NO_CONTENT,
-        Ok(_) => StatusCode::NOT_FOUND,
-        Err(e) => e,
+/// Update an event
+pub async fn update_event(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateEventRequest>,
+) -> Result<Json<EventResponse>, StatusCode> {
+    let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match event_persistence::update_event(&state.db_pool, event_id, payload).await {
+        Ok(Some(event)) => Ok(Json(event.into())),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+/// Delete an event
+pub async fn delete_event(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match event_persistence::delete_event(&state.db_pool, event_id).await {
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
