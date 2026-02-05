@@ -1,5 +1,6 @@
 import { TouchableOpacity, View, Image, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
+import { useTheme } from '@/context/ThemeContext';
 import { Event } from '@/types';
 
 type EventCardProps = {
@@ -24,27 +25,31 @@ const formatEventTime = (event: Event) => {
   }
 };
 
-export const EventCard = ({ event, onPress }: EventCardProps) => (
-  <TouchableOpacity style={styles.eventCard} onPress={onPress} activeOpacity={0.9}>
-    <View style={styles.eventImageContainer}>
-      <Image source={{ uri: event.image }} style={styles.eventImage} />
-      {event.status && (
-        <View style={styles.statusBadge}>
-          <ThemedText style={styles.statusText}>{event.status}</ThemedText>
+export const EventCard = ({ event, onPress }: EventCardProps) => {
+  const { theme } = useTheme();
+
+  return (
+    <TouchableOpacity style={styles.eventCard} onPress={onPress} activeOpacity={0.9}>
+      <View style={[styles.eventImageContainer, { backgroundColor: theme.backgroundElevated }]}>
+        <Image source={{ uri: event.image }} style={styles.eventImage} />
+        {event.status && (
+          <View style={[styles.statusBadge, { backgroundColor: theme.error }]}>
+            <ThemedText style={styles.statusText}>{event.status}</ThemedText>
+          </View>
+        )}
+        <View style={styles.eventInfo}>
+          <ThemedText style={[styles.eventTitle, { color: theme.text }]} numberOfLines={2}>
+            {event.title}
+          </ThemedText>
+          <ThemedText style={[styles.eventDate, { color: theme.textSecondary }]}>{formatEventTime(event)}</ThemedText>
+          <ThemedText style={[styles.eventVenue, { color: theme.textTertiary }]} numberOfLines={1}>
+            {event.venue}
+          </ThemedText>
         </View>
-      )}
-      <View style={styles.eventInfo}>
-        <ThemedText style={styles.eventTitle} numberOfLines={2}>
-          {event.title}
-        </ThemedText>
-        <ThemedText style={styles.eventDate}>{formatEventTime(event)}</ThemedText>
-        <ThemedText style={styles.eventVenue} numberOfLines={1}>
-          {event.venue}
-        </ThemedText>
       </View>
-    </View>
-  </TouchableOpacity>
-);
+    </TouchableOpacity>
+  );
+};
 
 const styles = StyleSheet.create({
   eventCard: {
@@ -56,7 +61,6 @@ const styles = StyleSheet.create({
     height: 380,
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
     position: 'relative',
   },
   eventImage: {
@@ -67,7 +71,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     right: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.95)',
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
@@ -91,19 +94,16 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
     marginBottom: 6,
     lineHeight: 24,
   },
   eventDate: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '500',
     marginBottom: 4,
   },
   eventVenue: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
     fontWeight: '400',
   },
 });

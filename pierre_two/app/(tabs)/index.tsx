@@ -11,7 +11,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar } from "react-native-calendars";
-import { ThemedView } from "@/components/themed-view";
 import { SearchBar } from "@/components/home/SearchBar";
 import { EventCard } from "@/components/home/EventCard";
 import { EventDetailModal } from "@/components/event/EventDetailModal";
@@ -21,11 +20,13 @@ import { ReservationCodeModal } from "@/components/reservation/ReservationCodeMo
 import { TableReservationDetailModal } from "@/components/reservation/TableReservationDetailModal";
 import { useEvents } from "@/hooks/useEvents";
 import { useModal } from "@/hooks/useModal";
+import { useTheme } from "@/context/ThemeContext";
 import { Event, Table, TableReservation } from "@/types";
 import { useLocalSearchParams } from "expo-router";
 import { API_URL } from "@/config/api";
 
 export default function HomeScreen() {
+  const { theme } = useTheme();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
@@ -249,8 +250,8 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <ThemedView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
         <SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -264,8 +265,8 @@ export default function HomeScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#db2777"
-              colors={["#db2777"]}
+              tintColor={theme.primary}
+              colors={[theme.primary]}
             />
           }
         >
@@ -273,11 +274,11 @@ export default function HomeScreen() {
             groupedEvents.map((group) => (
               <View key={group.date} style={styles.dateSection}>
                 {/* Date Header */}
-                <View style={styles.dateHeader}>
-                  <Text style={styles.dateHeaderText}>
+                <View style={[styles.dateHeader, { borderBottomColor: theme.backgroundSurface }]}>
+                  <Text style={[styles.dateHeaderText, { color: theme.text }]}>
                     {formatDateHeader(group.date)}
                   </Text>
-                  <Text style={styles.eventCount}>
+                  <Text style={[styles.eventCount, { color: theme.textTertiary }]}>
                     {group.events.length}{" "}
                     {group.events.length === 1 ? "evento" : "eventi"}
                   </Text>
@@ -304,16 +305,16 @@ export default function HomeScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateEmoji}>🎉</Text>
-              <Text style={styles.emptyStateText}>
+              <Text style={[styles.emptyStateText, { color: theme.text }]}>
                 Nessun evento in programma
               </Text>
-              <Text style={styles.emptyStateSubtext}>
+              <Text style={[styles.emptyStateSubtext, { color: theme.textTertiary }]}>
                 Controlla altre date dal calendario
               </Text>
             </View>
           )}
         </ScrollView>
-      </ThemedView>
+      </View>
 
       {/* Calendar Modal */}
       <Modal
@@ -322,30 +323,30 @@ export default function HomeScreen() {
         transparent={true}
         onRequestClose={() => setShowCalendar(false)}
       >
-        <View style={styles.calendarModalOverlay}>
-          <View style={styles.calendarModal}>
-            <View style={styles.calendarHeader}>
-              <Text style={styles.calendarTitle}>Seleziona una data</Text>
+        <View style={[styles.calendarModalOverlay, { backgroundColor: theme.overlay }]}>
+          <View style={[styles.calendarModal, { backgroundColor: theme.backgroundSurface }]}>
+            <View style={[styles.calendarHeader, { borderBottomColor: theme.border }]}>
+              <Text style={[styles.calendarTitle, { color: theme.text }]}>Seleziona una data</Text>
             </View>
             <Calendar
               onDayPress={handleDateSelect}
               markedDates={{
                 [selectedDate.toISOString().split("T")[0]]: {
                   selected: true,
-                  selectedColor: "#ec4899",
+                  selectedColor: theme.primary,
                 },
               }}
               theme={{
-                backgroundColor: "#1f2937",
-                calendarBackground: "#1f2937",
-                textSectionTitleColor: "#9ca3af",
-                selectedDayBackgroundColor: "#ec4899",
-                selectedDayTextColor: "#ffffff",
-                todayTextColor: "#ec4899",
-                dayTextColor: "#ffffff",
-                textDisabledColor: "#4b5563",
-                monthTextColor: "#ffffff",
-                arrowColor: "#ec4899",
+                backgroundColor: theme.backgroundSurface,
+                calendarBackground: theme.backgroundSurface,
+                textSectionTitleColor: theme.textTertiary,
+                selectedDayBackgroundColor: theme.primary,
+                selectedDayTextColor: theme.textInverse,
+                todayTextColor: theme.primary,
+                dayTextColor: theme.text,
+                textDisabledColor: theme.border,
+                monthTextColor: theme.text,
+                arrowColor: theme.primary,
               }}
             />
           </View>
@@ -387,7 +388,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
   },
   mainScroll: {
     flex: 1,
@@ -402,17 +402,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#1f2937",
   },
   dateHeaderText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#fff",
     textTransform: "uppercase",
   },
   eventCount: {
     fontSize: 14,
-    color: "#9ca3af",
   },
   eventsRow: {
     paddingTop: 12,
@@ -439,23 +436,19 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#fff",
     marginBottom: 8,
     textAlign: "center",
   },
   emptyStateSubtext: {
     fontSize: 14,
-    color: "#9ca3af",
     textAlign: "center",
   },
   calendarModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
     justifyContent: "center",
     alignItems: "center",
   },
   calendarModal: {
-    backgroundColor: "#1f2937",
     borderRadius: 16,
     width: "90%",
     maxWidth: 400,
@@ -464,12 +457,10 @@ const styles = StyleSheet.create({
   calendarHeader: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
   },
   calendarTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#fff",
     textAlign: "center",
   },
 });

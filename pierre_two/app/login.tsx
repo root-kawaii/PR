@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
+  const { theme } = useTheme();
   const router = useRouter();
 
   const handleLogin = async () => {
@@ -29,18 +31,18 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Log in to continue</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Welcome Back</Text>
+        <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Log in to continue</Text>
 
         <View style={styles.form}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
             placeholder="Email"
-            placeholderTextColor="#999"
+            placeholderTextColor={theme.textTertiary}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -49,9 +51,9 @@ export default function LoginScreen() {
           />
 
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
             placeholder="Password"
-            placeholderTextColor="#999"
+            placeholderTextColor={theme.textTertiary}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -59,19 +61,19 @@ export default function LoginScreen() {
           />
 
           <TouchableOpacity
-            style={[styles.button, isLoading && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: theme.primary }, isLoading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={isLoading}
           >
-            <Text style={styles.buttonText}>
+            <Text style={[styles.buttonText, { color: theme.textInverse }]}>
               {isLoading ? 'Logging in...' : 'Log In'}
             </Text>
           </TouchableOpacity>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
+            <Text style={[styles.footerText, { color: theme.textTertiary }]}>Don't have an account? </Text>
             <TouchableOpacity onPress={() => router.push('/register')}>
-              <Text style={styles.linkText}>Sign Up</Text>
+              <Text style={[styles.linkText, { color: theme.primary }]}>Sign Up</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -83,7 +85,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
   },
   content: {
     flex: 1,
@@ -93,28 +94,22 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#fff',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#999',
     marginBottom: 32,
   },
   form: {
     gap: 16,
   },
   input: {
-    backgroundColor: '#1a1a1a',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#fff',
     borderWidth: 1,
-    borderColor: '#333',
   },
   button: {
-    backgroundColor: '#6C63FF',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -124,7 +119,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -134,11 +128,9 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   footerText: {
-    color: '#999',
     fontSize: 14,
   },
   linkText: {
-    color: '#6C63FF',
     fontSize: 14,
     fontWeight: '600',
   },

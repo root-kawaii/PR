@@ -1,12 +1,12 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { ThemeProvider as NavigationThemeProvider, Theme } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import 'react-native-reanimated';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import Constants from 'expo-constants';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 
 const stripePublishableKey = Constants.expoConfig?.extra?.stripePublishableKey || '';
@@ -17,6 +17,7 @@ export const unstable_settings = {
 
 function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useAuth();
+  const { theme } = useTheme();
   const segments = useSegments();
   const router = useRouter();
 
@@ -34,27 +35,58 @@ function RootLayoutNav() {
     }
   }, [isAuthenticated, segments, isLoading]);
 
-  const colorScheme = useColorScheme();
+  // Create navigation theme from app theme
+  const navigationTheme: Theme = useMemo(() => ({
+    dark: theme.statusBarStyle === 'light',
+    colors: {
+      primary: theme.primary,
+      background: theme.background,
+      card: theme.cardBackground,
+      text: theme.text,
+      border: theme.border,
+      notification: theme.primary,
+    },
+    fonts: {
+      regular: {
+        fontFamily: 'System',
+        fontWeight: '400',
+      },
+      medium: {
+        fontFamily: 'System',
+        fontWeight: '500',
+      },
+      bold: {
+        fontFamily: 'System',
+        fontWeight: '700',
+      },
+      heavy: {
+        fontFamily: 'System',
+        fontWeight: '900',
+      },
+    },
+  }), [theme]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <NavigationThemeProvider value={navigationTheme}>
       <Stack screenOptions={{ gestureEnabled: true, gestureDirection: 'horizontal' }}>
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="register" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+      <StatusBar style={theme.statusBarStyle} />
+    </NavigationThemeProvider>
   );
 }
 
 export default function RootLayout() {
   return (
     <StripeProvider publishableKey={stripePublishableKey}>
-      <AuthProvider>
-        <RootLayoutNav />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <RootLayoutNav />
+        </AuthProvider>
+      </ThemeProvider>
     </StripeProvider>
   );
 }
