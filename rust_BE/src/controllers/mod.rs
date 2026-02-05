@@ -6,3 +6,4 @@ pub mod club_controller;
 pub mod ticket_controller;
 pub mod table_controller;
 pub mod club_owner_controller;
+pub mod webhook_controller;

@@ -3,7 +3,7 @@ pub mod event;
 pub use event::{Event, CreateEventRequest, UpdateEventRequest, EventResponse};
 
 pub mod payment;
-pub use payment::{PaymentEntity, PaymentRequest, PaymentFilter, PaymentStatus, PaymentCaptureMethod, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentResponse};
+pub use payment::{PaymentEntity, PaymentRequest, PaymentFilter, PaymentStatus, PaymentCaptureMethod, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentRequest, CancelPaymentResponse};
 
 pub mod user;
 pub use user::{User, UserResponse, RegisterRequest, LoginRequest, AuthResponse, Claims};
@@ -36,4 +36,5 @@ pub struct AppState {
     pub stripe_client: stripe::Client,
     pub jwt_secret: String,
     pub idempotency_service: IdempotencyService,
+    pub stripe_webhook_secret: String,
 }

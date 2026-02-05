@@ -5,9 +5,9 @@ use crate::models::{
     TableReservationsResponse, TableReservationsWithDetailsResponse,
     AddPaymentToReservationRequest, LinkTicketToReservationRequest,
     CreatePaymentIntentRequest, CreatePaymentIntentResponse,
-    TableSummary, PaymentStatus, CreateTicketRequest, EventSummary,
+    TableSummary, PaymentStatus, EventSummary,
 };
-use crate::persistences::{table_persistence, user_persistence, ticket_persistence};
+use crate::persistences::{table_persistence, user_persistence};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -18,7 +18,7 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use chrono::Utc;
-use stripe::{CreatePaymentIntent, Currency, PaymentIntent};
+use stripe::{CreatePaymentIntent, Currency, PaymentIntent, PaymentIntentStatus};
 
 // ============================================================================
 // Tables endpoints
@@ -641,12 +641,53 @@ pub async fn create_reservation_with_payment(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Step 3: Create payment record
+    // Step 2.5: Verify PaymentIntent with Stripe
+    let pi_id: stripe::PaymentIntentId = req.stripe_payment_intent_id.parse()
+        .map_err(|_| {
+            eprintln!("Invalid Stripe PaymentIntent ID: {}", req.stripe_payment_intent_id);
+            StatusCode::BAD_REQUEST
+        })?;
+
+    let payment_intent = PaymentIntent::retrieve(&state.stripe_client, &pi_id, &[])
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to retrieve PaymentIntent from Stripe: {:?}", e);
+            StatusCode::BAD_GATEWAY
+        })?;
+
+    // Verify status is Succeeded or RequiresCapture
+    match payment_intent.status {
+        PaymentIntentStatus::Succeeded | PaymentIntentStatus::RequiresCapture => {}
+        ref other => {
+            eprintln!("PaymentIntent {} has invalid status: {:?}", pi_id, other);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    // Verify amount matches expected amount in cents
+    let expected_cents = (expected_amount.to_f64().unwrap_or(0.0) * 100.0) as i64;
+    if payment_intent.amount != expected_cents {
+        eprintln!(
+            "PaymentIntent amount mismatch: expected {} cents, got {}",
+            expected_cents, payment_intent.amount
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Prepare data before transaction
     let payment_id = Uuid::new_v4();
     let mut all_user_ids = vec![owner_user_id];
     all_user_ids.extend(&guest_user_ids);
+    let now = Utc::now().naive_utc();
 
-    let payment_result = sqlx::query(
+    // Begin database transaction — steps 3-8 are atomic
+    let mut tx = state.db_pool.begin().await.map_err(|e| {
+        eprintln!("Failed to begin transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Step 3: Create payment record (on tx)
+    sqlx::query(
         r#"
         INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -654,117 +695,158 @@ pub async fn create_reservation_with_payment(
     )
     .bind(payment_id)
     .bind(owner_user_id)
-    .bind(owner_user_id) // receiver_id (same as sender for now)
+    .bind(owner_user_id)
     .bind(payment_amount)
     .bind(PaymentStatus::Pending)
-    .bind(Utc::now().naive_utc())
-    .bind(Utc::now().naive_utc())
+    .bind(now)
+    .bind(now)
     .bind(&req.stripe_payment_intent_id)
     .bind(&all_user_ids)
-    .execute(&state.db_pool)
-    .await;
-
-    if let Err(e) = payment_result {
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
         eprintln!("Failed to create payment: {}", e);
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
-    // Step 4: Create table reservation
-    let reservation = match table_persistence::create_reservation(
-        &state.db_pool,
-        table_id,
-        owner_user_id,
-        event_id,
-        total_users as i32,
-        req.contact_name,
-        req.contact_email,
-        req.contact_phone,
-        req.special_requests,
-    ).await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Failed to create reservation: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    // Step 5: Add payment to reservation and update amount_paid
-    if let Err(e) = table_persistence::add_payment_to_reservation(
-        &state.db_pool,
-        reservation.id,
-        payment_id,
-        payment_amount,
-    ).await {
-        eprintln!("Failed to add payment to reservation: {}", e);
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    // Step 6: Add guest users to reservation
-    for guest_id in &guest_user_ids {
-        if let Err(e) = table_persistence::add_guest_to_reservation(
-            &state.db_pool,
-            reservation.id,
-            *guest_id,
-        ).await {
-            eprintln!("Failed to add guest to reservation: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    // Step 7: Create tickets for all users (owner + guests)
-    let mut ticket_ids: Vec<Uuid> = Vec::new();
-    for user_id in &all_user_ids {
-        let ticket_request = CreateTicketRequest {
-            event_id,
-            user_id: *user_id,
-            ticket_type: "table".to_string(),
-            price: table.min_spend,
-            status: Some("active".to_string()),
-            qr_code: None,
-        };
-
-        match ticket_persistence::create_ticket(&state.db_pool, ticket_request).await {
-            Ok(ticket) => ticket_ids.push(ticket.id),
-            Err(e) => {
-                eprintln!("Failed to create ticket: {}", e);
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        }
-    }
-
-    // Step 8: Link tickets to reservation
-    for ticket_id in &ticket_ids {
-        if let Err(e) = table_persistence::add_ticket_to_reservation(
-            &state.db_pool,
-            reservation.id,
-            *ticket_id,
-        ).await {
-            eprintln!("Failed to link ticket to reservation: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    // Step 9: Update payment status to completed (after Stripe confirmation)
-    // In production, this should be done via Stripe webhook
-    if let Err(e) = sqlx::query(
+    // Step 4: Generate reservation code and create reservation (on tx)
+    let reservation_code = generate_alphanumeric_code("RES-");
+    let reservation_id: Uuid = sqlx::query_scalar(
         r#"
-        UPDATE payments
-        SET status = $1, update_date = $2
+        INSERT INTO table_reservations (
+            table_id, user_id, event_id, num_people, total_amount,
+            contact_name, contact_email, contact_phone, special_requests, reservation_code
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id
+        "#
+    )
+    .bind(table_id)
+    .bind(owner_user_id)
+    .bind(event_id)
+    .bind(total_users as i32)
+    .bind(expected_amount)
+    .bind(req.contact_name)
+    .bind(req.contact_email)
+    .bind(req.contact_phone)
+    .bind(req.special_requests)
+    .bind(&reservation_code)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to create reservation: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Step 5: Add payment to reservation and update amount_paid (on tx)
+    sqlx::query(
+        r#"
+        UPDATE table_reservations
+        SET payment_ids = array_append(COALESCE(payment_ids, '{}'), $1),
+            amount_paid = amount_paid + $2,
+            updated_at = NOW()
         WHERE id = $3
         "#
     )
-    .bind(PaymentStatus::Completed)
-    .bind(Utc::now().naive_utc())
     .bind(payment_id)
-    .execute(&state.db_pool)
-    .await {
-        eprintln!("Failed to update payment status: {}", e);
-        // Don't fail the whole request, just log the error
+    .bind(payment_amount)
+    .bind(reservation_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to add payment to reservation: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Step 6: Add guest users to reservation (on tx)
+    for guest_id in &guest_user_ids {
+        sqlx::query(
+            r#"
+            UPDATE table_reservations
+            SET guest_user_ids = array_append(COALESCE(guest_user_ids, '{}'), $1),
+                updated_at = NOW()
+            WHERE id = $2
+            "#
+        )
+        .bind(guest_id)
+        .bind(reservation_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to add guest to reservation: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     }
 
-    // Step 10: Fetch the updated reservation and return
-    match table_persistence::get_reservation_by_id(&state.db_pool, reservation.id).await {
+    // Step 7: Create tickets for all users (on tx)
+    let mut ticket_ids: Vec<Uuid> = Vec::new();
+    for user_id in &all_user_ids {
+        let ticket_code = generate_alphanumeric_code("TKT-");
+        let ticket_id: Uuid = sqlx::query_scalar(
+            r#"
+            INSERT INTO tickets (id, event_id, user_id, ticket_code, ticket_type, price, status, purchase_date, qr_code, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NULL, NOW(), NOW())
+            RETURNING id
+            "#
+        )
+        .bind(Uuid::new_v4())
+        .bind(event_id)
+        .bind(user_id)
+        .bind(&ticket_code)
+        .bind("table")
+        .bind(table.min_spend)
+        .bind("active")
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to create ticket: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        ticket_ids.push(ticket_id);
+    }
+
+    // Step 8: Link tickets to reservation (on tx)
+    for ticket_id in &ticket_ids {
+        sqlx::query(
+            r#"
+            UPDATE table_reservations
+            SET ticket_ids = array_append(COALESCE(ticket_ids, '{}'), $1),
+                updated_at = NOW()
+            WHERE id = $2
+            "#
+        )
+        .bind(ticket_id)
+        .bind(reservation_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to link ticket to reservation: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    }
+
+    // Commit transaction — all steps 3-8 succeed or none do
+    tx.commit().await.map_err(|e| {
+        eprintln!("Failed to commit transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Step 9: Fetch the final reservation and return
+    // Payment stays as Pending — Stripe webhook will update to Completed
+    match table_persistence::get_reservation_by_id(&state.db_pool, reservation_id).await {
         Ok(final_reservation) => Ok(Json(final_reservation.into())),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
+}
+
+fn generate_alphanumeric_code(prefix: &str) -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let random_part: String = (0..8)
+        .map(|_| {
+            let idx = rng.gen_range(0..36);
+            if idx < 26 { (b'A' + idx) as char } else { (b'0' + (idx - 26)) as char }
+        })
+        .collect();
+    format!("{}{}", prefix, random_part)
 }

@@ -100,6 +100,7 @@ use crate::controllers::club_owner_controller::{
     get_my_club_tables,
     create_club_table,
 };
+use crate::controllers::webhook_controller::handle_stripe_webhook;
 
 pub fn create_router(app_state: Arc<AppState>) -> Router {
     // Configure CORS to allow requests from React Native
@@ -159,6 +160,8 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/payments/:id", get(get_payment).delete(delete_payment))
         .route("/payments/:id/capture", post(capture_payment))
         .route("/payments/:id/cancel", post(cancel_payment))
+        // Stripe webhook (no JWT auth — Stripe verifies via signature)
+        .route("/stripe/webhooks", post(handle_stripe_webhook))
         .with_state(app_state)
         .layer(from_fn(crate::middleware::request_id::trace_request))
         .layer(set_request_id)
@@ -196,6 +199,13 @@ async fn main() {
         .unwrap_or_else(|_| "your-secret-key-change-this-in-production".to_string());
     info!("JWT Secret loaded");
 
+    // Load Stripe webhook secret
+    let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET")
+        .unwrap_or_else(|_| {
+            tracing::warn!("STRIPE_WEBHOOK_SECRET not set — webhook signature verification disabled");
+            String::new()
+        });
+
     // Create database pool
     let db_pool = create_pool().await;
     info!("Connected to PostgreSQL database");
@@ -211,6 +221,7 @@ async fn main() {
         stripe_client,
         jwt_secret,
         idempotency_service,
+        stripe_webhook_secret,
     });
 
     // Spawn periodic cleanup job for expired idempotency records

@@ -56,31 +56,28 @@
     }
 
     .scene-indicator {
-      position: absolute;
-      top: 16px;
-      left: 16px;
-      background: rgba(0, 0, 0, 0.7);
-      color: #fff;
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      z-index: 5;
+      /* Hidden - scene indicator is rendered in React Native overlay instead */
+      display: none !important;
     }
 
     /* Hotspot Styles */
     .hotspot {
       position: absolute;
       cursor: pointer;
-      transition: transform 0.2s ease, opacity 0.2s ease;
+      /* No transform transition - prevents wiggle during view rotation */
+      transition: opacity 0.2s ease;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
 
-    .hotspot:hover {
-      transform: scale(1.05);
+    .hotspot .hotspot-content {
+      transition: transform 0.15s ease;
     }
 
-    .hotspot:active {
+    .hotspot:hover .hotspot-content {
+      transform: scale(1.03);
+    }
+
+    .hotspot:active .hotspot-content {
       transform: scale(0.98);
     }
 
@@ -108,6 +105,37 @@
     .hotspot.table.unavailable .hotspot-content {
       border: 2px solid rgba(107, 114, 128, 0.6);
       opacity: 0.7;
+    }
+
+    /* Filtered out (too expensive) styling */
+    .hotspot.table.filtered-out .hotspot-content {
+      border: 2px solid rgba(239, 68, 68, 0.6);
+      opacity: 0.75;
+    }
+
+    .hotspot.table.filtered-out .hotspot-icon {
+      background: rgba(239, 68, 68, 0.8);
+      color: white;
+    }
+
+    .hotspot.table.filtered-out .reserve-button {
+      display: none;
+    }
+
+    .filtered-out-badge {
+      display: none;
+      background: rgba(239, 68, 68, 0.9);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    .hotspot.table.filtered-out .filtered-out-badge {
+      display: block;
     }
 
     .hotspot-header {
@@ -311,8 +339,20 @@
     let isSwitching = false;
     let lastClickTime = 0;
 
+    // Preload images for faster loading
+    function preloadImages(imageUrls) {
+      return Promise.all(imageUrls.map(url => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(url);
+          img.onerror = () => resolve(url); // Continue even if one fails
+          img.src = url;
+        });
+      }));
+    }
+
     // Initialize viewer when config is injected
-    function initViewer(config) {
+    async function initViewer(config) {
       // PREVENT RE-INITIALIZATION
       if (isInitialized) {
         console.log('⚠️ Viewer already initialized, skipping...');
@@ -332,6 +372,12 @@
           showError('No scenes configured');
           return;
         }
+
+        // Preload all scene images for faster loading
+        const imageUrls = scenes.map(s => s.imageUrl);
+        notifyReactNative({ type: 'DEBUG', message: '🚀 Preloading ' + imageUrls.length + ' images...' });
+        await preloadImages(imageUrls);
+        notifyReactNative({ type: 'DEBUG', message: '✅ Images preloaded' });
 
         // Setup Marzipano viewer
         notifyReactNative({ type: 'DEBUG', message: '🚀 Creating Marzipano viewer...' });
@@ -572,6 +618,7 @@
               <button class="reserve-button" data-table-id="${tableId}" data-table-name="${tableName}">
                 Reserve Now
               </button>
+              <div class="filtered-out-badge">💸 Over budget</div>
             ` : `
               <button class="unavailable-button" data-table-id="${tableId}" data-table-name="${tableName}">
                 View Details
@@ -792,6 +839,29 @@
               element.style.pointerEvents = 'none';
               element.onclick = null;
             }
+          }
+        }
+      });
+    };
+
+    // Update hotspot visibility based on filter (called from React Native)
+    // Pass null to show all, pass array (even empty) to filter
+    window.updateHotspotVisibility = function(visibleTableIds) {
+      const showAll = visibleTableIds === null;
+      notifyReactNative({ type: 'DEBUG', message: '🔍 Updating hotspot filter, showAll: ' + showAll + ', matching: ' + (visibleTableIds ? visibleTableIds.length : 'all') });
+
+      hotspotElements.forEach(({ element, hotspot }) => {
+        if (hotspot.type === 'table' && hotspot.tableId) {
+          // Check if table is available
+          const isAvailable = availabilityMap[hotspot.tableId];
+
+          // Determine if this table matches the filter
+          const matchesFilter = showAll || visibleTableIds.includes(hotspot.tableId);
+
+          // Available tables that don't match filter get "filtered-out" styling
+          // Unavailable tables keep their styling regardless of filter
+          if (isAvailable) {
+            element.classList.toggle('filtered-out', !matchesFilter);
           }
         }
       });

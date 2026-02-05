@@ -15,7 +15,7 @@ use crate::persistences::payment_persistence::{
     cancel_payment_authorization_service,
     erase_payment_service,
 };
-use crate::models::{PaymentEntity, PaymentRequest, PaymentFilter, AppState, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentResponse};
+use crate::models::{PaymentEntity, PaymentRequest, PaymentFilter, AppState, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentRequest, CancelPaymentResponse};
 
 pub async fn get_all_payments(
     State(app_state): State<Arc<AppState>>,
@@ -67,7 +67,7 @@ pub async fn capture_payment(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CapturePaymentRequest>
 ) -> Result<Json<CapturePaymentResponse>, StatusCode> {
-    let payment = capture_payment_service(id, payload.amount, &app_state).await?;
+    let payment = capture_payment_service(id, payload.amount, payload.idempotency_key, &app_state).await?;
 
     let response = CapturePaymentResponse {
         id: payment.id,
@@ -83,9 +83,10 @@ pub async fn capture_payment(
 // Cancel an authorized payment
 pub async fn cancel_payment(
     Path(id): Path<Uuid>,
-    State(app_state): State<Arc<AppState>>
+    State(app_state): State<Arc<AppState>>,
+    Json(payload): Json<CancelPaymentRequest>,
 ) -> Result<Json<CancelPaymentResponse>, StatusCode> {
-    let payment = cancel_payment_authorization_service(id, &app_state).await?;
+    let payment = cancel_payment_authorization_service(id, payload.idempotency_key, &app_state).await?;
 
     let response = CancelPaymentResponse {
         id: payment.id,

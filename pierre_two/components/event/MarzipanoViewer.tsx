@@ -23,6 +23,7 @@ type MarzipanoViewerProps = {
 export type MarzipanoViewerRef = {
   updateAvailability: (availabilityMap: Record<string, boolean>) => void;
   switchScene: (sceneId: string) => void;
+  updateHotspotVisibility: (visibleTableIds: string[] | null) => void;
 };
 
 export const MarzipanoViewer = forwardRef<
@@ -67,6 +68,14 @@ export const MarzipanoViewer = forwardRef<
         if (initializedRef.current && webViewRef.current) {
           webViewRef.current.injectJavaScript(`
             window.switchToScene('${sceneId}');
+            true;
+          `);
+        }
+      },
+      updateHotspotVisibility: (visibleTableIds: string[] | null) => {
+        if (initializedRef.current && webViewRef.current) {
+          webViewRef.current.injectJavaScript(`
+            window.updateHotspotVisibility(${JSON.stringify(visibleTableIds)});
             true;
           `);
         }
@@ -249,8 +258,8 @@ export const MarzipanoViewer = forwardRef<
         allowsInlineMediaPlayback={true}
         mediaPlaybackRequiresUserAction={false}
         mixedContentMode="always"
-        cacheEnabled={false}
-        incognito={true}
+        cacheEnabled={true}
+        cacheMode="LOAD_CACHE_ELSE_NETWORK"
         onMessage={handleMessage}
         onError={(syntheticEvent) => {
           const { nativeEvent } = syntheticEvent;

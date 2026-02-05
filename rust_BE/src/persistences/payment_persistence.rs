@@ -7,7 +7,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use sqlx::{Postgres, QueryBuilder};
 use uuid::Uuid;
-use tracing::{info, warn, error, debug};
+use tracing::{info, warn, error};
 
 pub async fn load_all_payments_service(
     app_state: &AppState,
@@ -148,14 +148,20 @@ async fn create_payment_internal(
 ) -> Result<PaymentEntity, StatusCode> {
     let id = Uuid::new_v4();
 
+    // Validate amount
+    if payload.amount <= Decimal::ZERO {
+        error!(amount = %payload.amount, "Payment amount must be positive");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     // Step 1: Create payment intent on Stripe
-    // Convert amount from dollars to cents (Stripe expects cents)
+    // Convert amount from euros to cents (Stripe expects cents)
     let amount_in_cents = payload.amount.to_i64().ok_or_else(|| {
         error!(amount = %payload.amount, "Invalid payment amount");
         StatusCode::BAD_REQUEST
-    })? * 0;
+    })? * 100;
 
-    let mut params = CreatePaymentIntent::new(amount_in_cents, Currency::USD);
+    let mut params = CreatePaymentIntent::new(amount_in_cents, Currency::EUR);
     params.automatic_payment_methods = Some(stripe::CreatePaymentIntentAutomaticPaymentMethods {
         enabled: true,
         allow_redirects: None,
@@ -181,7 +187,6 @@ async fn create_payment_internal(
         })?;
 
     info!(payment_intent_id = %payment_intent.id, amount_cents = amount_in_cents, "Stripe payment intent created");
-    debug!(client_secret = ?payment_intent.client_secret, "Payment intent client secret");
 
     // Step 2: Store payment in database with Stripe payment intent ID
     let payment_entity = sqlx::query_as::<_, PaymentEntity>(
@@ -272,6 +277,12 @@ async fn create_authorized_payment_internal(
 ) -> Result<PaymentEntity, StatusCode> {
     let id = Uuid::new_v4();
 
+    // Validate amount
+    if payload.amount <= Decimal::ZERO {
+        error!(amount = %payload.amount, "Payment amount must be positive");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     // Step 1: Create payment intent with MANUAL capture on Stripe
     let amount_in_cents = payload.amount.to_i64().ok_or_else(|| {
         error!(amount = %payload.amount, "Invalid payment amount");
@@ -306,7 +317,6 @@ async fn create_authorized_payment_internal(
         })?;
 
     info!(payment_intent_id = %payment_intent.id, amount_cents = amount_in_cents, capture_method = "manual", "Stripe payment intent created");
-    debug!(client_secret = ?payment_intent.client_secret, "Payment intent client secret");
 
     // Step 2: Store payment in database
     let payment_entity = sqlx::query_as::<_, PaymentEntity>(
@@ -337,16 +347,68 @@ async fn create_authorized_payment_internal(
     Ok(payment_entity)
 }
 
-// Capture an authorized payment
+// Capture an authorized payment (with idempotency)
 pub async fn capture_payment_service(
+    payment_id: Uuid,
+    capture_amount: Option<Decimal>,
+    idempotency_key: Option<Uuid>,
+    app_state: &AppState,
+) -> Result<PaymentEntity, StatusCode> {
+    if let Some(key) = idempotency_key {
+        let hash_payload = serde_json::json!({
+            "action": "capture",
+            "payment_id": payment_id.to_string(),
+            "amount": capture_amount.map(|a| a.to_string()),
+        });
+        let request_hash = app_state.idempotency_service.calculate_hash(&hash_payload);
+
+        match app_state.idempotency_service.check_idempotency(key, &request_hash).await? {
+            IdempotencyCheckResult::Proceed => {
+                if !app_state.idempotency_service.create_idempotency_record(key, request_hash).await? {
+                    let result_id = app_state.idempotency_service.wait_for_completion(key).await?;
+                    return load_payment_service(result_id, app_state).await;
+                }
+                match capture_payment_internal(payment_id, capture_amount, app_state).await {
+                    Ok(payment) => {
+                        app_state.idempotency_service.mark_completed(key, payment.id).await?;
+                        Ok(payment)
+                    }
+                    Err(e) => {
+                        app_state.idempotency_service.mark_failed(key, format!("{:?}", e)).await.ok();
+                        Err(e)
+                    }
+                }
+            }
+            IdempotencyCheckResult::AlreadyCompleted(result_id) => {
+                warn!(payment_id = %payment_id, idempotency_key = %key, "Duplicate capture request - returning existing");
+                load_payment_service(result_id, app_state).await
+            }
+            IdempotencyCheckResult::InProgress => {
+                info!(idempotency_key = %key, "Capture already in progress - waiting");
+                let result_id = app_state.idempotency_service.wait_for_completion(key).await?;
+                load_payment_service(result_id, app_state).await
+            }
+            IdempotencyCheckResult::PreviouslyFailed(error) => {
+                warn!(error = %error, idempotency_key = %key, "Previous capture failed - retrying");
+                capture_payment_internal(payment_id, capture_amount, app_state).await
+            }
+            IdempotencyCheckResult::HashMismatch => {
+                error!(idempotency_key = %key, "Idempotency key reused with different capture payload");
+                Err(StatusCode::UNPROCESSABLE_ENTITY)
+            }
+        }
+    } else {
+        capture_payment_internal(payment_id, capture_amount, app_state).await
+    }
+}
+
+async fn capture_payment_internal(
     payment_id: Uuid,
     capture_amount: Option<Decimal>,
     app_state: &AppState,
 ) -> Result<PaymentEntity, StatusCode> {
-    // Get existing payment
     let payment = load_payment_service(payment_id, app_state).await?;
 
-    // Verify payment can be captured
     if payment.capture_method != Some(PaymentCaptureMethod::Manual) {
         error!(payment_id = %payment_id, "Payment is not set for manual capture");
         return Err(StatusCode::BAD_REQUEST);
@@ -362,17 +424,14 @@ pub async fn capture_payment_service(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Determine capture amount
     let amount_to_capture = match capture_amount {
         Some(amt) => {
-            // Partial capture
             let cents = amt.to_i64().ok_or(StatusCode::BAD_REQUEST)? * 100;
-            Some(cents as u64) // Convert to u64 for Stripe
+            Some(cents as u64)
         }
-        None => None, // Full capture
+        None => None,
     };
 
-    // Capture via Stripe
     let mut capture_params = stripe::CapturePaymentIntent::default();
     if let Some(amt) = amount_to_capture {
         capture_params.amount_to_capture = Some(amt);
@@ -391,7 +450,6 @@ pub async fn capture_payment_service(
 
     info!(payment_id = %payment_id, stripe_payment_intent_id = %captured_intent.id, "Payment captured successfully");
 
-    // Update database
     let final_captured_amount = capture_amount.unwrap_or(payment.amount);
     let now = chrono::Utc::now().naive_utc();
 
@@ -417,15 +475,65 @@ pub async fn capture_payment_service(
     Ok(updated_payment)
 }
 
-// Cancel an authorized payment
+// Cancel an authorized payment (with idempotency)
 pub async fn cancel_payment_authorization_service(
+    payment_id: Uuid,
+    idempotency_key: Option<Uuid>,
+    app_state: &AppState,
+) -> Result<PaymentEntity, StatusCode> {
+    if let Some(key) = idempotency_key {
+        let hash_payload = serde_json::json!({
+            "action": "cancel",
+            "payment_id": payment_id.to_string(),
+        });
+        let request_hash = app_state.idempotency_service.calculate_hash(&hash_payload);
+
+        match app_state.idempotency_service.check_idempotency(key, &request_hash).await? {
+            IdempotencyCheckResult::Proceed => {
+                if !app_state.idempotency_service.create_idempotency_record(key, request_hash).await? {
+                    let result_id = app_state.idempotency_service.wait_for_completion(key).await?;
+                    return load_payment_service(result_id, app_state).await;
+                }
+                match cancel_payment_internal(payment_id, app_state).await {
+                    Ok(payment) => {
+                        app_state.idempotency_service.mark_completed(key, payment.id).await?;
+                        Ok(payment)
+                    }
+                    Err(e) => {
+                        app_state.idempotency_service.mark_failed(key, format!("{:?}", e)).await.ok();
+                        Err(e)
+                    }
+                }
+            }
+            IdempotencyCheckResult::AlreadyCompleted(result_id) => {
+                warn!(payment_id = %payment_id, idempotency_key = %key, "Duplicate cancel request - returning existing");
+                load_payment_service(result_id, app_state).await
+            }
+            IdempotencyCheckResult::InProgress => {
+                info!(idempotency_key = %key, "Cancel already in progress - waiting");
+                let result_id = app_state.idempotency_service.wait_for_completion(key).await?;
+                load_payment_service(result_id, app_state).await
+            }
+            IdempotencyCheckResult::PreviouslyFailed(error) => {
+                warn!(error = %error, idempotency_key = %key, "Previous cancel failed - retrying");
+                cancel_payment_internal(payment_id, app_state).await
+            }
+            IdempotencyCheckResult::HashMismatch => {
+                error!(idempotency_key = %key, "Idempotency key reused with different cancel payload");
+                Err(StatusCode::UNPROCESSABLE_ENTITY)
+            }
+        }
+    } else {
+        cancel_payment_internal(payment_id, app_state).await
+    }
+}
+
+async fn cancel_payment_internal(
     payment_id: Uuid,
     app_state: &AppState,
 ) -> Result<PaymentEntity, StatusCode> {
-    // Get existing payment
     let payment = load_payment_service(payment_id, app_state).await?;
 
-    // Verify payment can be cancelled
     if payment.capture_method != Some(PaymentCaptureMethod::Manual) {
         error!(payment_id = %payment_id, "Payment is not set for manual capture");
         return Err(StatusCode::BAD_REQUEST);
@@ -441,7 +549,6 @@ pub async fn cancel_payment_authorization_service(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Cancel via Stripe
     let payment_intent_id: stripe::PaymentIntentId = stripe_payment_intent_id
         .parse()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -458,7 +565,6 @@ pub async fn cancel_payment_authorization_service(
 
     info!(payment_id = %payment_id, stripe_payment_intent_id = %cancelled_intent.id, "Payment authorization cancelled successfully");
 
-    // Update database
     let now = chrono::Utc::now().naive_utc();
 
     let updated_payment = sqlx::query_as::<_, PaymentEntity>(

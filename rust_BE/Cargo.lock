@@ -2529,6 +2529,8 @@ dependencies = [
  "bcrypt",
  "chrono",
  "dotenv",
+ "hex",
+ "hmac 0.12.1",
  "jsonwebtoken",
  "rand 0.8.5",
  "reqwest",

@@ -97,3 +97,8 @@ pub struct CancelPaymentResponse {
     pub cancelled_at: NaiveDateTime,
     pub message: String,
 }
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct CancelPaymentRequest {
+    pub idempotency_key: Option<Uuid>,
+}

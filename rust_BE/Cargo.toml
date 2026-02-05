@@ -43,6 +43,10 @@ reqwest = { version = "0.11", features = ["json"] }
 # SHA256 hashing for idempotency request fingerprinting
 sha2 = "0.10"
 
+# HMAC + hex for Stripe webhook signature verification
+hmac = "0.12"
+hex = "0.4"
+
 # Structured logging infrastructure
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "time", "fmt"] }

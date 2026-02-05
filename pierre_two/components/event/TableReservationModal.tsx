@@ -4,15 +4,15 @@ import {
   View,
   TouchableOpacity,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Event, Table } from "@/types";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { API_URL } from "@/config/api";
 import { TableReservationModal as PaymentModal } from "@/components/reservation/TableReservationModal";
 import { MarzipanoViewer, MarzipanoViewerRef } from "@/components/event/MarzipanoViewer";
+import { TableFilterMenu } from "@/components/event/TableFilterMenu";
 
 type TableReservationModalProps = {
   visible: boolean;
@@ -25,14 +25,15 @@ export const TableReservationModal = ({
   visible,
   event,
   onClose,
-  onReserveTable,
 }: TableReservationModalProps) => {
   const [tables, setTables] = useState<Table[]>([]);
-  const [loadingTables, setLoadingTables] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const marzipanoViewerRef = useRef<MarzipanoViewerRef>(null);
   const [currentSceneName, setCurrentSceneName] = useState<string>("");
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [filteredTableIds, setFilteredTableIds] = useState<string[]>([]);
 
   // Fetch tables when modal opens
   useEffect(() => {
@@ -43,17 +44,18 @@ export const TableReservationModal = ({
         setCurrentSceneName(event.marzipanoScenes[0].name);
       }
     } else {
-      // Reset payment modal state when main modal closes
+      // Reset state when main modal closes
       setShowPaymentModal(false);
       setSelectedTable(null);
       setCurrentSceneName("");
+      setMenuVisible(false);
     }
   }, [visible, event]);
 
   const fetchTables = async () => {
     if (!event) return;
 
-    setLoadingTables(true);
+    setIsLoading(true);
     try {
       const url = `${API_URL}/tables/event/${event.id}`;
       const response = await fetch(url);
@@ -70,11 +72,11 @@ export const TableReservationModal = ({
       console.error("Error fetching tables:", error);
       setTables([]);
     } finally {
-      setLoadingTables(false);
+      setIsLoading(false);
     }
   };
 
-  // Handle table click from Marzipano viewer
+  // Handle table click from Marzipano viewer (hotspot)
   const handleTableClick = (tableId: string) => {
     const table = tables.find((t) => t.id === tableId);
     if (table && table.available) {
@@ -86,85 +88,100 @@ export const TableReservationModal = ({
     }
   };
 
+  // Handle table selection from filter menu
+  const handleTableSelectFromMenu = (table: Table) => {
+    console.log(`📍 Navigating to table: ${table.name}`);
+
+    // If table has marzipano position, switch to that scene
+    if (table.marzipanoPosition?.sceneId) {
+      marzipanoViewerRef.current?.switchScene(table.marzipanoPosition.sceneId);
+    }
+
+    // Open payment modal for the selected table
+    setSelectedTable(table);
+    setShowPaymentModal(true);
+  };
+
   // Handle scene change from Marzipano viewer
-  const handleSceneChange = (sceneId: string, sceneName: string) => {
+  const handleSceneChange = (_sceneId: string, sceneName: string) => {
     console.log(`🔄 Scene changed to: ${sceneName}`);
     setCurrentSceneName(sceneName);
   };
+
+  // Handle filter changes from menu - update hotspot visibility
+  const handleFilterChange = useCallback((tableIds: string[]) => {
+    setFilteredTableIds(tableIds);
+    marzipanoViewerRef.current?.updateHotspotVisibility(tableIds);
+  }, []);
 
   if (!event) return null;
 
   // Check if event has Marzipano configuration
   const hasMarzipanoTour = event.marzipanoScenes && event.marzipanoScenes.length > 0;
 
-  if (!hasMarzipanoTour) {
-    console.warn(`⚠️ No Marzipano scenes configured for event: ${event.title}`);
-  }
-
   return (
     <Modal
       visible={visible}
       animationType="slide"
-      presentationStyle="pageSheet"
+      presentationStyle="fullScreen"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.modalContainer} edges={["top"]}>
-        <ThemedView style={styles.modalContent}>
-          {/* Event Info Summary */}
-          <View style={styles.eventSummary}>
-            <ThemedText style={styles.eventTitle}>{event.title}</ThemedText>
-            <ThemedText style={styles.eventDate}>{event.date}</ThemedText>
+      <ThemedView style={styles.container}>
+        {/* Fullscreen Marzipano 360° Viewer */}
+        {hasMarzipanoTour ? (
+          <MarzipanoViewer
+            ref={marzipanoViewerRef}
+            scenes={event.marzipanoScenes!}
+            tables={tables}
+            onTableClick={handleTableClick}
+            onSceneChange={handleSceneChange}
+            style={styles.fullscreenViewer}
+          />
+        ) : (
+          <View style={styles.noTourContainer}>
+            <ThemedText style={styles.noTourIcon}>🏛️</ThemedText>
+            <ThemedText style={styles.noTourText}>
+              360° venue tour not available
+            </ThemedText>
           </View>
+        )}
 
-            {/* Marzipano 360° Venue Tour */}
-            {hasMarzipanoTour ? (
-              <View style={styles.marzipanoSection}>
-                <View style={styles.viewerHeader}>
-                  <View>
-                    <ThemedText style={styles.viewerTitle}>
-                      Explore the Venue
-                    </ThemedText>
-                    <ThemedText style={styles.viewerSubtitle}>
-                      Click on table markers to reserve
-                    </ThemedText>
-                  </View>
-                  {currentSceneName && (
-                    <View style={styles.sceneIndicator}>
-                      <ThemedText style={styles.sceneText}>
-                        📍 {currentSceneName}
-                      </ThemedText>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.viewerContainer}>
-                  <MarzipanoViewer
-                    ref={marzipanoViewerRef}
-                    scenes={event.marzipanoScenes!}
-                    tables={tables}
-                    onTableClick={handleTableClick}
-                    onSceneChange={handleSceneChange}
-                    style={styles.viewer}
-                  />
-                </View>
-              </View>
-            ) : (
-              <View style={styles.noTourContainer}>
-                <ThemedText style={styles.noTourIcon}>🏛️</ThemedText>
-                <ThemedText style={styles.noTourText}>
-                  360° venue tour not available
-                </ThemedText>
-                <ThemedText style={styles.noTourSubtext}>
-                  Scroll down to view available tables
-                </ThemedText>
-              </View>
-            )}
+        {/* Scene Indicator Overlay */}
+        {currentSceneName && (
+          <View style={styles.sceneIndicator}>
+            <ThemedText style={styles.sceneText}>
+              📍 {currentSceneName}
+            </ThemedText>
+          </View>
+        )}
 
-          {/* Floating Back Button */}
-          <TouchableOpacity onPress={onClose} style={styles.floatingBackButton}>
-            <IconSymbol name="chevron.left" size={24} color="#fff" />
-          </TouchableOpacity>
-        </ThemedView>
-      </SafeAreaView>
+        {/* Floating Back Button */}
+        <TouchableOpacity onPress={onClose} style={styles.backButton}>
+          <IconSymbol name="chevron.left" size={24} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Floating Menu (Hamburger) Button */}
+        <TouchableOpacity
+          onPress={() => setMenuVisible(true)}
+          style={styles.menuButton}
+        >
+          <View style={styles.hamburgerIcon}>
+            <View style={styles.hamburgerLine} />
+            <View style={styles.hamburgerLine} />
+            <View style={styles.hamburgerLine} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Table Filter Menu Overlay */}
+        <TableFilterMenu
+          visible={menuVisible}
+          onClose={() => setMenuVisible(false)}
+          tables={tables}
+          onTableSelect={handleTableSelectFromMenu}
+          selectedTableId={selectedTable?.id}
+          onFilterChange={handleFilterChange}
+        />
+      </ThemedView>
 
       {/* Payment Modal */}
       <PaymentModal
@@ -181,147 +198,18 @@ export const TableReservationModal = ({
 };
 
 const styles = StyleSheet.create({
-  modalContainer: {
+  container: {
     flex: 1,
-    backgroundColor: "#0a0a0a",
-  },
-  modalContent: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1f2937",
-  },
-  backButton: {
-    paddingTop: 40,
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  eventSummary: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1f2937",
-  },
-  eventTitle: {
-    paddingTop: 0,
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#fff",
-    marginBottom: 4,
-  },
-  eventDate: {
-    fontSize: 14,
-    color: "#9ca3af",
-  },
-  tablesSection: {
-    padding: 20,
-  },
-  tablesSectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 16,
-    color: "#fff",
-  },
-  tableCard: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-  },
-  tableCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  tableCardName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  tableCardZone: {
-    fontSize: 12,
-    color: "#ec4899",
-    backgroundColor: "#2a1520",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  tableCardInfo: {
-    flexDirection: "row",
-    gap: 16,
-  },
-  tableCardInfoItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  tableCardInfoText: {
-    fontSize: 14,
-    color: "#9ca3af",
-  },
-  tableCardLocation: {
-    fontSize: 12,
-    color: "#9ca3af",
-    marginTop: 8,
-  },
-  marzipanoSection: {
-    flex: 1,
-    padding: 20,
-  },
-  viewerHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  viewerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-    marginBottom: 4,
-  },
-  viewerSubtitle: {
-    fontSize: 14,
-    color: "#9ca3af",
-  },
-  sceneIndicator: {
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  sceneText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  viewerContainer: {
-    flex: 1,
-    borderRadius: 12,
-    overflow: "hidden",
     backgroundColor: "#000",
   },
-  viewer: {
+  fullscreenViewer: {
     flex: 1,
   },
   noTourContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 40,
+    backgroundColor: "#0a0a0a",
   },
   noTourIcon: {
     fontSize: 48,
@@ -331,21 +219,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 8,
     textAlign: "center",
   },
-  noTourSubtext: {
-    fontSize: 14,
-    color: "#9ca3af",
-    textAlign: "center",
+  sceneIndicator: {
+    position: "absolute",
+    top: 60,
+    right: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    zIndex: 50,
   },
-  floatingBackButton: {
+  sceneText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  backButton: {
     position: "absolute",
     top: 60,
     left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: "rgba(0, 0, 0, 0.6)",
     justifyContent: "center",
     alignItems: "center",
@@ -355,5 +252,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
+  },
+  menuButton: {
+    position: "absolute",
+    top: 60,
+    left: 76,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  hamburgerIcon: {
+    width: 20,
+    height: 14,
+    justifyContent: "space-between",
+  },
+  hamburgerLine: {
+    width: 20,
+    height: 2,
+    backgroundColor: "#fff",
+    borderRadius: 1,
   },
 });
