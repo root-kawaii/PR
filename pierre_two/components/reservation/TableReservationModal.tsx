@@ -19,6 +19,7 @@ import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Table, Event } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/context/ThemeContext";
 import { useStripe } from "@stripe/stripe-react-native";
 import { API_URL } from "@/config/api";
 
@@ -36,6 +37,7 @@ export const TableReservationModal = ({
   onClose,
 }: TableReservationModalProps) => {
   const { user } = useAuth();
+  const { theme } = useTheme();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [numPeople, setNumPeople] = useState(1);
   const [guestPhones, setGuestPhones] = useState<string[]>([]);
@@ -227,7 +229,7 @@ export const TableReservationModal = ({
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
         <LinearGradient
-          colors={["#db2777", "#ec4899", "#f472b6"]}
+          colors={[theme.primaryDark, theme.primary, theme.primaryLight] as [string, string, string]}
           style={styles.gradient}
         >
           {/* Header */}
@@ -381,16 +383,16 @@ export const TableReservationModal = ({
                   </ThemedText>
                   <View style={styles.userInfoDisplay}>
                     <View style={styles.userInfoRow}>
-                      <IconSymbol name="person" size={16} color="#ec4899" />
+                      <IconSymbol name="person" size={16} color={theme.primary} />
                       <ThemedText style={styles.userInfoText}>{user?.name}</ThemedText>
                     </View>
                     <View style={styles.userInfoRow}>
-                      <IconSymbol name="checkmark.circle" size={16} color="#ec4899" />
+                      <IconSymbol name="checkmark.circle" size={16} color={theme.primary} />
                       <ThemedText style={styles.userInfoText}>{user?.email}</ThemedText>
                     </View>
                     {user?.phone_number && (
                       <View style={styles.userInfoRow}>
-                        <IconSymbol name="checkmark.circle" size={16} color="#ec4899" />
+                        <IconSymbol name="checkmark.circle" size={16} color={theme.primary} />
                         <ThemedText style={styles.userInfoText}>{user.phone_number}</ThemedText>
                       </View>
                     )}

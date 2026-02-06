@@ -10,6 +10,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Event, Table } from "@/types";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { API_URL } from "@/config/api";
+import { useTheme } from "@/context/ThemeContext";
 import { TableReservationModal as PaymentModal } from "@/components/reservation/TableReservationModal";
 import { MarzipanoViewer, MarzipanoViewerRef } from "@/components/event/MarzipanoViewer";
 import { TableFilterMenu } from "@/components/event/TableFilterMenu";
@@ -26,6 +27,7 @@ export const TableReservationModal = ({
   event,
   onClose,
 }: TableReservationModalProps) => {
+  const { theme } = useTheme();
   const [tables, setTables] = useState<Table[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const marzipanoViewerRef = useRef<MarzipanoViewerRef>(null);
@@ -126,7 +128,7 @@ export const TableReservationModal = ({
       presentationStyle="fullScreen"
       onRequestClose={onClose}
     >
-      <ThemedView style={styles.container}>
+      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
         {/* Fullscreen Marzipano 360° Viewer */}
         {hasMarzipanoTour ? (
           <MarzipanoViewer
@@ -138,9 +140,9 @@ export const TableReservationModal = ({
             style={styles.fullscreenViewer}
           />
         ) : (
-          <View style={styles.noTourContainer}>
+          <View style={[styles.noTourContainer, { backgroundColor: theme.background }]}>
             <ThemedText style={styles.noTourIcon}>🏛️</ThemedText>
-            <ThemedText style={styles.noTourText}>
+            <ThemedText style={[styles.noTourText, { color: theme.text }]}>
               360° venue tour not available
             </ThemedText>
           </View>
@@ -148,27 +150,27 @@ export const TableReservationModal = ({
 
         {/* Scene Indicator Overlay */}
         {currentSceneName && (
-          <View style={styles.sceneIndicator}>
-            <ThemedText style={styles.sceneText}>
+          <View style={[styles.sceneIndicator, { backgroundColor: theme.overlay }]}>
+            <ThemedText style={[styles.sceneText, { color: theme.text }]}>
               📍 {currentSceneName}
             </ThemedText>
           </View>
         )}
 
         {/* Floating Back Button */}
-        <TouchableOpacity onPress={onClose} style={styles.backButton}>
-          <IconSymbol name="chevron.left" size={24} color="#fff" />
+        <TouchableOpacity onPress={onClose} style={[styles.backButton, { backgroundColor: theme.overlay }]}>
+          <IconSymbol name="chevron.left" size={24} color={theme.text} />
         </TouchableOpacity>
 
         {/* Floating Menu (Hamburger) Button */}
         <TouchableOpacity
           onPress={() => setMenuVisible(true)}
-          style={styles.menuButton}
+          style={[styles.menuButton, { backgroundColor: theme.overlay }]}
         >
           <View style={styles.hamburgerIcon}>
-            <View style={styles.hamburgerLine} />
-            <View style={styles.hamburgerLine} />
-            <View style={styles.hamburgerLine} />
+            <View style={[styles.hamburgerLine, { backgroundColor: theme.text }]} />
+            <View style={[styles.hamburgerLine, { backgroundColor: theme.text }]} />
+            <View style={[styles.hamburgerLine, { backgroundColor: theme.text }]} />
           </View>
         </TouchableOpacity>
 

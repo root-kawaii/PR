@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useTheme } from "@/context/ThemeContext";
 import { TableReservation } from "@/types";
 
 type TableReservationDetailModalProps = {
@@ -30,6 +31,7 @@ export const TableReservationDetailModal = ({
   onClose,
   onPaymentSubmit,
 }: TableReservationDetailModalProps) => {
+  const { theme } = useTheme();
   const [numPeople, setNumPeople] = useState(1);
   const [loading, setLoading] = useState(false);
 
@@ -78,15 +80,15 @@ export const TableReservationDetailModal = ({
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "confirmed":
-        return "#10b981";
+        return theme.success;
       case "pending":
-        return "#f59e0b";
+        return theme.warning;
       case "completed":
-        return "#3b82f6";
+        return theme.info;
       case "cancelled":
-        return "#ef4444";
+        return theme.error;
       default:
-        return "#6b7280";
+        return theme.textTertiary;
     }
   };
 
@@ -107,14 +109,14 @@ export const TableReservationDetailModal = ({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, { borderBottomColor: theme.backgroundSurface }]}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
-              <IconSymbol name="chevron.left" size={24} color="#fff" />
+              <IconSymbol name="chevron.left" size={24} color={theme.text} />
             </TouchableOpacity>
-            <ThemedText style={styles.headerTitle}>
+            <ThemedText style={[styles.headerTitle, { color: theme.text }]}>
               Dettagli Prenotazione
             </ThemedText>
             <View style={{ width: 40 }} />
@@ -133,17 +135,17 @@ export const TableReservationDetailModal = ({
                 />
                 <View style={styles.eventOverlay} />
                 <View style={styles.eventInfo}>
-                  <ThemedText style={styles.eventTitle}>
+                  <ThemedText style={[styles.eventTitle, { color: theme.text }]}>
                     {reservation.event.title}
                   </ThemedText>
                   <View style={styles.eventMeta}>
-                    <IconSymbol name="mappin" size={14} color="#9ca3af" />
+                    <IconSymbol name="mappin" size={14} color={theme.textTertiary} />
                     <ThemedText style={styles.eventVenue}>
                       {reservation.event.venue}
                     </ThemedText>
                   </View>
                   <View style={styles.eventMeta}>
-                    <IconSymbol name="calendar" size={14} color="#9ca3af" />
+                    <IconSymbol name="calendar" size={14} color={theme.textTertiary} />
                     <ThemedText style={styles.eventDate}>
                       {reservation.event.date}
                     </ThemedText>
@@ -156,10 +158,10 @@ export const TableReservationDetailModal = ({
             <View style={styles.section}>
               <View style={styles.codeStatusRow}>
                 <View style={styles.codeContainer}>
-                  <ThemedText style={styles.label}>
+                  <ThemedText style={[styles.label, { color: theme.textTertiary }]}>
                     Codice Prenotazione
                   </ThemedText>
-                  <ThemedText style={styles.reservationCode}>
+                  <ThemedText style={[styles.reservationCode, { color: theme.text }]}>
                     {reservation.reservationCode}
                   </ThemedText>
                 </View>
@@ -169,7 +171,7 @@ export const TableReservationDetailModal = ({
                     { backgroundColor: getStatusColor(reservation.status) },
                   ]}
                 >
-                  <ThemedText style={styles.statusText}>
+                  <ThemedText style={[styles.statusText, { color: theme.textInverse }]}>
                     {getStatusText(reservation.status)}
                   </ThemedText>
                 </View>
@@ -179,57 +181,57 @@ export const TableReservationDetailModal = ({
             {/* Table Info */}
             {reservation.table && (
               <View style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>
+                <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                   Informazioni Tavolo
                 </ThemedText>
-                <View style={styles.card}>
-                  <View style={styles.infoRow}>
-                    <ThemedText style={styles.infoLabel}>Tavolo</ThemedText>
-                    <ThemedText style={styles.infoValue}>
+                <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Tavolo</ThemedText>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                       {reservation.table.name}
                     </ThemedText>
                   </View>
                   {reservation.table.zone && (
-                    <View style={styles.infoRow}>
-                      <ThemedText style={styles.infoLabel}>Zona</ThemedText>
-                      <ThemedText style={styles.infoValue}>
+                    <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                      <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Zona</ThemedText>
+                      <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                         {reservation.table.zone}
                       </ThemedText>
                     </View>
                   )}
-                  <View style={styles.infoRow}>
-                    <ThemedText style={styles.infoLabel}>Capacità</ThemedText>
-                    <ThemedText style={styles.infoValue}>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Capacità</ThemedText>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                       {reservation.table.capacity} persone
                     </ThemedText>
                   </View>
-                  <View style={styles.infoRow}>
-                    <ThemedText style={styles.infoLabel}>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>
                       Min. a persona
                     </ThemedText>
-                    <ThemedText style={styles.infoValue}>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                       {reservation.table.minSpend}
                     </ThemedText>
                   </View>
                   {reservation.table.locationDescription && (
-                    <View style={styles.locationContainer}>
-                      <IconSymbol name="location" size={16} color="#9ca3af" />
-                      <ThemedText style={styles.locationText}>
+                    <View style={[styles.locationContainer, { borderTopColor: theme.border }]}>
+                      <IconSymbol name="location" size={16} color={theme.textTertiary} />
+                      <ThemedText style={[styles.locationText, { color: theme.textTertiary }]}>
                         {reservation.table.locationDescription}
                       </ThemedText>
                     </View>
                   )}
                   {reservation.table.features &&
                     reservation.table.features.length > 0 && (
-                      <View style={styles.featuresContainer}>
+                      <View style={[styles.featuresContainer, { borderTopColor: theme.border }]}>
                         {reservation.table.features.map((feature, index) => (
                           <View key={index} style={styles.featureItem}>
                             <IconSymbol
                               name="checkmark.circle"
                               size={14}
-                              color="#10b981"
+                              color={theme.success}
                             />
-                            <ThemedText style={styles.featureText}>
+                            <ThemedText style={[styles.featureText, { color: theme.textSecondary }]}>
                               {feature}
                             </ThemedText>
                           </View>
@@ -242,45 +244,45 @@ export const TableReservationDetailModal = ({
 
             {/* Table Capacity */}
             <View style={styles.section}>
-              <ThemedText style={styles.sectionTitle}>
+              <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                 Capienza Tavolo
               </ThemedText>
-              <View style={styles.card}>
+              <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
                 <View style={styles.capacityRow}>
                   <View style={styles.capacityInfo}>
-                    <ThemedText style={styles.capacityLabel}>
+                    <ThemedText style={[styles.capacityLabel, { color: theme.textTertiary }]}>
                       Persone Attuali
                     </ThemedText>
-                    <ThemedText style={styles.capacityValue}>
+                    <ThemedText style={[styles.capacityValue, { color: theme.text }]}>
                       {currentPeople}
                     </ThemedText>
                   </View>
-                  <View style={styles.capacityDivider} />
+                  <View style={[styles.capacityDivider, { backgroundColor: theme.border }]} />
                   <View style={styles.capacityInfo}>
-                    <ThemedText style={styles.capacityLabel}>
+                    <ThemedText style={[styles.capacityLabel, { color: theme.textTertiary }]}>
                       Capacità Massima
                     </ThemedText>
-                    <ThemedText style={styles.capacityValue}>
+                    <ThemedText style={[styles.capacityValue, { color: theme.text }]}>
                       {tableCapacity}
                     </ThemedText>
                   </View>
-                  <View style={styles.capacityDivider} />
+                  <View style={[styles.capacityDivider, { backgroundColor: theme.border }]} />
                   <View style={styles.capacityInfo}>
-                    <ThemedText style={styles.capacityLabel}>
+                    <ThemedText style={[styles.capacityLabel, { color: theme.textTertiary }]}>
                       Posti Disponibili
                     </ThemedText>
                     <ThemedText style={[
                       styles.capacityValue,
-                      { color: remainingCapacity > 0 ? '#10b981' : '#ef4444' }
+                      { color: remainingCapacity > 0 ? theme.success : theme.error }
                     ]}>
                       {remainingCapacity}
                     </ThemedText>
                   </View>
                 </View>
                 {!canAddPeople && (
-                  <View style={styles.fullCapacityBanner}>
-                    <IconSymbol name="exclamationmark.triangle.fill" size={16} color="#f59e0b" />
-                    <ThemedText style={styles.fullCapacityText}>
+                  <View style={[styles.fullCapacityBanner, { backgroundColor: theme.warningLight, borderColor: theme.warning }]}>
+                    <IconSymbol name="exclamationmark.triangle.fill" size={16} color={theme.warning} />
+                    <ThemedText style={[styles.fullCapacityText, { color: theme.warning }]}>
                       Tavolo al completo
                     </ThemedText>
                   </View>
@@ -291,20 +293,20 @@ export const TableReservationDetailModal = ({
             {/* Participants */}
             {reservation.participants && reservation.participants.length > 0 && (
               <View style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>
+                <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                   Partecipanti ({reservation.participants.length})
                 </ThemedText>
-                <View style={styles.card}>
+                <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
                   {reservation.participants.map((participant) => (
-                    <View key={participant.userId} style={styles.participantRow}>
-                      <View style={styles.participantIcon}>
-                        <IconSymbol name="person" size={20} color="#ec4899" />
+                    <View key={participant.userId} style={[styles.participantRow, { borderBottomColor: theme.border }]}>
+                      <View style={[styles.participantIcon, { backgroundColor: theme.primaryLight }]}>
+                        <IconSymbol name="person" size={20} color={theme.primary} />
                       </View>
                       <View style={styles.participantInfo}>
-                        <ThemedText style={styles.participantName}>
+                        <ThemedText style={[styles.participantName, { color: theme.text }]}>
                           {participant.userName}
                         </ThemedText>
-                        <ThemedText style={styles.participantDetails}>
+                        <ThemedText style={[styles.participantDetails, { color: theme.textTertiary }]}>
                           {participant.numPeople} {participant.numPeople === 1 ? 'persona' : 'persone'} • {participant.amountPaid}
                         </ThemedText>
                       </View>
@@ -316,44 +318,44 @@ export const TableReservationDetailModal = ({
 
             {/* Reservation Details */}
             <View style={styles.section}>
-              <ThemedText style={styles.sectionTitle}>
+              <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                 Dettagli Prenotazione
               </ThemedText>
-              <View style={styles.card}>
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>
+              <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                  <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>
                     Nome contatto
                   </ThemedText>
-                  <ThemedText style={styles.infoValue}>
+                  <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                     {reservation.contactName}
                   </ThemedText>
                 </View>
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>
+                <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                  <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>
                     Nome contatto
                   </ThemedText>
-                  <ThemedText style={styles.infoValue}>
+                  <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                     {reservation.contactName}
                   </ThemedText>
                 </View>
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>Email</ThemedText>
-                  <ThemedText style={styles.infoValueSmall}>
+                <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                  <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Email</ThemedText>
+                  <ThemedText style={[styles.infoValueSmall, { color: theme.text }]}>
                     {reservation.contactEmail}
                   </ThemedText>
                 </View>
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>Telefono</ThemedText>
-                  <ThemedText style={styles.infoValue}>
+                <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                  <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Telefono</ThemedText>
+                  <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                     {reservation.contactPhone}
                   </ThemedText>
                 </View>
                 {reservation.specialRequests && (
-                  <View style={styles.specialRequestsContainer}>
-                    <ThemedText style={styles.infoLabel}>
+                  <View style={[styles.specialRequestsContainer, { borderTopColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>
                       Richieste speciali
                     </ThemedText>
-                    <ThemedText style={styles.specialRequestsText}>
+                    <ThemedText style={[styles.specialRequestsText, { color: theme.textSecondary }]}>
                       {reservation.specialRequests}
                     </ThemedText>
                   </View>
@@ -363,49 +365,49 @@ export const TableReservationDetailModal = ({
 
             {/* Payment Summary */}
             <View style={styles.section}>
-              <ThemedText style={styles.sectionTitle}>
+              <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                 Riepilogo Pagamento
               </ThemedText>
-              <View style={styles.card}>
+              <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
                 <View style={styles.paymentRow}>
-                  <ThemedText style={styles.paymentLabel}>
+                  <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>
                     Importo totale
                   </ThemedText>
-                  <ThemedText style={styles.paymentValue}>
+                  <ThemedText style={[styles.paymentValue, { color: theme.text }]}>
                     {reservation.totalAmount}
                   </ThemedText>
                 </View>
                 <View style={styles.paymentRow}>
-                  <ThemedText style={styles.paymentLabel}>
+                  <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>
                     Già pagato
                   </ThemedText>
                   <ThemedText
-                    style={[styles.paymentValue, { color: "#10b981" }]}
+                    style={[styles.paymentValue, { color: theme.success }]}
                   >
                     {reservation.amountPaid}
                   </ThemedText>
                 </View>
-                <View style={styles.divider} />
+                <View style={[styles.divider, { backgroundColor: theme.border }]} />
                 <View style={styles.paymentRow}>
-                  <ThemedText style={styles.paymentLabelTotal}>
+                  <ThemedText style={[styles.paymentLabelTotal, { color: theme.text }]}>
                     Rimanente
                   </ThemedText>
-                  <ThemedText style={styles.paymentValueTotal}>
+                  <ThemedText style={[styles.paymentValueTotal, { color: theme.primary }]}>
                     {reservation.amountRemaining}
                   </ThemedText>
                 </View>
 
                 {/* Progress Bar */}
                 <View style={styles.progressContainer}>
-                  <View style={styles.progressBar}>
+                  <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
                     <View
                       style={[
                         styles.progressFill,
-                        { width: `${(amountPaid / totalAmount) * 100}%` },
+                        { width: `${(amountPaid / totalAmount) * 100}%`, backgroundColor: theme.success },
                       ]}
                     />
                   </View>
-                  <ThemedText style={styles.progressText}>
+                  <ThemedText style={[styles.progressText, { color: theme.textTertiary }]}>
                     {Math.round((amountPaid / totalAmount) * 100)}% pagato
                   </ThemedText>
                 </View>
@@ -415,11 +417,11 @@ export const TableReservationDetailModal = ({
             {/* Payment Contribution */}
             {canAddPeople && amountRemaining > 0 && reservation.status !== "cancelled" && (
               <View style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>
+                <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                   Aggiungi Persone
                 </ThemedText>
-                <View style={styles.card}>
-                  <ThemedText style={styles.contributionDescription}>
+                <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  <ThemedText style={[styles.contributionDescription, { color: theme.textTertiary }]}>
                     Ci sono ancora {remainingCapacity} {remainingCapacity === 1 ? 'posto disponibile' : 'posti disponibili'} al tavolo.
                     Seleziona per quante persone vuoi pagare la quota minima di{" "}
                     {reservation.table?.minSpend} a persona.
@@ -427,13 +429,14 @@ export const TableReservationDetailModal = ({
 
                   {/* People Counter */}
                   <View style={styles.counterContainer}>
-                    <ThemedText style={styles.counterLabel}>
+                    <ThemedText style={[styles.counterLabel, { color: theme.textTertiary }]}>
                       Numero di persone da aggiungere
                     </ThemedText>
                     <View style={styles.counter}>
                       <TouchableOpacity
                         style={[
                           styles.counterButton,
+                          { backgroundColor: theme.backgroundSurface },
                           numPeople <= 1 && styles.counterButtonDisabled,
                         ]}
                         onPress={decrementPeople}
@@ -442,17 +445,18 @@ export const TableReservationDetailModal = ({
                         <IconSymbol
                           name="minus"
                           size={20}
-                          color={numPeople <= 1 ? "#6b7280" : "#fff"}
+                          color={numPeople <= 1 ? theme.textTertiary : theme.text}
                         />
                       </TouchableOpacity>
                       <View style={styles.counterValueContainer}>
-                        <ThemedText style={styles.counterValue}>
+                        <ThemedText style={[styles.counterValue, { color: theme.text }]}>
                           {numPeople}
                         </ThemedText>
                       </View>
                       <TouchableOpacity
                         style={[
                           styles.counterButton,
+                          { backgroundColor: theme.backgroundSurface },
                           numPeople >= remainingCapacity &&
                             styles.counterButtonDisabled,
                         ]}
@@ -464,8 +468,8 @@ export const TableReservationDetailModal = ({
                           size={20}
                           color={
                             numPeople >= remainingCapacity
-                              ? "#6b7280"
-                              : "#fff"
+                              ? theme.textTertiary
+                              : theme.text
                           }
                         />
                       </TouchableOpacity>
@@ -473,11 +477,11 @@ export const TableReservationDetailModal = ({
                   </View>
 
                   {/* Contribution Amount */}
-                  <View style={styles.contributionAmountContainer}>
-                    <ThemedText style={styles.contributionAmountLabel}>
+                  <View style={[styles.contributionAmountContainer, { backgroundColor: theme.background }]}>
+                    <ThemedText style={[styles.contributionAmountLabel, { color: theme.textTertiary }]}>
                       Importo da pagare
                     </ThemedText>
-                    <ThemedText style={styles.contributionAmount}>
+                    <ThemedText style={[styles.contributionAmount, { color: theme.primary }]}>
                       {contributionAmount.toFixed(2)} €
                     </ThemedText>
                   </View>
@@ -486,15 +490,16 @@ export const TableReservationDetailModal = ({
                   <TouchableOpacity
                     style={[
                       styles.payButton,
+                      { backgroundColor: theme.primary },
                       loading && styles.payButtonDisabled,
                     ]}
                     onPress={handlePayment}
                     disabled={loading}
                   >
                     {loading ? (
-                      <ActivityIndicator size="small" color="#fff" />
+                      <ActivityIndicator size="small" color={theme.textInverse} />
                     ) : (
-                      <ThemedText style={styles.payButtonText}>
+                      <ThemedText style={[styles.payButtonText, { color: theme.textInverse }]}>
                         Paga {contributionAmount.toFixed(2)} €
                       </ThemedText>
                     )}

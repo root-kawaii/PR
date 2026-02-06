@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useTheme } from "@/context/ThemeContext";
 
 type ReservationCodeModalProps = {
   visible: boolean;
@@ -26,6 +27,7 @@ export const ReservationCodeModal = ({
   onClose,
   onSubmit,
 }: ReservationCodeModalProps) => {
+  const { theme } = useTheme();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -64,32 +66,32 @@ export const ReservationCodeModal = ({
       onRequestClose={handleClose}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.overlay}>
-          <View style={styles.modal}>
+        <View style={[styles.overlay, { backgroundColor: theme.overlay }]}>
+          <View style={[styles.modal, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <View>
                 {/* Header */}
-                <View style={styles.header}>
-                  <ThemedText style={styles.title}>Inserisci Codice</ThemedText>
+                <View style={[styles.header, { borderBottomColor: theme.border }]}>
+                  <ThemedText style={[styles.title, { color: theme.text }]}>Inserisci Codice</ThemedText>
                   <TouchableOpacity
                     onPress={handleClose}
                     style={styles.closeButton}
                   >
-                    <IconSymbol name="xmark" size={24} color="#9ca3af" />
+                    <IconSymbol name="xmark" size={24} color={theme.textTertiary} />
                   </TouchableOpacity>
                 </View>
 
                 {/* Content */}
                 <View style={styles.content}>
-                  <ThemedText style={styles.description}>
+                  <ThemedText style={[styles.description, { color: theme.textTertiary }]}>
                     Inserisci il codice della prenotazione per visualizzare i
                     dettagli e contribuire al pagamento.
                   </ThemedText>
 
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
                     placeholder="Es: RES-XXXXXXXX"
-                    placeholderTextColor="#6b7280"
+                    placeholderTextColor={theme.textTertiary}
                     value={code}
                     onChangeText={(text) => {
                       setCode(text);
@@ -105,9 +107,9 @@ export const ReservationCodeModal = ({
                       <IconSymbol
                         name="exclamationmark.triangle.fill"
                         size={16}
-                        color="#ef4444"
+                        color={theme.error}
                       />
-                      <ThemedText style={styles.errorText}>{error}</ThemedText>
+                      <ThemedText style={[styles.errorText, { color: theme.error }]}>{error}</ThemedText>
                     </View>
                   ) : null}
                 </View>
@@ -115,11 +117,11 @@ export const ReservationCodeModal = ({
                 {/* Actions */}
                 <View style={styles.actions}>
                   <TouchableOpacity
-                    style={[styles.button, styles.cancelButton]}
+                    style={[styles.button, styles.cancelButton, { backgroundColor: theme.backgroundSurface }]}
                     onPress={handleClose}
                     disabled={loading}
                   >
-                    <ThemedText style={styles.cancelButtonText}>
+                    <ThemedText style={[styles.cancelButtonText, { color: theme.textTertiary }]}>
                       Annulla
                     </ThemedText>
                   </TouchableOpacity>
@@ -128,15 +130,16 @@ export const ReservationCodeModal = ({
                     style={[
                       styles.button,
                       styles.submitButton,
+                      { backgroundColor: theme.primary },
                       loading && styles.buttonDisabled,
                     ]}
                     onPress={handleSubmit}
                     disabled={loading}
                   >
                     {loading ? (
-                      <ActivityIndicator size="small" color="#fff" />
+                      <ActivityIndicator size="small" color={theme.textInverse} />
                     ) : (
-                      <ThemedText style={styles.submitButtonText}>
+                      <ThemedText style={[styles.submitButtonText, { color: theme.textInverse }]}>
                         Cerca
                       </ThemedText>
                     )}

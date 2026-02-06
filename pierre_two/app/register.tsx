@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 const API_URL = 'http://172.20.10.5:3000';
@@ -29,6 +30,7 @@ export default function RegisterScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const { register } = useAuth();
+  const { theme } = useTheme();
   const router = useRouter();
 
   // Step 1: Validate and create account (without phone verification yet)
@@ -189,42 +191,42 @@ export default function RegisterScreen() {
   if (step === 'phone-verification') {
     return (
       <KeyboardAvoidingView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: theme.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.content}>
-            <Text style={styles.title}>Verify Your Phone</Text>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.title, { color: theme.text }]}>Verify Your Phone</Text>
+            <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
               We'll send a verification code to +39 {phone}
             </Text>
 
             <View style={styles.form}>
-              <View style={styles.phoneDisplay}>
-                <Text style={styles.phoneDisplayLabel}>Phone Number</Text>
-                <Text style={styles.phoneDisplayValue}>+39 {phone}</Text>
+              <View style={[styles.phoneDisplay, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                <Text style={[styles.phoneDisplayLabel, { color: theme.textTertiary }]}>Phone Number</Text>
+                <Text style={[styles.phoneDisplayValue, { color: theme.text }]}>+39 {phone}</Text>
               </View>
 
               {!codeSent ? (
                 <TouchableOpacity
-                  style={[styles.button, isLoading && styles.buttonDisabled]}
+                  style={[styles.button, { backgroundColor: theme.primary }, isLoading && styles.buttonDisabled]}
                   onPress={handleSendVerificationCode}
                   disabled={isLoading}
                 >
-                  <Text style={styles.buttonText}>
+                  <Text style={[styles.buttonText, { color: theme.textInverse }]}>
                     {isLoading ? 'Sending...' : 'Send Verification Code'}
                   </Text>
                 </TouchableOpacity>
               ) : (
                 <>
-                  <Text style={styles.instructionText}>
+                  <Text style={[styles.instructionText, { color: theme.textTertiary }]}>
                     Enter the 6-digit code sent to your phone
                   </Text>
 
                   <TextInput
-                    style={styles.codeInput}
+                    style={[styles.codeInput, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
                     placeholder="000000"
-                    placeholderTextColor="#999"
+                    placeholderTextColor={theme.textTertiary}
                     value={verificationCode}
                     onChangeText={setVerificationCode}
                     keyboardType="number-pad"
@@ -233,11 +235,11 @@ export default function RegisterScreen() {
                   />
 
                   <TouchableOpacity
-                    style={[styles.button, (isVerifying || verificationCode.length !== 6) && styles.buttonDisabled]}
+                    style={[styles.button, { backgroundColor: theme.primary }, (isVerifying || verificationCode.length !== 6) && styles.buttonDisabled]}
                     onPress={handleVerifyAndCompleteRegistration}
                     disabled={isVerifying || verificationCode.length !== 6}
                   >
-                    <Text style={styles.buttonText}>
+                    <Text style={[styles.buttonText, { color: theme.textInverse }]}>
                       {isVerifying ? 'Verifying...' : 'Verify & Complete'}
                     </Text>
                   </TouchableOpacity>
@@ -247,7 +249,7 @@ export default function RegisterScreen() {
                     onPress={handleSendVerificationCode}
                     disabled={isLoading}
                   >
-                    <Text style={styles.resendText}>
+                    <Text style={[styles.resendText, { color: theme.primary }]}>
                       Didn't receive the code? Resend
                     </Text>
                   </TouchableOpacity>
@@ -262,7 +264,7 @@ export default function RegisterScreen() {
                   setVerificationCode('');
                 }}
               >
-                <Text style={styles.linkText}>← Back to registration</Text>
+                <Text style={[styles.linkText, { color: theme.primary }]}>← Back to registration</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -274,28 +276,28 @@ export default function RegisterScreen() {
   // Step 1: Basic Info
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Sign up to get started</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
+          <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Sign up to get started</Text>
 
           <View style={styles.form}>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
               placeholder="Full Name"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.textTertiary}
               value={name}
               onChangeText={setName}
               editable={!isLoading}
             />
 
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
               placeholder="Email"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.textTertiary}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -303,12 +305,12 @@ export default function RegisterScreen() {
               editable={!isLoading}
             />
 
-            <View style={styles.phoneInputContainer}>
-              <Text style={styles.phonePrefix}>+39</Text>
+            <View style={[styles.phoneInputContainer, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+              <Text style={[styles.phonePrefix, { color: theme.text }]}>+39</Text>
               <TextInput
-                style={styles.phoneInput}
+                style={[styles.phoneInput, { color: theme.text }]}
                 placeholder="3935130925"
-                placeholderTextColor="#999"
+                placeholderTextColor={theme.textTertiary}
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
@@ -317,11 +319,11 @@ export default function RegisterScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}
               onPress={() => setShowDatePicker(true)}
               disabled={isLoading}
             >
-              <Text style={dateOfBirth ? styles.datePickerText : styles.datePickerPlaceholder}>
+              <Text style={dateOfBirth ? [styles.datePickerText, { color: theme.text }] : [styles.datePickerPlaceholder, { color: theme.textTertiary }]}>
                 {dateOfBirth ? formatDate(dateOfBirth) : 'Date of Birth'}
               </Text>
             </TouchableOpacity>
@@ -337,9 +339,9 @@ export default function RegisterScreen() {
             )}
 
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
               placeholder="Password"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.textTertiary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -347,9 +349,9 @@ export default function RegisterScreen() {
             />
 
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
               placeholder="Confirm Password"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.textTertiary}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -357,19 +359,19 @@ export default function RegisterScreen() {
             />
 
             <TouchableOpacity
-              style={[styles.button, isLoading && styles.buttonDisabled]}
+              style={[styles.button, { backgroundColor: theme.primary }, isLoading && styles.buttonDisabled]}
               onPress={handleContinueToPhoneVerification}
               disabled={isLoading}
             >
-              <Text style={styles.buttonText}>
+              <Text style={[styles.buttonText, { color: theme.textInverse }]}>
                 {isLoading ? 'Creating Account...' : 'Continue →'}
               </Text>
             </TouchableOpacity>
 
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Already have an account? </Text>
+              <Text style={[styles.footerText, { color: theme.textTertiary }]}>Already have an account? </Text>
               <TouchableOpacity onPress={() => router.back()}>
-                <Text style={styles.linkText}>Log In</Text>
+                <Text style={[styles.linkText, { color: theme.primary }]}>Log In</Text>
               </TouchableOpacity>
             </View>
           </View>

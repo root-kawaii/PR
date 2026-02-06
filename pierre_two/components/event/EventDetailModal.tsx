@@ -17,8 +17,10 @@ import { Event, Table } from "@/types";
 import { useState, useEffect } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { Alert } from "react-native";
 import { TableReservationModal } from "./TableReservationModal";
+import { ThemePalette } from "@/constants/theme";
 
 type EventDetailModalProps = {
   visible: boolean;
@@ -34,6 +36,7 @@ export const EventDetailModal = ({
   onReserveTable,
 }: EventDetailModalProps) => {
   const { user } = useAuth();
+  const { theme } = useTheme();
   const [showTableReservation, setShowTableReservation] = useState(false);
 
   // Reset table reservation modal when main modal closes
@@ -60,16 +63,16 @@ export const EventDetailModal = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView style={styles.modalContainer} edges={["top"]}>
-        <ThemedView style={styles.modalContent}>
+      <SafeAreaView style={[styles.modalContainer, { backgroundColor: theme.background }]} edges={["top"]}>
+        <ThemedView style={[styles.modalContent, { backgroundColor: theme.background }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
-              <IconSymbol name="chevron.left" size={24} color="#fff" />
+              <IconSymbol name="chevron.left" size={24} color={theme.text} />
             </TouchableOpacity>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            <View style={styles.modalImageContainer}>
+            <View style={[styles.modalImageContainer, { backgroundColor: theme.backgroundSurface }]}>
               <Image
                 source={{ uri: event.image }}
                 style={styles.modalImage}
@@ -77,43 +80,43 @@ export const EventDetailModal = ({
               />
             </View>
 
-            <View style={styles.modalTitleSection}>
-              <ThemedText style={styles.modalTitle}>{event.title}</ThemedText>
+            <View style={[styles.modalTitleSection, { backgroundColor: theme.background }]}>
+              <ThemedText style={[styles.modalTitle, { color: theme.text }]}>{event.title}</ThemedText>
               <View style={styles.modalDateRow}>
-                <IconSymbol name="calendar" size={16} color="#e5e7eb" />
-                <ThemedText style={styles.modalDate}>{event.date}</ThemedText>
+                <IconSymbol name="calendar" size={16} color={theme.textSecondary} />
+                <ThemedText style={[styles.modalDate, { color: theme.textTertiary }]}>{event.date}</ThemedText>
               </View>
               <View style={styles.modalDateRow}>
-                <IconSymbol name="mappin" size={16} color="#e5e7eb" />
-                <ThemedText style={styles.modalDate}>{event.venue}</ThemedText>
+                <IconSymbol name="mappin" size={16} color={theme.textSecondary} />
+                <ThemedText style={[styles.modalDate, { color: theme.textTertiary }]}>{event.venue}</ThemedText>
               </View>
             </View>
 
-            <View style={styles.detailsContainer}>
+            <View style={[styles.detailsContainer, { backgroundColor: theme.backgroundElevated }]}>
               <View style={styles.detailRow}>
-                <DetailItem value={event.time || "23:00"} label="Start Time" />
-                <DetailItem value={event.ageLimit || "18+"} label="Age Limit" />
-                <DetailItem value={event.endTime || "04:00"} label="End Time" />
+                <DetailItem value={event.time || "23:00"} label="Start Time" theme={theme} />
+                <DetailItem value={event.ageLimit || "18+"} label="Age Limit" theme={theme} />
+                <DetailItem value={event.endTime || "04:00"} label="End Time" theme={theme} />
               </View>
             </View>
 
             <View style={styles.ctaSection}>
-              <View style={styles.priceBox}>
-                <ThemedText style={styles.priceLabel}>Entry Fee</ThemedText>
-                <ThemedText style={styles.priceValue}>
+              <View style={[styles.priceBox, { backgroundColor: theme.backgroundElevated }]}>
+                <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>Entry Fee</ThemedText>
+                <ThemedText style={[styles.priceValue, { color: theme.text }]}>
                   {event.price || "32 €"}
                 </ThemedText>
               </View>
 
               <TouchableOpacity onPress={handleBuyTicket} activeOpacity={0.8}>
                 <LinearGradient
-                  colors={["#ec4899", "#db2777"]}
+                  colors={theme.gradientPrimary as [string, string]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
-                  style={styles.buyButton}
+                  style={[styles.buyButton, { shadowColor: theme.primary }]}
                 >
-                  <IconSymbol name="calendar" size={20} color="#fff" />
-                  <ThemedText style={styles.buyButtonText}>
+                  <IconSymbol name="calendar" size={20} color={theme.textInverse} />
+                  <ThemedText style={[styles.buyButtonText, { color: theme.textInverse }]}>
                     Reserve Table
                   </ThemedText>
                 </LinearGradient>
@@ -121,11 +124,11 @@ export const EventDetailModal = ({
             </View>
 
             {event.description && (
-              <View style={styles.descriptionSection}>
-                <ThemedText style={styles.descriptionTitle}>
+              <View style={[styles.descriptionSection, { backgroundColor: theme.backgroundElevated }]}>
+                <ThemedText style={[styles.descriptionTitle, { color: theme.text }]}>
                   About Event
                 </ThemedText>
-                <ThemedText style={styles.descriptionText}>
+                <ThemedText style={[styles.descriptionText, { color: theme.textTertiary }]}>
                   {event.description}
                 </ThemedText>
               </View>
@@ -146,10 +149,10 @@ export const EventDetailModal = ({
   );
 };
 
-const DetailItem = ({ value, label }: { value: string; label: string }) => (
+const DetailItem = ({ value, label, theme }: { value: string; label: string; theme: ThemePalette }) => (
   <View style={styles.detailBox}>
-    <ThemedText style={styles.detailValue}>{value}</ThemedText>
-    <ThemedText style={styles.detailLabel}>{label}</ThemedText>
+    <ThemedText style={[styles.detailValue, { color: theme.text }]}>{value}</ThemedText>
+    <ThemedText style={[styles.detailLabel, { color: theme.textTertiary }]}>{label}</ThemedText>
   </View>
 );
 

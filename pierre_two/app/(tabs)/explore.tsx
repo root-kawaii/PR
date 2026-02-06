@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Image,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useMemo } from 'react';
 import { useEvents } from '@/hooks/useEvents';
+import { useTheme } from '@/context/ThemeContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useRouter } from 'expo-router';
 import { Event } from '@/types';
@@ -58,6 +59,7 @@ const isEventInFuture = (dateStr: string): boolean => {
 export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const { events, loading } = useEvents();
+  const { theme } = useTheme();
   const router = useRouter();
 
   // Filter events: future only + fuzzy search match
@@ -87,16 +89,16 @@ export default function SearchScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-      <ThemedView style={styles.container}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={["top"]}>
+      <ThemedView style={[styles.container, { backgroundColor: theme.backgroundElevated }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <IconSymbol name="chevron.left" size={24} color="#fff" />
+            <IconSymbol name="chevron.left" size={24} color={theme.text} />
           </TouchableOpacity>
           <TextInput
-            style={styles.searchBar}
+            style={[styles.searchBar, { backgroundColor: theme.backgroundSurface, color: theme.text }]}
             placeholder="Cerca eventi, artisti o locali..."
-            placeholderTextColor="#888"
+            placeholderTextColor={theme.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoFocus
@@ -106,16 +108,16 @@ export default function SearchScreen() {
         <ScrollView>
           {loading ? (
             <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color="#db2777" />
-              <Text style={styles.loadingText}>Caricamento eventi...</Text>
+              <ActivityIndicator size="large" color={theme.primary} />
+              <Text style={[styles.loadingText, { color: theme.textTertiary }]}>Caricamento eventi...</Text>
             </View>
           ) : filteredEvents.length === 0 ? (
             <View style={styles.centerContainer}>
-              <IconSymbol name="magnifyingglass" size={64} color="#444" />
-              <Text style={styles.emptyText}>
+              <IconSymbol name="magnifyingglass" size={64} color={theme.border} />
+              <Text style={[styles.emptyText, { color: theme.text }]}>
                 {searchQuery.trim() ? 'Nessun evento trovato' : 'Cerca eventi futuri'}
               </Text>
-              <Text style={styles.emptySubtext}>
+              <Text style={[styles.emptySubtext, { color: theme.textTertiary }]}>
                 {searchQuery.trim()
                   ? 'Prova con parole diverse'
                   : 'Inizia a digitare per cercare'}
@@ -123,33 +125,33 @@ export default function SearchScreen() {
             </View>
           ) : (
             <>
-              <Text style={styles.resultsCount}>
+              <Text style={[styles.resultsCount, { color: theme.textTertiary }]}>
                 {filteredEvents.length} {filteredEvents.length === 1 ? 'evento trovato' : 'eventi trovati'}
               </Text>
               {filteredEvents.map((event) => (
                 <TouchableOpacity
                   key={event.id}
-                  style={styles.eventRow}
+                  style={[styles.eventRow, { backgroundColor: theme.backgroundSurface }]}
                   onPress={() => handleEventPress(event)}
                   activeOpacity={0.7}
                 >
                   <Image
                     source={{ uri: event.image }}
-                    style={styles.eventImg}
+                    style={[styles.eventImg, { backgroundColor: theme.border }]}
                     resizeMode="cover"
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
+                    <Text style={[styles.eventTitle, { color: theme.text }]} numberOfLines={2}>{event.title}</Text>
                     <View style={styles.eventMetaRow}>
-                      <IconSymbol name="calendar" size={14} color="#9ca3af" />
-                      <Text style={styles.eventMeta}>{event.date}</Text>
+                      <IconSymbol name="calendar" size={14} color={theme.textTertiary} />
+                      <Text style={[styles.eventMeta, { color: theme.textTertiary }]}>{event.date}</Text>
                     </View>
                     <View style={styles.eventMetaRow}>
-                      <IconSymbol name="location.fill" size={14} color="#9ca3af" />
-                      <Text style={styles.eventMeta} numberOfLines={1}>{event.venue}</Text>
+                      <IconSymbol name="location.fill" size={14} color={theme.textTertiary} />
+                      <Text style={[styles.eventMeta, { color: theme.textTertiary }]} numberOfLines={1}>{event.venue}</Text>
                     </View>
                   </View>
-                  <IconSymbol name="chevron.right" size={20} color="#666" />
+                  <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
                 </TouchableOpacity>
               ))}
             </>
