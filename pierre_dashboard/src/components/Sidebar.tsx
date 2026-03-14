@@ -1,6 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, LogOut } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, LogOut, Settings, QrCode } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+
+const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+    isActive ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+  }`;
 
 export default function Sidebar() {
   const { club, owner, logout } = useAuth();
@@ -22,29 +27,24 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        <NavLink
-          to="/dashboard"
-          end
-          className={({ isActive }) =>
-            `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              isActive ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`
-          }
-        >
+        <NavLink to="/dashboard" end className={navLinkClass}>
           <LayoutDashboard size={20} />
           Dashboard
         </NavLink>
 
-        <NavLink
-          to="/dashboard/events"
-          className={({ isActive }) =>
-            `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              isActive ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`
-          }
-        >
+        <NavLink to="/dashboard/events" className={navLinkClass}>
           <CalendarDays size={20} />
           Events
+        </NavLink>
+
+        <NavLink to="/dashboard/scan" className={navLinkClass}>
+          <QrCode size={20} />
+          Scanner QR
+        </NavLink>
+
+        <NavLink to="/dashboard/club" className={navLinkClass}>
+          <Settings size={20} />
+          Impostazioni Locale
         </NavLink>
       </nav>
 

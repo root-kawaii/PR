@@ -6,6 +6,9 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import EventsPage from './pages/EventsPage';
 import EventTablesPage from './pages/EventTablesPage';
+import EventReservationsPage from './pages/EventReservationsPage';
+import ClubSettingsPage from './pages/ClubSettingsPage';
+import QRScannerPage from './pages/QRScannerPage';
 
 export default function App() {
   return (
@@ -16,8 +19,11 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/dashboard/club" element={<ClubSettingsPage />} />
+              <Route path="/dashboard/scan" element={<QRScannerPage />} />
               <Route path="/dashboard/events" element={<EventsPage />} />
               <Route path="/dashboard/events/:eventId/tables" element={<EventTablesPage />} />
+              <Route path="/dashboard/events/:eventId/reservations" element={<EventReservationsPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
