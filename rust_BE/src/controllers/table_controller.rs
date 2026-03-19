@@ -5,7 +5,7 @@ use crate::models::{
     TableReservationsResponse, TableReservationsWithDetailsResponse,
     AddPaymentToReservationRequest, LinkTicketToReservationRequest,
     CreatePaymentIntentRequest, CreatePaymentIntentResponse,
-    TableSummary, PaymentStatus, EventSummary,
+    TableSummary, PaymentStatus, PaymentCaptureMethod, EventSummary,
 };
 use crate::persistences::{table_persistence, user_persistence};
 use axum::{
@@ -18,7 +18,7 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use chrono::Utc;
-use stripe::{CreatePaymentIntent, Currency, PaymentIntent, PaymentIntentStatus};
+use stripe::{CreatePaymentIntent, CreateCustomer, Currency, Customer, PaymentIntent, PaymentIntentCaptureMethod, PaymentIntentSetupFutureUsage, PaymentIntentStatus};
 
 // ============================================================================
 // Tables endpoints
@@ -540,7 +540,28 @@ pub async fn create_payment_intent(
     let total_users = 1 + guest_user_ids.len();
     let total_amount = table.min_spend * Decimal::from(total_users as i32);
 
-    // Step 3: Create PaymentIntent on Stripe
+    // Step 3: Get or create a Stripe Customer for this user (needed for off-session re-auth)
+    let owner_user = match user_persistence::find_user_by_id(&state.db_pool, owner_user_id).await {
+        Ok(Some(u)) => u,
+        Ok(None) => return Err((StatusCode::NOT_FOUND, "Utente non trovato".to_string())),
+        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())),
+    };
+
+    let mut customer_params = CreateCustomer::new();
+    customer_params.email = Some(&owner_user.email);
+    customer_params.metadata = Some(
+        [("user_id".to_string(), owner_user_id.to_string())]
+            .into_iter()
+            .collect(),
+    );
+    let stripe_customer = Customer::create(&state.stripe_client, customer_params)
+        .await
+        .map_err(|e| {
+            eprintln!("Stripe Customer create error: {:?}", e);
+            (StatusCode::BAD_GATEWAY, "Errore creazione cliente".to_string())
+        })?;
+
+    // Step 4: Create PaymentIntent on Stripe with manual capture + saved payment method
     // Convert amount from euros to cents (Stripe expects cents)
     let amount_in_cents = total_amount.to_f64()
         .ok_or_else(|| {
@@ -549,6 +570,16 @@ pub async fn create_payment_intent(
         })? * 100.0;
 
     let mut params = CreatePaymentIntent::new(amount_in_cents as i64, Currency::EUR);
+
+    // Manual capture: authorize now, charge the day before the event
+    params.capture_method = Some(PaymentIntentCaptureMethod::Manual);
+
+    // Save the payment method to the customer for future off-session re-authorization
+    params.setup_future_usage = Some(PaymentIntentSetupFutureUsage::OffSession);
+
+    // Attach the Stripe customer
+    params.customer = Some(stripe_customer.id.clone());
+
     params.automatic_payment_methods = Some(
         stripe::CreatePaymentIntentAutomaticPaymentMethods {
             enabled: true,
@@ -577,9 +608,9 @@ pub async fn create_payment_intent(
         })?;
 
     println!("✅ Stripe Payment Intent created: {}", payment_intent.id);
-    println!("   Amount: {} cents", amount_in_cents as i64);
+    println!("   Amount: {} cents | Customer: {}", amount_in_cents as i64, stripe_customer.id);
 
-    // Step 4: Return client_secret to frontend
+    // Step 5: Return client_secret + customer_id to frontend
     let client_secret = payment_intent.client_secret
         .ok_or_else(|| {
             eprintln!("No client_secret in PaymentIntent response");
@@ -674,6 +705,12 @@ pub async fn create_reservation_with_payment(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    // Extract Stripe customer and payment method IDs for future off-session re-authorization
+    let stripe_customer_id = payment_intent.customer.as_ref()
+        .map(|c| c.id().to_string());
+    let stripe_payment_method_id = payment_intent.payment_method.as_ref()
+        .map(|pm| pm.id().to_string());
+
     // Prepare data before transaction
     let payment_id = Uuid::new_v4();
     let mut all_user_ids = vec![owner_user_id];
@@ -689,8 +726,8 @@ pub async fn create_reservation_with_payment(
     // Step 3: Create payment record (on tx)
     sqlx::query(
         r#"
-        INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, stripe_customer_id, stripe_payment_method_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         "#
     )
     .bind(payment_id)
@@ -702,6 +739,10 @@ pub async fn create_reservation_with_payment(
     .bind(now)
     .bind(&req.stripe_payment_intent_id)
     .bind(&all_user_ids)
+    .bind(PaymentCaptureMethod::Manual)
+    .bind("authorized")
+    .bind(&stripe_customer_id)
+    .bind(&stripe_payment_method_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
