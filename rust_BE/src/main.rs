@@ -95,10 +95,23 @@ use crate::controllers::club_owner_controller::{
     register_club_owner,
     login_club_owner,
     get_my_club,
+    update_my_club,
     get_my_club_events,
     create_club_event,
     get_my_club_tables,
     create_club_table,
+    get_my_club_images,
+    add_my_club_image,
+    delete_my_club_image,
+    get_table_images_handler,
+    add_table_image_handler,
+    delete_table_image_handler,
+    get_event_reservations_handler,
+    create_manual_reservation_handler,
+    update_reservation_status_handler,
+    scan_code_handler,
+    checkin_handler,
+    get_owner_stats_handler,
 };
 use crate::controllers::webhook_controller::handle_stripe_webhook;
 
@@ -151,9 +164,19 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/reservations/create-payment-intent", post(create_payment_intent))
         .route("/reservations/create-with-payment", post(create_reservation_with_payment))
         // Club owner scoped routes (JWT protected)
-        .route("/owner/club", get(get_my_club))
+        .route("/owner/club", get(get_my_club).put(update_my_club))
+        .route("/owner/club/images", get(get_my_club_images).post(add_my_club_image))
+        .route("/owner/club/images/:id", axum::routing::delete(delete_my_club_image))
         .route("/owner/events", get(get_my_club_events).post(create_club_event))
         .route("/owner/events/:event_id/tables", get(get_my_club_tables).post(create_club_table))
+        .route("/owner/events/:event_id/reservations", get(get_event_reservations_handler))
+        .route("/owner/events/:event_id/reservations/manual", post(create_manual_reservation_handler))
+        .route("/owner/reservations/:id/status", axum::routing::patch(update_reservation_status_handler))
+        .route("/owner/tables/:id/images", get(get_table_images_handler).post(add_table_image_handler))
+        .route("/owner/table-images/:id", axum::routing::delete(delete_table_image_handler))
+        .route("/owner/scan/:code", get(scan_code_handler))
+        .route("/owner/checkin/:code", post(checkin_handler))
+        .route("/owner/stats", get(get_owner_stats_handler))
         // Payment routes
         .route("/payments", get(get_all_payments).post(post_payment))
         .route("/payments/authorize", post(post_authorized_payment))
@@ -252,7 +275,8 @@ async fn main() {
     let app = create_router(app_state);
 
     // Start server - bind to 0.0.0.0 to accept connections from network
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
 

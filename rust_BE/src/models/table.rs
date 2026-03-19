@@ -114,6 +114,8 @@ pub struct TableReservation {
     pub guest_user_ids: Option<Vec<Uuid>>,
     pub payment_ids: Option<Vec<Uuid>>,
     pub ticket_ids: Option<Vec<Uuid>>,
+    pub is_manual: bool,
+    pub manual_notes: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,6 +171,8 @@ pub struct TableReservationResponse {
     pub contact_phone: String,
     pub special_requests: Option<String>,
     pub reservation_code: String,
+    pub is_manual: bool,
+    pub manual_notes: Option<String>,
     pub created_at: String,
 }
 
@@ -191,6 +195,8 @@ impl From<TableReservation> for TableReservationResponse {
             contact_phone: reservation.contact_phone,
             special_requests: reservation.special_requests,
             reservation_code: reservation.reservation_code,
+            is_manual: reservation.is_manual,
+            manual_notes: reservation.manual_notes,
             created_at: reservation.created_at.to_rfc3339(),
         }
     }
