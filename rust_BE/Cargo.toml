@@ -28,7 +28,7 @@ tower-http = { version = "0.5", features = ["cors", "trace", "request-id"] }
 # UUID - For generating unique IDs
 uuid = { version = "1", features = ["v4", "serde"] }
 dotenv = "0.15"
-async-stripe = { version = "*", default-features = false, features = ["runtime-async-std-surf"] }
+async-stripe = { version = "*", default-features = false, features = ["runtime-async-std-surf", "checkout"] }
 
 # Authentication dependencies
 bcrypt = "0.15"

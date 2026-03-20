@@ -11,10 +11,10 @@ import {
   Platform,
   Keyboard,
   TouchableWithoutFeedback,
+  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Table, Event } from "@/types";
@@ -39,69 +39,62 @@ export const TableReservationModal = ({
   const { user } = useAuth();
   const { theme } = useTheme();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const [numPeople, setNumPeople] = useState(1);
-  const [guestPhones, setGuestPhones] = useState<string[]>([]);
-  const [newGuestPhone, setNewGuestPhone] = useState("");
+
+  // Paying guests (people who will each pay their share)
+  const [payingGuestPhones, setPayingGuestPhones] = useState<string[]>([]);
+  const [newPayingPhone, setNewPayingPhone] = useState("");
+
+  // Free guests (added without payment)
+  const [freeGuestPhones, setFreeGuestPhones] = useState<string[]>([]);
+  const [newFreePhone, setNewFreePhone] = useState("");
+
   const [loading, setLoading] = useState(false);
 
-  // Reset form when modal opens
   useEffect(() => {
     if (visible && table) {
-      setNumPeople(1);
-      setGuestPhones([]);
-      setNewGuestPhone("");
+      setPayingGuestPhones([]);
+      setNewPayingPhone("");
+      setFreeGuestPhones([]);
+      setNewFreePhone("");
     }
   }, [visible, table]);
 
-  // Return early if no table or event - don't render anything
   if (!table || !event) {
     return null;
   }
 
-  // Calculate total cost - with safety checks
-  const minSpendPerPerson = parseFloat(
-    (table.minSpend || "0").replace(/[^0-9.]/g, "")
+  // Fixed total cost from the table
+  const tableTotalCost = parseFloat(
+    (table.totalCost || "0").replace(/[^0-9.]/g, "")
   );
 
-  // Calculate total cost based on number of people
-  const calculatedAmount = minSpendPerPerson * numPeople;
-  const totalCost = calculatedAmount.toFixed(2);
+  // Number of paying people = owner + paying guests
+  const numPayingGuests = 1 + payingGuestPhones.length;
 
-  const minPeople = Math.ceil(
-    parseFloat((table.totalCost || "0").replace(/[^0-9.]/g, "")) /
-      minSpendPerPerson /
-      2
-  );
-  const minTotalSpend = minSpendPerPerson * minPeople;
+  // Per-person amount (for display)
+  const perPersonAmount = tableTotalCost / numPayingGuests;
 
-  const incrementPeople = () => {
-    if (numPeople < table.capacity) {
-      setNumPeople(numPeople + 1);
-    }
-  };
+  // Owner pays the remainder to handle rounding
+  const guestShare = Math.floor(perPersonAmount * 100) / 100;
+  const ownerShare =
+    Math.round(
+      (tableTotalCost - guestShare * payingGuestPhones.length) * 100
+    ) / 100;
 
-  const decrementPeople = () => {
-    if (numPeople > 1) {
-      setNumPeople(numPeople - 1);
-    }
-  };
+  // Total people at the table
+  const totalPeople = numPayingGuests + freeGuestPhones.length;
+  const canAddMore = totalPeople < table.capacity;
 
   const handleReservation = async () => {
-    // Validation
     if (!user) {
       Alert.alert("Errore", "Devi effettuare il login per prenotare un tavolo");
       return;
     }
 
-    const amount = parseFloat(totalCost);
-    if (amount < minTotalSpend) {
+    if (totalPeople > table.capacity) {
       Alert.alert(
-        "Importo minimo richiesto",
-        `Il tavolo richiede un minimo di €${minTotalSpend.toFixed(
-          2
-        )} (almeno ${minPeople} persone a €${minSpendPerPerson.toFixed(
-          2
-        )} ciascuna).`
+        "Capacità superata",
+        `Il tavolo ha una capacità massima di ${table.capacity} persone.`
       );
       return;
     }
@@ -109,34 +102,34 @@ export const TableReservationModal = ({
     setLoading(true);
 
     try {
-      // Step 1: Create Stripe PaymentIntent
-      console.log("Creating payment intent...");
+      // Step 1: Create Stripe PaymentIntent for owner's share
       const paymentIntentResponse = await fetch(
         `${API_URL}/reservations/create-payment-intent`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             table_id: table.id,
             event_id: event.id,
             owner_user_id: user.id,
-            guest_phone_numbers: guestPhones,
+            num_paying_guests: numPayingGuests,
+            paying_guest_phone_numbers: payingGuestPhones,
+            contact_name: user.name,
+            contact_email: user.email,
+            contact_phone: user.phone_number || "",
+            special_requests: null,
           }),
         }
       );
 
       if (!paymentIntentResponse.ok) {
         const errorText = await paymentIntentResponse.text();
-        console.error("Payment intent error:", errorText);
         throw new Error(`Failed to create payment intent: ${errorText}`);
       }
 
       const paymentIntentData = await paymentIntentResponse.json();
-      console.log("Payment intent created:", paymentIntentData.paymentIntentId);
 
-      // Step 2: Initialize and present Stripe payment sheet
+      // Step 2: Initialize and present Stripe payment sheet (owner's share only)
       const { error: initError } = await initPaymentSheet({
         paymentIntentClientSecret: paymentIntentData.clientSecret,
         merchantDisplayName: "Pierre Two",
@@ -144,7 +137,6 @@ export const TableReservationModal = ({
       });
 
       if (initError) {
-        console.error("Payment sheet init error:", initError);
         Alert.alert(
           "Errore",
           "Impossibile inizializzare il pagamento. Riprova."
@@ -157,30 +149,25 @@ export const TableReservationModal = ({
 
       if (presentError) {
         if (presentError.code !== "Canceled") {
-          console.error("Payment sheet present error:", presentError);
           Alert.alert("Errore", "Pagamento non riuscito. Riprova.");
         }
         setLoading(false);
         return;
       }
 
-      console.log("Payment successful");
-
-      // Step 3: Create reservation with payment
-      console.log("Creating reservation with payment...");
+      // Step 3: Create reservation with split payment
       const reservationResponse = await fetch(
         `${API_URL}/reservations/create-with-payment`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             table_id: table.id,
             event_id: event.id,
             owner_user_id: user.id,
-            guest_phone_numbers: guestPhones,
-            payment_amount: amount,
+            paying_guest_phone_numbers: payingGuestPhones,
+            free_guest_phone_numbers:
+              freeGuestPhones.length > 0 ? freeGuestPhones : null,
             stripe_payment_intent_id: paymentIntentData.paymentIntentId,
             contact_name: user.name,
             contact_email: user.email,
@@ -192,23 +179,46 @@ export const TableReservationModal = ({
 
       if (!reservationResponse.ok) {
         const errorText = await reservationResponse.text();
-        console.error("Reservation error:", errorText);
-        throw new Error("Failed to create reservation");
+        throw new Error(`Failed to create reservation: ${errorText}`);
       }
 
       const data = await reservationResponse.json();
-      console.log("Reservation created:", data);
 
-      Alert.alert(
-        "Prenotazione Confermata!",
-        `Codice prenotazione: ${data.reservationCode}\nTotale: €${totalCost}`,
-        [
-          {
-            text: "OK",
-            onPress: () => onClose(),
-          },
-        ]
+      // Build share links for paying guests
+      const pendingShares = (data.paymentShares || []).filter(
+        (s: any) => !s.isOwner && s.paymentLinkToken
       );
+
+      if (pendingShares.length > 0) {
+        const shareLinks = pendingShares
+          .map(
+            (s: any) =>
+              `${s.phoneNumber || "Ospite"}: ${s.amount}`
+          )
+          .join("\n");
+
+        Alert.alert(
+          "Prenotazione Confermata!",
+          `Codice: ${data.reservation.reservationCode}\nLa tua quota: €${ownerShare.toFixed(2)}\n\nLink di pagamento generati per:\n${shareLinks}\n\nCondividi i link dalla schermata prenotazioni.`,
+          [
+            {
+              text: "OK",
+              onPress: () => onClose(),
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          "Prenotazione Confermata!",
+          `Codice: ${data.reservation.reservationCode}\nTotale pagato: €${ownerShare.toFixed(2)}`,
+          [
+            {
+              text: "OK",
+              onPress: () => onClose(),
+            },
+          ]
+        );
+      }
     } catch (error) {
       console.error("Reservation error:", error);
       Alert.alert(
@@ -259,7 +269,6 @@ export const TableReservationModal = ({
                     </ThemedText>
                   </View>
 
-                  {/* Event Info */}
                   <View style={styles.eventInfo}>
                     <ThemedText style={styles.eventTitle}>
                       {event.title}
@@ -296,81 +305,234 @@ export const TableReservationModal = ({
                   </View>
                 </View>
 
-                {/* Spend Selector */}
+                {/* Paying Guests Section */}
                 <View style={styles.spendSection}>
                   <ThemedText style={styles.spendTitle}>
-                    Quanto Vuoi Spendere?
+                    Ospiti Paganti
+                  </ThemedText>
+                  <ThemedText style={styles.sectionSubtitle}>
+                    Aggiungi i numeri di telefono delle persone che pagheranno la
+                    loro quota. Riceveranno un link di pagamento.
                   </ThemedText>
 
-                  {/* Number of people selector */}
-                  <View style={styles.peopleSelectorContainer}>
-                    <ThemedText style={styles.peopleSelectorLabel}>
-                      Numero di persone
-                    </ThemedText>
-                    <View style={styles.peopleSelector}>
-                      <TouchableOpacity
-                        onPress={decrementPeople}
-                        style={[
-                          styles.peopleButton,
-                          numPeople <= 1 && styles.peopleButtonDisabled,
-                        ]}
-                        disabled={numPeople <= 1}
-                      >
-                        <ThemedText style={styles.peopleButtonText}>
-                          −
-                        </ThemedText>
-                      </TouchableOpacity>
-
-                      <View style={styles.peopleDisplay}>
-                        <ThemedText style={styles.peopleNumber}>
-                          {numPeople}
-                        </ThemedText>
-                      </View>
-
-                      <TouchableOpacity
-                        onPress={incrementPeople}
-                        style={[
-                          styles.peopleButton,
-                          numPeople >= table.capacity &&
-                            styles.peopleButtonDisabled,
-                        ]}
-                        disabled={numPeople >= table.capacity}
-                      >
-                        <ThemedText style={styles.peopleButtonText}>
-                          +
-                        </ThemedText>
-                      </TouchableOpacity>
-                    </View>
+                  <View style={styles.guestPhoneInputRow}>
+                    <TextInput
+                      style={[styles.input, styles.guestPhoneInput]}
+                      placeholder="+39 123 456 7890"
+                      placeholderTextColor="#9ca3af"
+                      value={newPayingPhone}
+                      onChangeText={setNewPayingPhone}
+                      keyboardType="phone-pad"
+                    />
+                    <TouchableOpacity
+                      style={[
+                        styles.addGuestButton,
+                        (!newPayingPhone.trim() || !canAddMore) &&
+                          styles.addGuestButtonDisabled,
+                      ]}
+                      onPress={() => {
+                        if (newPayingPhone.trim() && canAddMore) {
+                          setPayingGuestPhones([
+                            ...payingGuestPhones,
+                            newPayingPhone.trim(),
+                          ]);
+                          setNewPayingPhone("");
+                        }
+                      }}
+                      disabled={!newPayingPhone.trim() || !canAddMore}
+                    >
+                      <IconSymbol
+                        name="plus.circle.fill"
+                        size={24}
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
                   </View>
 
-                  {/* Table Info Box */}
-                  <View style={styles.infoBox}>
-                    <ThemedText style={styles.infoTitle}>Riepilogo</ThemedText>
+                  {payingGuestPhones.length > 0 && (
+                    <View style={styles.guestList}>
+                      <ThemedText style={styles.guestListTitle}>
+                        Ospiti paganti ({payingGuestPhones.length}):
+                      </ThemedText>
+                      {payingGuestPhones.map((phone, index) => (
+                        <View key={index} style={styles.guestItem}>
+                          <IconSymbol
+                            name="eurosign"
+                            size={16}
+                            color="#fbbf24"
+                          />
+                          <ThemedText style={styles.guestPhone}>
+                            {phone}
+                          </ThemedText>
+                          <ThemedText style={styles.guestShareAmount}>
+                            €{guestShare.toFixed(2)}
+                          </ThemedText>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setPayingGuestPhones(
+                                payingGuestPhones.filter((_, i) => i !== index)
+                              );
+                            }}
+                            style={styles.removeGuestButton}
+                          >
+                            <IconSymbol
+                              name="xmark"
+                              size={20}
+                              color="#ef4444"
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
 
+                {/* Free Guests Section */}
+                <View style={styles.spendSection}>
+                  <ThemedText style={styles.spendTitle}>
+                    Ospiti Gratuiti
+                  </ThemedText>
+                  <ThemedText style={styles.sectionSubtitle}>
+                    Aggiungi persone che parteciperanno senza pagare. Potrai
+                    aggiungerne anche dopo la prenotazione.
+                  </ThemedText>
+
+                  <View style={styles.guestPhoneInputRow}>
+                    <TextInput
+                      style={[styles.input, styles.guestPhoneInput]}
+                      placeholder="+39 123 456 7890"
+                      placeholderTextColor="#9ca3af"
+                      value={newFreePhone}
+                      onChangeText={setNewFreePhone}
+                      keyboardType="phone-pad"
+                    />
+                    <TouchableOpacity
+                      style={[
+                        styles.addGuestButton,
+                        styles.addFreeGuestButton,
+                        (!newFreePhone.trim() || !canAddMore) &&
+                          styles.addGuestButtonDisabled,
+                      ]}
+                      onPress={() => {
+                        if (newFreePhone.trim() && canAddMore) {
+                          setFreeGuestPhones([
+                            ...freeGuestPhones,
+                            newFreePhone.trim(),
+                          ]);
+                          setNewFreePhone("");
+                        }
+                      }}
+                      disabled={!newFreePhone.trim() || !canAddMore}
+                    >
+                      <IconSymbol
+                        name="plus.circle.fill"
+                        size={24}
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  {freeGuestPhones.length > 0 && (
+                    <View style={styles.guestList}>
+                      <ThemedText style={styles.guestListTitle}>
+                        Ospiti gratuiti ({freeGuestPhones.length}):
+                      </ThemedText>
+                      {freeGuestPhones.map((phone, index) => (
+                        <View key={index} style={styles.guestItem}>
+                          <IconSymbol
+                            name="person.3.fill"
+                            size={16}
+                            color="#22c55e"
+                          />
+                          <ThemedText style={styles.guestPhone}>
+                            {phone}
+                          </ThemedText>
+                          <ThemedText style={styles.freeLabel}>
+                            Gratis
+                          </ThemedText>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setFreeGuestPhones(
+                                freeGuestPhones.filter((_, i) => i !== index)
+                              );
+                            }}
+                            style={styles.removeGuestButton}
+                          >
+                            <IconSymbol
+                              name="xmark"
+                              size={20}
+                              color="#ef4444"
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {/* Payment Summary */}
+                <View style={styles.spendSection}>
+                  <ThemedText style={styles.spendTitle}>Riepilogo</ThemedText>
+
+                  <View style={styles.infoBox}>
                     <View style={styles.infoRow}>
-                      <ThemedText style={styles.infoLabel}>Persone:</ThemedText>
+                      <ThemedText style={styles.infoLabel}>
+                        Costo tavolo:
+                      </ThemedText>
                       <ThemedText style={styles.infoValue}>
-                        {numPeople}
+                        €{tableTotalCost.toFixed(2)}
                       </ThemedText>
                     </View>
 
                     <View style={styles.infoRow}>
                       <ThemedText style={styles.infoLabel}>
-                        Importo per persona:
+                        Persone paganti:
                       </ThemedText>
                       <ThemedText style={styles.infoValue}>
-                        €{(parseFloat(totalCost) / numPeople).toFixed(2)}
+                        {numPayingGuests} (tu + {payingGuestPhones.length}{" "}
+                        {payingGuestPhones.length === 1 ? "ospite" : "ospiti"})
                       </ThemedText>
                     </View>
 
+                    {freeGuestPhones.length > 0 && (
+                      <View style={styles.infoRow}>
+                        <ThemedText style={styles.infoLabel}>
+                          Ospiti gratuiti:
+                        </ThemedText>
+                        <ThemedText style={styles.infoValue}>
+                          {freeGuestPhones.length}
+                        </ThemedText>
+                      </View>
+                    )}
+
+                    <View style={styles.infoRow}>
+                      <ThemedText style={styles.infoLabel}>
+                        Totale persone:
+                      </ThemedText>
+                      <ThemedText style={styles.infoValue}>
+                        {totalPeople}/{table.capacity}
+                      </ThemedText>
+                    </View>
+
+                    {payingGuestPhones.length > 0 && (
+                      <View style={styles.infoRow}>
+                        <ThemedText style={styles.infoLabel}>
+                          Quota per ospite:
+                        </ThemedText>
+                        <ThemedText style={styles.infoValue}>
+                          €{guestShare.toFixed(2)}
+                        </ThemedText>
+                      </View>
+                    )}
+
                     <View style={[styles.infoRow, styles.totalRow]}>
                       <ThemedText style={styles.totalLabel}>
-                        Totale da pagare:
+                        La tua quota:
                       </ThemedText>
                       <ThemedText
                         style={[styles.infoValue, styles.highlightValue]}
                       >
-                        €{totalCost}
+                        €{ownerShare.toFixed(2)}
                       </ThemedText>
                     </View>
                   </View>
@@ -399,87 +561,6 @@ export const TableReservationModal = ({
                   </View>
                 </View>
 
-                {/* Guest Phone Numbers */}
-                <View style={styles.guestPhonesSection}>
-                  <ThemedText style={styles.sectionTitle}>
-                    Invita Ospiti
-                  </ThemedText>
-                  <ThemedText style={styles.guestPhonesSubtitle}>
-                    Aggiungi i numeri di telefono degli ospiti che
-                    condivideranno il tavolo. Puoi anche pagare per più persone
-                    senza invitarle adesso.
-                  </ThemedText>
-
-                  {/* Guest Phone Input */}
-                  <View style={styles.guestPhoneInputRow}>
-                    <TextInput
-                      style={[styles.input, styles.guestPhoneInput]}
-                      placeholder="+39 123 456 7890"
-                      placeholderTextColor="#9ca3af"
-                      value={newGuestPhone}
-                      onChangeText={setNewGuestPhone}
-                      keyboardType="phone-pad"
-                    />
-                    <TouchableOpacity
-                      style={[
-                        styles.addGuestButton,
-                        !newGuestPhone.trim() && styles.addGuestButtonDisabled,
-                      ]}
-                      onPress={() => {
-                        if (newGuestPhone.trim()) {
-                          setGuestPhones([
-                            ...guestPhones,
-                            newGuestPhone.trim(),
-                          ]);
-                          setNewGuestPhone("");
-                        }
-                      }}
-                      disabled={!newGuestPhone.trim()}
-                    >
-                      <IconSymbol
-                        name="plus.circle.fill"
-                        size={24}
-                        color="#fff"
-                      />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Guest List */}
-                  {guestPhones.length > 0 && (
-                    <View style={styles.guestList}>
-                      <ThemedText style={styles.guestListTitle}>
-                        Ospiti aggiunti ({guestPhones.length}):
-                      </ThemedText>
-                      {guestPhones.map((phone, index) => (
-                        <View key={index} style={styles.guestItem}>
-                          <IconSymbol
-                            name="person.3.fill"
-                            size={16}
-                            color="#fff"
-                          />
-                          <ThemedText style={styles.guestPhone}>
-                            {phone}
-                          </ThemedText>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setGuestPhones(
-                                guestPhones.filter((_, i) => i !== index)
-                              );
-                            }}
-                            style={styles.removeGuestButton}
-                          >
-                            <IconSymbol
-                              name="xmark"
-                              size={20}
-                              color="#ef4444"
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
-
                 {/* Reserve Button */}
                 <TouchableOpacity
                   style={[
@@ -499,7 +580,7 @@ export const TableReservationModal = ({
                         color="#fff"
                       />
                       <ThemedText style={styles.reserveButtonText}>
-                        UNISCITI AL TAVOLO
+                        PAGA €{ownerShare.toFixed(2)} E PRENOTA
                       </ThemedText>
                     </>
                   )}
@@ -591,6 +672,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginBottom: 8,
   },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.7)",
+    marginBottom: 16,
+  },
   featureRow: {
     flexDirection: "row",
     gap: 8,
@@ -615,103 +701,82 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#fff",
-    marginBottom: 20,
+    marginBottom: 8,
   },
-  peopleSelectorContainer: {
-    marginBottom: 20,
+  input: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    borderRadius: 8,
+    padding: 14,
+    fontSize: 14,
+    color: "#fff",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  peopleSelectorLabel: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.9)",
-    marginBottom: 12,
-    fontWeight: "600",
-  },
-  peopleSelector: {
+  guestPhoneInputRow: {
     flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 16,
+    gap: 12,
+    marginBottom: 16,
   },
-  peopleButton: {
+  guestPhoneInput: {
+    flex: 1,
+  },
+  addGuestButton: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    borderRadius: 8,
+    backgroundColor: "rgba(251, 191, 36, 0.8)",
     justifyContent: "center",
     alignItems: "center",
   },
-  peopleButtonDisabled: {
+  addFreeGuestButton: {
+    backgroundColor: "rgba(34, 197, 94, 0.8)",
+  },
+  addGuestButtonDisabled: {
     opacity: 0.3,
   },
-  peopleButtonText: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
+  guestList: {
+    gap: 8,
   },
-  peopleDisplay: {
-    minWidth: 80,
-    height: 48,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
-  },
-  peopleNumber: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  amountInputContainer: {
-    marginBottom: 20,
-  },
-  amountInputLabel: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.9)",
-    marginBottom: 12,
+  guestListTitle: {
+    fontSize: 12,
     fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.9)",
+    marginBottom: 8,
   },
-  amountInputWrapper: {
+  guestItem: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.4)",
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
-    paddingHorizontal: 16,
-    height: 56,
+    borderRadius: 8,
+    padding: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  euroPrefix: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
-    marginRight: 8,
-  },
-  amountInput: {
+  guestPhone: {
     flex: 1,
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 14,
     color: "#fff",
-    padding: 0,
   },
-  minSpendText: {
-    fontSize: 11,
-    color: "rgba(255, 255, 255, 0.7)",
-    marginTop: 8,
+  guestShareAmount: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#fbbf24",
+  },
+  freeLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#22c55e",
+  },
+  removeGuestButton: {
+    padding: 4,
   },
   infoBox: {
     backgroundColor: "rgba(0, 0, 0, 0.4)",
     padding: 16,
     borderRadius: 12,
     gap: 12,
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#fff",
-    marginBottom: 8,
   },
   infoRow: {
     flexDirection: "row",
@@ -749,24 +814,6 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 16,
   },
-  inputRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 12,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 14,
-    color: "#fff",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  fullWidthInput: {
-    marginBottom: 12,
-  },
   userInfoDisplay: {
     backgroundColor: "rgba(0, 0, 0, 0.4)",
     borderRadius: 12,
@@ -782,69 +829,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#fff",
     fontWeight: "500",
-  },
-  requiredText: {
-    fontSize: 11,
-    color: "#fbbf24",
-    marginTop: 8,
-  },
-  guestPhonesSection: {
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-    marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 20,
-    borderRadius: 16,
-  },
-  guestPhonesSubtitle: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.7)",
-    marginBottom: 16,
-  },
-  guestPhoneInputRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
-  },
-  guestPhoneInput: {
-    flex: 1,
-  },
-  addGuestButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    backgroundColor: "rgba(34, 197, 94, 0.8)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  addGuestButtonDisabled: {
-    opacity: 0.3,
-  },
-  guestList: {
-    gap: 8,
-  },
-  guestListTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.9)",
-    marginBottom: 8,
-  },
-  guestItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    borderRadius: 8,
-    padding: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  guestPhone: {
-    flex: 1,
-    fontSize: 14,
-    color: "#fff",
-  },
-  removeGuestButton: {
-    padding: 4,
   },
   reserveButton: {
     flexDirection: "row",

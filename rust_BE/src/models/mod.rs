@@ -26,7 +26,13 @@ pub use table::{
     TableReservationResponse, TableReservationWithDetailsResponse, TableReservationsResponse, TableReservationsWithDetailsResponse,
     TableSummary,
     AddPaymentToReservationRequest, LinkTicketToReservationRequest,
-    CreateReservationWithPaymentRequest, CreatePaymentIntentRequest, CreatePaymentIntentResponse
+    CreateReservationWithPaymentRequest, CreatePaymentIntentRequest, CreatePaymentIntentResponse,
+    ReservationPaymentShare, ReservationGuest,
+    CreateSplitPaymentIntentRequest, CreateSplitReservationRequest, CreateSplitReservationResponse,
+    PaymentShareResponse, PaymentLinkPreviewResponse,
+    VerifyPaymentLinkRequest, VerifyPaymentLinkResponse,
+    CreateCheckoutRequest, CreateCheckoutResponse,
+    AddFreeGuestRequest, FreeGuestResponse, ReservationPaymentStatusResponse
 };
 
 use crate::idempotency::IdempotencyService;
