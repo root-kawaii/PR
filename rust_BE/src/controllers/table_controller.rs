@@ -10,7 +10,7 @@ use crate::models::{
     VerifyPaymentLinkRequest, VerifyPaymentLinkResponse,
     CreateCheckoutRequest, CreateCheckoutResponse,
     AddFreeGuestRequest, FreeGuestResponse, ReservationPaymentStatusResponse,
-    TableSummary, PaymentStatus, EventSummary,
+    TableSummary, PaymentStatus, PaymentCaptureMethod, EventSummary,
 };
 use crate::persistences::{table_persistence, user_persistence};
 use axum::{
@@ -23,7 +23,7 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use chrono::Utc;
-use stripe::{CreatePaymentIntent, Currency, PaymentIntent, PaymentIntentStatus};
+use stripe::{CreatePaymentIntent, CreateCustomer, Currency, Customer, PaymentIntent, PaymentIntentCaptureMethod, PaymentIntentSetupFutureUsage, PaymentIntentStatus};
 use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
 
 // ============================================================================
@@ -538,7 +538,28 @@ pub async fn create_payment_intent(
     // Owner pays the remainder to handle rounding
     let owner_share = total_cost - (per_person * Decimal::from(req.num_paying_guests - 1));
 
-    // Create Stripe PaymentIntent for owner's share only
+    // Get or create a Stripe Customer for this user (needed for off-session re-auth)
+    let owner_user = match user_persistence::find_user_by_id(&state.db_pool, owner_user_id).await {
+        Ok(Some(u)) => u,
+        Ok(None) => return Err((StatusCode::NOT_FOUND, "Utente non trovato".to_string())),
+        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())),
+    };
+
+    let mut customer_params = CreateCustomer::new();
+    customer_params.email = Some(&owner_user.email);
+    customer_params.metadata = Some(
+        [("user_id".to_string(), owner_user_id.to_string())]
+            .into_iter()
+            .collect(),
+    );
+    let stripe_customer = Customer::create(&state.stripe_client, customer_params)
+        .await
+        .map_err(|e| {
+            eprintln!("Stripe Customer create error: {:?}", e);
+            (StatusCode::BAD_GATEWAY, "Errore creazione cliente".to_string())
+        })?;
+
+    // Create Stripe PaymentIntent for owner's share with manual capture + saved payment method
     let amount_in_cents = owner_share.to_f64()
         .ok_or_else(|| {
             eprintln!("Invalid amount: {}", owner_share);
@@ -546,6 +567,16 @@ pub async fn create_payment_intent(
         })? * 100.0;
 
     let mut params = CreatePaymentIntent::new(amount_in_cents as i64, Currency::EUR);
+
+    // Manual capture: authorize now, charge the day before the event
+    params.capture_method = Some(PaymentIntentCaptureMethod::Manual);
+
+    // Save the payment method to the customer for future off-session re-authorization
+    params.setup_future_usage = Some(PaymentIntentSetupFutureUsage::OffSession);
+
+    // Attach the Stripe customer
+    params.customer = Some(stripe_customer.id.clone());
+
     params.automatic_payment_methods = Some(
         stripe::CreatePaymentIntentAutomaticPaymentMethods {
             enabled: true,
@@ -574,7 +605,7 @@ pub async fn create_payment_intent(
         })?;
 
     println!("✅ Split Payment Intent created: {}", payment_intent.id);
-    println!("   Owner share: {} cents (total: {})", amount_in_cents as i64, total_cost);
+    println!("   Owner share: {} cents (total: {}) | Customer: {}", amount_in_cents as i64, total_cost, stripe_customer.id);
 
     let client_secret = payment_intent.client_secret
         .ok_or_else(|| {
@@ -653,6 +684,12 @@ pub async fn create_reservation_with_payment(
         return Err((StatusCode::BAD_REQUEST, format!("Capacità massima del tavolo superata: {} persone", table.capacity)));
     }
 
+    // Extract Stripe customer and payment method IDs for future off-session re-authorization
+    let stripe_customer_id = payment_intent.customer.as_ref()
+        .map(|c| c.id().to_string());
+    let stripe_payment_method_id = payment_intent.payment_method.as_ref()
+        .map(|pm| pm.id().to_string());
+
     // Prepare data
     let payment_id = Uuid::new_v4();
     let now = Utc::now().naive_utc();
@@ -666,8 +703,8 @@ pub async fn create_reservation_with_payment(
     // Step 1: Create payment record for owner
     sqlx::query(
         r#"
-        INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, stripe_customer_id, stripe_payment_method_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         "#
     )
     .bind(payment_id)
@@ -679,6 +716,10 @@ pub async fn create_reservation_with_payment(
     .bind(now)
     .bind(&req.stripe_payment_intent_id)
     .bind(&vec![owner_user_id])
+    .bind(PaymentCaptureMethod::Manual)
+    .bind("authorized")
+    .bind(&stripe_customer_id)
+    .bind(&stripe_payment_method_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {

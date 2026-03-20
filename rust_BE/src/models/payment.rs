@@ -40,6 +40,8 @@ pub struct PaymentEntity {
     pub cancelled_at: Option<chrono::NaiveDateTime>,
     pub authorized_amount: Option<Decimal>,
     pub captured_amount: Option<Decimal>,
+    pub stripe_customer_id: Option<String>,
+    pub stripe_payment_method_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]

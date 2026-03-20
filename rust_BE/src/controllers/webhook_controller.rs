@@ -101,9 +101,50 @@ pub async fn handle_stripe_webhook(
             let session_id = event["data"]["object"]["id"].as_str().unwrap_or("");
             handle_checkout_session_completed(&state, session_id, &event).await
         }
+        // Fired when a manual-capture PaymentIntent is authorized (requires_capture).
+        // We store authorized_at and the payment_method_id here so the scheduler
+        // can re-authorize off-session if the 7-day hold is about to expire.
+        "payment_intent.amount_capturable_updated" => {
+            let payment_method_id = event["data"]["object"]["payment_method"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            store_authorization(&state, payment_intent_id, &payment_method_id).await
+        }
         _ => {
             info!(event_type = %event_type, "Unhandled Stripe webhook event type");
             StatusCode::OK
+        }
+    }
+}
+
+async fn store_authorization(
+    state: &AppState,
+    payment_intent_id: &str,
+    payment_method_id: &str,
+) -> StatusCode {
+    match sqlx::query(
+        "UPDATE payments
+         SET authorization_status = 'authorized',
+             authorized_at = NOW(),
+             stripe_payment_method_id = COALESCE(NULLIF($1, ''), stripe_payment_method_id),
+             update_date = NOW()
+         WHERE stripe_payment_intent_id = $2"
+    )
+    .bind(payment_method_id)
+    .bind(payment_intent_id)
+    .execute(&state.db_pool)
+    .await
+    {
+        Ok(result) => {
+            if result.rows_affected() > 0 {
+                info!(payment_intent_id = %payment_intent_id, "Payment authorization stored");
+            }
+            StatusCode::OK
+        }
+        Err(e) => {
+            error!(error = %e, payment_intent_id = %payment_intent_id, "Failed to store payment authorization");
+            StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }

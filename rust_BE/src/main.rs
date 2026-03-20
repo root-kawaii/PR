@@ -258,6 +258,13 @@ async fn main() {
         stripe_webhook_secret,
     });
 
+    // Spawn daily payment scheduler (capture day-before, re-authorize every 6 days)
+    let scheduler_state = Arc::clone(&app_state);
+    tokio::spawn(async move {
+        crate::services::payment_scheduler::run(scheduler_state).await;
+    });
+    info!("Payment scheduler started (runs daily at 09:00 UTC)");
+
     // Spawn periodic cleanup job for expired idempotency records
     let cleanup_pool = db_pool.clone();
     tokio::spawn(async move {
