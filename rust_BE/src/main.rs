@@ -249,6 +249,19 @@ async fn main() {
     let idempotency_service = IdempotencyService::new(db_pool.clone(), idempotency_config);
     info!("Idempotency service initialized");
 
+    // Load optional alert webhook URL (Discord or Slack)
+    let alert_webhook_url = env::var("ALERT_WEBHOOK_URL").ok().filter(|s| !s.is_empty());
+    if alert_webhook_url.is_some() {
+        info!("Alert webhook configured — scheduler failures will be reported");
+    }
+
+    // Payment share TTL (how long guests have to pay before their share expires)
+    let payment_share_ttl_hours: i64 = env::var("PAYMENT_SHARE_TTL_HOURS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(48);
+    info!(ttl_hours = payment_share_ttl_hours, "Payment share TTL configured");
+
     // Create application state with db_pool, stripe_client, jwt_secret, and idempotency_service
     let app_state = Arc::new(AppState {
         db_pool: db_pool.clone(),
@@ -256,6 +269,8 @@ async fn main() {
         jwt_secret,
         idempotency_service,
         stripe_webhook_secret,
+        alert_webhook_url,
+        payment_share_ttl_hours,
     });
 
     // Spawn daily payment scheduler (capture day-before, re-authorize every 6 days)
