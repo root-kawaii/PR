@@ -199,7 +199,78 @@ Returns all payment shares + free guests + totals. Used by owner to track who ha
 
 ---
 
+## Delayed Capture & Payment Scheduler (Merged)
+
+Merged `feature/payment-improvement-capture` branch — adds delayed capture so cards are authorized at booking time but only charged the day before the event.
+
+### How It Works
+
+```
+User books table
+  → PaymentIntent created with capture_method: manual + setup_future_usage: off_session
+  → Card is authorized (hold placed), NOT charged
+  → stripe_customer_id + stripe_payment_method_id saved on payment record
+
+Daily scheduler (runs at 09:00 UTC):
+  For each payment with authorization_status = 'authorized':
+    IF event is tomorrow → Capture the PaymentIntent (money taken)
+    ELSE IF authorized_at >= 6 days ago → Cancel old PI, create + confirm new one off-session
+```
+
+### Database Changes
+
+#### Migration 028: `DB/migrations/028_add_stripe_customer_to_payments.sql`
+- Added `stripe_customer_id` and `stripe_payment_method_id` columns to `payments` table
+- Enables off-session re-authorization when the 7-day Stripe hold expires
+
+#### Migration 029: `DB/migrations/029_add_event_date_to_events.sql`
+- Added `event_date` (DATE) column to `events` table
+- Machine-readable date for the scheduler (existing `date` column is a display string like "10 MAG | 23:00")
+
+### API & Backend Changes
+
+| File | Changes |
+|------|---------|
+| `rust_BE/src/controllers/table_controller.rs` | `create_payment_intent` now creates a Stripe Customer, sets `capture_method: manual` + `setup_future_usage: off_session`; `create_reservation_with_payment` saves `stripe_customer_id` + `stripe_payment_method_id` on payment record |
+| `rust_BE/src/controllers/webhook_controller.rs` | New handler for `payment_intent.amount_capturable_updated` — stores `authorized_at` and `payment_method_id` for scheduler re-auth |
+| `rust_BE/src/services/payment_scheduler.rs` | NEW — daily background job: captures payments day before event, re-authorizes every 6 days to avoid Stripe's 7-day hold expiry |
+| `rust_BE/src/services/mod.rs` | Exports `payment_scheduler` |
+| `rust_BE/src/main.rs` | Spawns scheduler as Tokio background task |
+| `rust_BE/src/models/event.rs` | Added `event_date: Option<NaiveDate>` to `Event`, `CreateEventRequest`, `UpdateEventRequest` |
+| `rust_BE/src/models/payment.rs` | Added `stripe_customer_id`, `stripe_payment_method_id` to `PaymentEntity` |
+| `rust_BE/src/persistences/event_persistence.rs` | All queries now include `event_date` column |
+| `rust_BE/src/persistences/payment_persistence.rs` | All queries now include `stripe_customer_id`, `stripe_payment_method_id` columns |
+| `docs/DELAYED_CAPTURE_PLAN.md` | NEW — full plan document for delayed capture |
+| `docs/LOCAL_SETUP_GUIDE.md` | NEW — local dev setup guide |
+
+### Merge Conflicts Resolved
+
+Two conflicts between split payment (this branch) and delayed capture (`feature/payment-improvement-capture`):
+1. **`table_controller.rs`** — combined split payment calculation (per-person share, capacity check) with Stripe Customer creation + manual capture params
+2. **`webhook_controller.rs`** — kept both `checkout.session.completed` (guest payments) and `payment_intent.amount_capturable_updated` (authorization tracking) handlers
+
+---
+
+## Test Results (End-to-End)
+
+Tested against live Supabase DB + Stripe test mode after merge:
+
+| # | Test | Result |
+|---|------|--------|
+| 1 | Create split payment intent (500 EUR / 3 people) | Owner share: 166.66 EUR, guests: 166.67 EUR each |
+| 2 | Verify Stripe PI: `capture_method=manual`, `setup_future_usage=off_session`, customer created | All confirmed on Stripe |
+| 3 | Confirm payment with test card → status `requires_capture` (held, not charged) | Card authorized only |
+| 4 | Create reservation with split payment + 1 free guest | 4 people, 3 payment shares, 1 free guest with ticket |
+| 5 | DB: payment record has `capture_method=manual`, `authorization_status=authorized`, customer + PM IDs | All fields populated |
+| 6 | Payment link preview (public) | Shows amount, event, table — no sensitive data |
+| 7 | Identity verification: wrong phone rejected, correct phone returns JWT | 403 / 200 as expected |
+| 8 | Payment status endpoint | Full breakdown of shares + free guests |
+| 9 | Add free guest | Guest added with ticket created, `num_people` incremented |
+
+---
+
 ## TODO (Remaining)
 
 - Build payment link **web page** for anonymous guests (preview → verify → Stripe Checkout redirect) — this is a separate web app, not React Native
 - Configure `success_url` and `cancel_url` for Stripe Checkout sessions
+- Populate `event_date` on existing events (currently NULL — scheduler needs this to know when to capture)
