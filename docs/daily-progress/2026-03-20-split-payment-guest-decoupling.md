@@ -269,6 +269,57 @@ Tested against live Supabase DB + Stripe test mode after merge:
 
 ---
 
+## Reliability Improvements
+
+### Payment Scheduler Rework
+
+The scheduler now runs two concurrent loops instead of a single daily pass:
+
+**Frequent loop (every 30 min):**
+- **Capture** — finds authorized payments where the event is tomorrow, captures on Stripe
+- **Webhook reconciliation** — finds payment shares with a `stripe_checkout_session_id` that are still `pending` after 30 min, checks Stripe for the real session status, and auto-recovers (creates payment record, marks share paid, issues ticket, confirms reservation if all shares paid)
+
+**Daily loop (09:00 UTC):**
+- **Re-authorization** — refreshes Stripe holds older than 6 days (7-day limit)
+- **Payment share expiry** — marks pending non-owner shares as `expired` after configurable TTL (default 48h)
+
+### Alerting
+
+All scheduler failures and recovery events are sent to a Discord/Slack webhook:
+- Capture failures
+- Re-authorization failures
+- Reconciliation errors and recoveries
+- Expired payment shares (includes guest phone, event name, table, owner name)
+
+Configured via `ALERT_WEBHOOK_URL` env var. Sends both `content` (Discord) and `text` (Slack) fields.
+
+### New Config
+
+| Env Var | Default | Purpose |
+|---------|---------|---------|
+| `ALERT_WEBHOOK_URL` | (none) | Discord/Slack incoming webhook for failure alerts |
+| `PAYMENT_SHARE_TTL_HOURS` | `48` | Hours before unpaid guest shares are marked expired |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `rust_BE/src/services/payment_scheduler.rs` | Split into frequent (30 min) + daily (9am) loops; added reconciliation, expiry, alerting |
+| `rust_BE/src/models/mod.rs` | Added `alert_webhook_url` and `payment_share_ttl_hours` to `AppState` |
+| `rust_BE/src/main.rs` | Load new env vars, pass to `AppState` |
+
+### Recovery Timeline
+
+| Time | What happens |
+|------|-------------|
+| 0 min | Guest pays on Stripe Checkout |
+| 0-5 min | Stripe webhook fires → normal path (instant) |
+| 5 min - 3 days | Stripe retries webhook on failure (exponential backoff) |
+| Next 30-min tick | Reconciliation job checks Stripe, auto-recovers if webhook failed |
+| 48 hours | If guest never paid, share marked `expired`, owner alerted |
+
+---
+
 ## TODO (Remaining)
 
 - Build payment link **web page** for anonymous guests (preview → verify → Stripe Checkout redirect) — this is a separate web app, not React Native
