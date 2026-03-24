@@ -1,119 +1,66 @@
 // src/main.rs
-use std::env;
-use std::sync::Arc;
-use dotenv::dotenv;
-use sqlx::PgPool;
 use axum::{
+    middleware::from_fn,
     routing::{get, post},
     Router,
-    middleware::from_fn,
 };
-use tower_http::cors::{CorsLayer, Any};
-use tracing::{info, error};
+use dotenv::dotenv;
+use sqlx::PgPool;
+use std::env;
+use std::sync::Arc;
+use tower_http::cors::{Any, CorsLayer};
+use tracing::{error, info};
 
 // Declare your modules
-mod models;
 mod controllers;
-mod persistences;
-mod utils;
-mod services;
 mod idempotency;
 mod logging;
 mod middleware;
+mod models;
+mod persistences;
+mod services;
+mod utils;
 
 // Import specific items from your modules
-use crate::models::AppState;
-use crate::idempotency::{IdempotencyService, IdempotencyConfig};
-use crate::controllers::payment_controller::{
-    get_all_payments,
-    get_payment,
-    post_payment,
-    post_authorized_payment,
-    capture_payment,
-    cancel_payment,
-    delete_payment,
-};
-use crate::controllers::event_controller::{
-    get_all_events,
-    get_event,
-    create_event,
-    update_event,
-    delete_event,
-};
 use crate::controllers::auth_controller::{
-    register,
-    login,
-    send_sms_verification,
-    verify_sms_code,
-};
-use crate::controllers::genre_controller::{
-    get_all_genres,
-    get_genre,
-    create_genre,
-    update_genre,
-    delete_genre,
+    login, register, send_sms_verification, verify_sms_code,
 };
 use crate::controllers::club_controller::{
-    get_all_clubs,
-    get_club,
-    create_club,
-    update_club,
-    delete_club,
-};
-use crate::controllers::ticket_controller::{
-    get_all_tickets,
-    get_user_tickets_with_events,
-    get_ticket,
-    get_ticket_by_code,
-    create_ticket,
-    update_ticket,
-    delete_ticket,
-};
-use crate::controllers::table_controller::{
-    get_all_tables,
-    get_tables_by_event,
-    get_available_tables_by_event,
-    get_table,
-    create_table,
-    update_table,
-    delete_table,
-    get_all_reservations,
-    get_user_reservations_with_details,
-    get_reservations_by_table,
-    get_reservation,
-    get_reservation_by_code,
-    create_reservation,
-    update_reservation,
-    delete_reservation,
-    add_payment_to_reservation,
-    link_ticket_to_reservation,
-    get_tickets_for_reservation,
-    create_payment_intent,
-    create_reservation_with_payment,
+    create_club, delete_club, get_all_clubs, get_club, update_club,
 };
 use crate::controllers::club_owner_controller::{
-    register_club_owner,
-    login_club_owner,
-    get_my_club,
-    update_my_club,
-    get_my_club_events,
-    create_club_event,
-    get_my_club_tables,
-    create_club_table,
-    get_my_club_images,
-    add_my_club_image,
-    delete_my_club_image,
-    get_table_images_handler,
-    add_table_image_handler,
-    delete_table_image_handler,
-    get_event_reservations_handler,
-    create_manual_reservation_handler,
+    add_my_club_image, add_table_image_handler, checkin_handler, create_club_event,
+    create_club_table, create_manual_reservation_handler, delete_club_event, delete_my_club_image,
+    delete_table_image_handler, get_event_reservations_handler, get_my_club, get_my_club_events,
+    get_my_club_images, get_my_club_tables, get_owner_stats_handler, get_table_images_handler,
+    login_club_owner, register_club_owner, scan_code_handler, update_club_event, update_my_club,
     update_reservation_status_handler,
-    scan_code_handler,
-    checkin_handler,
-    get_owner_stats_handler,
+};
+use crate::controllers::event_controller::{
+    create_event, delete_event, get_all_events, get_event, update_event,
+};
+use crate::controllers::genre_controller::{
+    create_genre, delete_genre, get_all_genres, get_genre, update_genre,
+};
+use crate::controllers::payment_controller::{
+    cancel_payment, capture_payment, delete_payment, get_all_payments, get_payment,
+    post_authorized_payment, post_payment,
+};
+use crate::controllers::table_controller::{
+    add_payment_to_reservation, create_payment_intent, create_reservation,
+    create_reservation_with_payment, create_table, delete_reservation, delete_table,
+    get_all_reservations, get_all_tables, get_available_tables_by_event, get_reservation,
+    get_reservation_by_code, get_reservations_by_table, get_table, get_tables_by_event,
+    get_tickets_for_reservation, get_user_reservations_with_details, link_ticket_to_reservation,
+    update_reservation, update_table,
+};
+use crate::controllers::ticket_controller::{
+    create_ticket, delete_ticket, get_all_tickets, get_ticket, get_ticket_by_code,
+    get_user_tickets_with_events, update_ticket,
 };
 use crate::controllers::webhook_controller::handle_stripe_webhook;
+use crate::idempotency::{IdempotencyConfig, IdempotencyService};
+use crate::models::AppState;
 
 pub fn create_router(app_state: Arc<AppState>) -> Router {
     // Configure CORS to allow requests from React Native
@@ -136,44 +83,116 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/auth/club-owner/login", post(login_club_owner))
         // Event routes (new schema)
         .route("/events", get(get_all_events).post(create_event))
-        .route("/events/:id", get(get_event).put(update_event).delete(delete_event))
+        .route(
+            "/events/:id",
+            get(get_event).put(update_event).delete(delete_event),
+        )
         // Genre routes
         .route("/genres", get(get_all_genres).post(create_genre))
-        .route("/genres/:id", get(get_genre).put(update_genre).delete(delete_genre))
+        .route(
+            "/genres/:id",
+            get(get_genre).put(update_genre).delete(delete_genre),
+        )
         // Club routes
         .route("/clubs", get(get_all_clubs).post(create_club))
-        .route("/clubs/:id", get(get_club).put(update_club).delete(delete_club))
+        .route(
+            "/clubs/:id",
+            get(get_club).put(update_club).delete(delete_club),
+        )
         // Ticket routes
         .route("/tickets", get(get_all_tickets).post(create_ticket))
-        .route("/tickets/:id", get(get_ticket).put(update_ticket).delete(delete_ticket))
+        .route(
+            "/tickets/:id",
+            get(get_ticket).put(update_ticket).delete(delete_ticket),
+        )
         .route("/tickets/code/:code", get(get_ticket_by_code))
         .route("/tickets/user/:user_id", get(get_user_tickets_with_events))
         // Table routes
         .route("/tables", get(get_all_tables).post(create_table))
-        .route("/tables/:id", get(get_table).put(update_table).delete(delete_table))
+        .route(
+            "/tables/:id",
+            get(get_table).put(update_table).delete(delete_table),
+        )
         .route("/tables/event/:event_id", get(get_tables_by_event))
-        .route("/tables/event/:event_id/available", get(get_available_tables_by_event))
+        .route(
+            "/tables/event/:event_id/available",
+            get(get_available_tables_by_event),
+        )
         // Table reservation routes
         .route("/reservations", get(get_all_reservations))
-        .route("/reservations/:id", get(get_reservation).put(update_reservation).delete(delete_reservation))
+        .route(
+            "/reservations/:id",
+            get(get_reservation)
+                .put(update_reservation)
+                .delete(delete_reservation),
+        )
         .route("/reservations/code/:code", get(get_reservation_by_code))
-        .route("/reservations/user/:user_id", get(get_user_reservations_with_details).post(create_reservation))
-        .route("/reservations/table/:table_id", get(get_reservations_by_table))
-        .route("/reservations/:reservation_id/payments", post(add_payment_to_reservation))
-        .route("/reservations/:reservation_id/tickets", post(link_ticket_to_reservation).get(get_tickets_for_reservation))
-        .route("/reservations/create-payment-intent", post(create_payment_intent))
-        .route("/reservations/create-with-payment", post(create_reservation_with_payment))
+        .route(
+            "/reservations/user/:user_id",
+            get(get_user_reservations_with_details).post(create_reservation),
+        )
+        .route(
+            "/reservations/table/:table_id",
+            get(get_reservations_by_table),
+        )
+        .route(
+            "/reservations/:reservation_id/payments",
+            post(add_payment_to_reservation),
+        )
+        .route(
+            "/reservations/:reservation_id/tickets",
+            post(link_ticket_to_reservation).get(get_tickets_for_reservation),
+        )
+        .route(
+            "/reservations/create-payment-intent",
+            post(create_payment_intent),
+        )
+        .route(
+            "/reservations/create-with-payment",
+            post(create_reservation_with_payment),
+        )
         // Club owner scoped routes (JWT protected)
         .route("/owner/club", get(get_my_club).put(update_my_club))
-        .route("/owner/club/images", get(get_my_club_images).post(add_my_club_image))
-        .route("/owner/club/images/:id", axum::routing::delete(delete_my_club_image))
-        .route("/owner/events", get(get_my_club_events).post(create_club_event))
-        .route("/owner/events/:event_id/tables", get(get_my_club_tables).post(create_club_table))
-        .route("/owner/events/:event_id/reservations", get(get_event_reservations_handler))
-        .route("/owner/events/:event_id/reservations/manual", post(create_manual_reservation_handler))
-        .route("/owner/reservations/:id/status", axum::routing::patch(update_reservation_status_handler))
-        .route("/owner/tables/:id/images", get(get_table_images_handler).post(add_table_image_handler))
-        .route("/owner/table-images/:id", axum::routing::delete(delete_table_image_handler))
+        .route(
+            "/owner/club/images",
+            get(get_my_club_images).post(add_my_club_image),
+        )
+        .route(
+            "/owner/club/images/:id",
+            axum::routing::delete(delete_my_club_image),
+        )
+        .route(
+            "/owner/events",
+            get(get_my_club_events).post(create_club_event),
+        )
+        .route(
+            "/owner/events/:event_id",
+            axum::routing::put(update_club_event).delete(delete_club_event),
+        )
+        .route(
+            "/owner/events/:event_id/tables",
+            get(get_my_club_tables).post(create_club_table),
+        )
+        .route(
+            "/owner/events/:event_id/reservations",
+            get(get_event_reservations_handler),
+        )
+        .route(
+            "/owner/events/:event_id/reservations/manual",
+            post(create_manual_reservation_handler),
+        )
+        .route(
+            "/owner/reservations/:id/status",
+            axum::routing::patch(update_reservation_status_handler),
+        )
+        .route(
+            "/owner/tables/:id/images",
+            get(get_table_images_handler).post(add_table_image_handler),
+        )
+        .route(
+            "/owner/table-images/:id",
+            axum::routing::delete(delete_table_image_handler),
+        )
         .route("/owner/scan/:code", get(scan_code_handler))
         .route("/owner/checkin/:code", post(checkin_handler))
         .route("/owner/stats", get(get_owner_stats_handler))
@@ -195,7 +214,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
 pub async fn create_pool() -> PgPool {
     let database_url = env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://postgres:password@localhost:5432/events".to_string());
-    
+
     PgPool::connect(&database_url)
         .await
         .expect("Failed to connect to Postgres")
@@ -223,11 +242,10 @@ async fn main() {
     info!("JWT Secret loaded");
 
     // Load Stripe webhook secret
-    let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET")
-        .unwrap_or_else(|_| {
-            tracing::warn!("STRIPE_WEBHOOK_SECRET not set — webhook signature verification disabled");
-            String::new()
-        });
+    let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_else(|_| {
+        tracing::warn!("STRIPE_WEBHOOK_SECRET not set — webhook signature verification disabled");
+        String::new()
+    });
 
     // Create database pool
     let db_pool = create_pool().await;
@@ -280,9 +298,18 @@ async fn main() {
         .await
         .unwrap();
 
-    info!("Server starting on http://0.0.0.0:3000");
-    info!("  Local: http://127.0.0.1:3000");
-    info!("  Network: http://172.20.10.5:3000");
+    info!("Server starting on http://0.0.0.0:{}", port);
+    info!("  Local: http://127.0.0.1:{}", port);
+
+    // Get local network IP dynamically
+    let network_ip = std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| {
+            s.connect("8.8.8.8:80")?;
+            s.local_addr()
+        })
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    info!("  Network: http://{}:{}", network_ip, port);
 
     axum::serve(listener, app).await.unwrap();
 }

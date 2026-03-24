@@ -90,7 +90,6 @@ export interface EventResponse {
   endTime?: string;
   price?: string;
   description?: string;
-  matterportId?: string;
   tourProvider?: string;
   tourId?: string;
   marzipanoScenes?: unknown;

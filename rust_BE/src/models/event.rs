@@ -9,7 +9,7 @@ pub struct Event {
     pub id: Uuid,
     pub title: String,
     pub venue: String,
-    pub date: String, // Format: "10 MAG | 23:00"
+    pub date: String,
     pub image: String,
     pub status: Option<String>,
     pub time: Option<String>,
@@ -18,10 +18,9 @@ pub struct Event {
     pub price: Option<String>,
     pub description: Option<String>,
     pub club_id: Option<Uuid>,
-    pub matterport_id: Option<String>, // DEPRECATED - kept for backward compatibility
     pub tour_provider: Option<String>, // 'marzipano', 'kuula', 'matterport', 'cloudpano'
-    pub tour_id: Option<String>, // DEPRECATED for marzipano
-    pub marzipano_config: Option<JsonValue>, // JSON array of MarzipanoScene objects
+    pub tour_id: Option<String>,
+    pub marzipano_config: Option<JsonValue>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -39,7 +38,6 @@ pub struct CreateEventRequest {
     pub price: Option<String>,
     pub description: Option<String>,
     pub club_id: Option<Uuid>,
-    pub matterport_id: Option<String>,
     pub tour_provider: Option<String>,
     pub tour_id: Option<String>,
     pub marzipano_config: Option<JsonValue>,
@@ -58,7 +56,6 @@ pub struct UpdateEventRequest {
     pub price: Option<String>,
     pub description: Option<String>,
     pub club_id: Option<Uuid>,
-    pub matterport_id: Option<String>,
     pub tour_provider: Option<String>,
     pub tour_id: Option<String>,
     pub marzipano_config: Option<JsonValue>,
@@ -85,9 +82,6 @@ pub struct EventResponse {
     pub price: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(rename = "matterportId")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub matterport_id: Option<String>,
     #[serde(rename = "tourProvider")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tour_provider: Option<String>,
@@ -101,19 +95,27 @@ pub struct EventResponse {
 
 impl From<Event> for EventResponse {
     fn from(event: Event) -> Self {
+        // Derive time from ISO date if the time column is empty/null
+        let time = match event.time.as_deref() {
+            Some(t) if !t.is_empty() => Some(t.to_string()),
+            _ => event.date.find('T').map(|pos| {
+                event.date[pos + 1..].chars().take(5).collect()
+            }),
+        };
+        // Treat empty string as no-status (allows clearing via dashboard)
+        let status = event.status.filter(|s| !s.is_empty());
         EventResponse {
             id: event.id.to_string(),
             title: event.title,
             venue: event.venue,
             date: event.date,
             image: event.image,
-            status: event.status,
-            time: event.time,
-            age_limit: event.age_limit,
-            end_time: event.end_time,
+            status,
+            time,
+            age_limit: event.age_limit.filter(|s| !s.is_empty()),
+            end_time: event.end_time.filter(|s| !s.is_empty()),
             price: event.price,
             description: event.description,
-            matterport_id: event.matterport_id,
             tour_provider: event.tour_provider,
             tour_id: event.tour_id,
             marzipano_scenes: event.marzipano_config,
