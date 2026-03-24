@@ -32,7 +32,7 @@ export default function QRScannerPage() {
       });
       const data: ScanResult = await res.json();
       setResult(data);
-      if (!data.valid) {
+      if (!data.valid || data.scanType === 'unknown') {
         setScanStatus('invalid');
       } else if (data.alreadyUsed) {
         setScanStatus('used');
@@ -41,7 +41,7 @@ export default function QRScannerPage() {
       }
     } catch {
       setScanStatus('invalid');
-      setResult({ valid: false, alreadyUsed: false, type: 'ticket', code: trimmed });
+      setResult({ valid: false, alreadyUsed: false, scanType: 'unknown', code: trimmed });
     }
   };
 
@@ -274,7 +274,7 @@ function ScanResultDetails({ result }: { result: ScanResult }) {
       <div className="flex gap-2">
         <span className="text-gray-500 w-28 shrink-0">Tipo</span>
         <span className="font-medium text-gray-900">
-          {result.type === 'ticket' ? 'Biglietto' : 'Prenotazione tavolo'}
+          {result.scanType === 'ticket' ? 'Biglietto' : result.scanType === 'reservation' ? 'Prenotazione tavolo' : 'Sconosciuto'}
         </span>
       </div>
       <div className="flex gap-2">
