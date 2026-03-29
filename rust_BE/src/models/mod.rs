@@ -35,6 +35,9 @@ pub use table::{
     AddFreeGuestRequest, FreeGuestResponse, ReservationPaymentStatusResponse
 };
 
+pub mod area;
+pub use area::{Area, CreateAreaRequest, UpdateAreaRequest, AreaResponse, AssignAreaRequest};
+
 use crate::idempotency::IdempotencyService;
 
 pub struct AppState {

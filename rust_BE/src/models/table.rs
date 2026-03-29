@@ -22,7 +22,8 @@ pub struct Table {
     pub available: bool,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-    pub marzipano_position: Option<JsonValue>, // NEW: {sceneId, yaw, pitch}
+    pub marzipano_position: Option<JsonValue>,
+    pub area_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -65,6 +66,7 @@ pub struct TableResponse {
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
     pub marzipano_position: Option<JsonValue>,
+    pub area_id: Option<String>,
 }
 
 impl From<Table> for TableResponse {
@@ -81,6 +83,7 @@ impl From<Table> for TableResponse {
             location_description: table.location_description,
             features: table.features,
             marzipano_position: table.marzipano_position,
+            area_id: table.area_id.map(|id| id.to_string()),
         }
     }
 }

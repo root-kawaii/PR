@@ -943,6 +943,26 @@ pub async fn create_reservation_with_payment(
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
     })?;
 
+    // Fire-and-forget: SMS each paying guest with their payment link
+    let app_base_url = std::env::var("APP_BASE_URL").unwrap_or_default();
+    if !app_base_url.is_empty() {
+        for share in &all_shares {
+            if !share.is_owner {
+                if let (Some(phone), Some(token)) = (&share.phone_number, &share.payment_link_token) {
+                    let link = format!("{}/pay/{}", app_base_url, token);
+                    let msg = format!(
+                        "{} ti ha invitato al tavolo {}. La tua parte è €{:.2}. Paga qui: {}",
+                        req.contact_name, table.name, per_person, link
+                    );
+                    let phone = phone.clone();
+                    tokio::spawn(async move {
+                        crate::services::notification_service::send_sms(&phone, &msg).await;
+                    });
+                }
+            }
+        }
+    }
+
     // Fetch final reservation and return with payment shares
     let final_reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_id)
         .await

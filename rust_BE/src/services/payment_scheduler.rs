@@ -45,6 +45,8 @@ struct ExpiredShareRow {
     amount: rust_decimal::Decimal,
     owner_user_id: Uuid,
     owner_contact_name: String,
+    owner_phone: Option<String>,
+    owner_push_token: Option<String>,
     event_name: String,
     table_name: String,
 }
@@ -441,12 +443,15 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
             rps.amount,
             tr.user_id              AS owner_user_id,
             tr.contact_name         AS owner_contact_name,
+            u.phone_number          AS owner_phone,
+            u.expo_push_token       AS owner_push_token,
             e.name                  AS event_name,
             t.name                  AS table_name
         FROM reservation_payment_shares rps
         JOIN table_reservations tr ON tr.id = rps.reservation_id
         JOIN events e ON e.id = tr.event_id
         JOIN tables t ON t.id = tr.table_id
+        LEFT JOIN users u ON u.id = tr.user_id
         WHERE rps.status = 'pending'
           AND rps.is_owner = false
           AND rps.created_at < NOW() - ($1 || ' hours')::INTERVAL
@@ -497,6 +502,31 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
             share.reservation_id, share.owner_contact_name,
         );
         send_alert(state, &msg).await;
+
+        // SMS owner if they have a phone number
+        if let Some(ref owner_phone) = share.owner_phone {
+            let sms = format!(
+                "Un ospite ({}) non ha pagato la sua parte di €{:.2} per {} a {}. Puoi riassegnare il posto.",
+                guest_phone, share.amount, share.event_name, share.table_name,
+            );
+            let owner_phone = owner_phone.clone();
+            tokio::spawn(async move {
+                crate::services::notification_service::send_sms(&owner_phone, &sms).await;
+            });
+        }
+
+        // Push notification to owner if they have a push token
+        if let Some(ref push_token) = share.owner_push_token {
+            let title = "Pagamento scaduto".to_string();
+            let body = format!(
+                "L'ospite {} non ha pagato la sua parte (€{:.2}) per {}.",
+                guest_phone, share.amount, share.event_name,
+            );
+            let push_token = push_token.clone();
+            tokio::spawn(async move {
+                crate::services::notification_service::send_push_notification(&push_token, &title, &body).await;
+            });
+        }
     }
 }
 

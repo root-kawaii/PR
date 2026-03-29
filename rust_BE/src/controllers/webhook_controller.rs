@@ -318,6 +318,43 @@ async fn handle_checkout_session_completed(
         Err(e) => error!(error = %e, "Failed to check reservation confirmation"),
     }
 
+    // Push notification to the reservation owner
+    let reservation_status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM table_reservations WHERE id = $1"
+    )
+    .bind(share.reservation_id)
+    .fetch_optional(&state.db_pool)
+    .await
+    .ok()
+    .flatten();
+
+    if let Ok(push_token) = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT expo_push_token FROM users WHERE id = $1"
+    )
+    .bind(reservation.user_id)
+    .fetch_one(&state.db_pool)
+    .await
+    {
+        if let Some(token) = push_token {
+            let guest_name = share.guest_name.as_deref().unwrap_or("Un ospite");
+            let all_confirmed = reservation_status.as_deref() == Some("confirmed");
+            let (title, body) = if all_confirmed {
+                (
+                    "Prenotazione confermata!".to_string(),
+                    "Tutti gli ospiti hanno pagato. La tua prenotazione è confermata.".to_string(),
+                )
+            } else {
+                (
+                    "Pagamento ricevuto".to_string(),
+                    format!("{} ha pagato la sua parte.", guest_name),
+                )
+            };
+            tokio::spawn(async move {
+                crate::services::notification_service::send_push_notification(&token, &title, &body).await;
+            });
+        }
+    }
+
     StatusCode::OK
 }
 

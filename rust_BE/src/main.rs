@@ -45,6 +45,7 @@ use crate::controllers::auth_controller::{
     login,
     send_sms_verification,
     verify_sms_code,
+    register_push_token,
 };
 use crate::controllers::genre_controller::{
     get_all_genres,
@@ -119,6 +120,14 @@ use crate::controllers::club_owner_controller::{
     get_owner_stats_handler,
 };
 use crate::controllers::webhook_controller::handle_stripe_webhook;
+use crate::controllers::area_controller::{
+    list_areas_by_club,
+    list_my_areas,
+    create_area,
+    update_area,
+    delete_area,
+    assign_table_area,
+};
 
 pub fn create_router(app_state: Arc<AppState>) -> Router {
     // Configure CORS to allow requests from React Native
@@ -136,6 +145,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/auth/login", post(login))
         .route("/auth/send-sms-verification", post(send_sms_verification))
         .route("/auth/verify-sms-code", post(verify_sms_code))
+        .route("/auth/push-token", post(register_push_token))
         // Club owner auth routes
         .route("/auth/club-owner/register", post(register_club_owner))
         .route("/auth/club-owner/login", post(login_club_owner))
@@ -194,6 +204,11 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/payments/:id", get(get_payment).delete(delete_payment))
         .route("/payments/:id/capture", post(capture_payment))
         .route("/payments/:id/cancel", post(cancel_payment))
+        // Area routes (public list + owner CRUD)
+        .route("/clubs/:club_id/areas", get(list_areas_by_club))
+        .route("/owner/areas", get(list_my_areas).post(create_area))
+        .route("/owner/areas/:area_id", axum::routing::patch(update_area).delete(delete_area))
+        .route("/owner/tables/:table_id/area", axum::routing::patch(assign_table_area))
         // Stripe webhook (no JWT auth — Stripe verifies via signature)
         .route("/stripe/webhooks", post(handle_stripe_webhook))
         .with_state(app_state)
