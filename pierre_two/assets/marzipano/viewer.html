@@ -887,12 +887,13 @@
       switchToScene(sceneId);
     };
 
-    // Notify React Native
-    function notifyReactNative(message) {
+    // Notify React Native — retries up to 2s to handle production bridge injection delay
+    function notifyReactNative(message, attempt) {
+      attempt = attempt || 0;
       if (window.ReactNativeWebView) {
         window.ReactNativeWebView.postMessage(JSON.stringify(message));
-      } else {
-        console.log('Message to RN:', message);
+      } else if (attempt < 40) {
+        setTimeout(function() { notifyReactNative(message, attempt + 1); }, 50);
       }
     }
 
