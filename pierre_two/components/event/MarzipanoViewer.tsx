@@ -10,6 +10,8 @@ import { View, StyleSheet, ActivityIndicator, ViewStyle } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { ThemedText } from "@/components/themed-text";
 import { MarzipanoScene, Table } from "@/types";
+import { Asset } from "expo-asset";
+import * as FileSystem from "expo-file-system/legacy";
 
 type MarzipanoViewerProps = {
   scenes: MarzipanoScene[];
@@ -223,8 +225,23 @@ export const MarzipanoViewer = forwardRef<
     }
   }, []); // Empty deps - uses refs
 
-  // Use the asset module directly
-  const viewerHtmlSource = require("@/assets/marzipano/viewer.html");
+  // Load HTML content from asset — works reliably in both dev and production
+  const [htmlContent, setHtmlContent] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const asset = Asset.fromModule(require("@/assets/marzipano/viewer.html"));
+        await asset.downloadAsync();
+        if (asset.localUri) {
+          const html = await FileSystem.readAsStringAsync(asset.localUri);
+          setHtmlContent(html);
+        }
+      } catch (e) {
+        console.error("Failed to load viewer HTML:", e);
+        setError("Failed to load viewer");
+      }
+    })();
+  }, []);
 
   if (error) {
     return (
@@ -249,9 +266,15 @@ export const MarzipanoViewer = forwardRef<
         </View>
       )}
 
-      <WebView
+      {!htmlContent && !error && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#ec4899" />
+          <ThemedText style={styles.loadingText}>Preparing viewer...</ThemedText>
+        </View>
+      )}
+      {htmlContent && <WebView
         ref={webViewRef}
-        source={viewerHtmlSource}
+        source={{ html: htmlContent, baseUrl: "" }}
         style={styles.webview}
         javaScriptEnabled={true}
         domStorageEnabled={true}
@@ -271,7 +294,7 @@ export const MarzipanoViewer = forwardRef<
           const { nativeEvent } = syntheticEvent;
           console.error("❌ HTTP error:", nativeEvent.statusCode);
         }}
-      />
+      />}
     </View>
   );
 });
