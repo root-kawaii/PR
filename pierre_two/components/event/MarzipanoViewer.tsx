@@ -227,24 +227,18 @@ export const MarzipanoViewer = forwardRef<
 
   // Load HTML content from asset — works reliably in both dev and production
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState("init");
   useEffect(() => {
     (async () => {
       try {
-        setDebugInfo("loading asset...");
         const asset = Asset.fromModule(require("@/assets/marzipano/viewer.html"));
         await asset.downloadAsync();
-        setDebugInfo(`asset downloaded, localUri: ${asset.localUri ? "yes" : "no"}`);
         if (asset.localUri) {
           const html = await FileSystem.readAsStringAsync(asset.localUri);
-          setDebugInfo(`html loaded: ${html.length} chars, viewerReady: ${viewerReady}`);
           setHtmlContent(html);
         } else {
-          setDebugInfo("no localUri!");
           setError("No localUri for viewer asset");
         }
       } catch (e: any) {
-        setDebugInfo(`error: ${e.message}`);
         setError("Failed to load viewer: " + e.message);
       }
     })();
@@ -269,9 +263,6 @@ export const MarzipanoViewer = forwardRef<
           <ActivityIndicator size="large" color="#ec4899" />
           <ThemedText style={styles.loadingText}>
             Loading 360° tour...
-          </ThemedText>
-          <ThemedText style={{ color: "#ff0", fontSize: 10, marginTop: 8, textAlign: "center" }}>
-            DEBUG: {debugInfo} | html:{htmlContent ? htmlContent.length : "null"} | ready:{String(viewerReady)} | loading:{String(isLoading)}
           </ThemedText>
         </View>
       )}
