@@ -38,6 +38,7 @@ jobs:
           eas update \
             --branch staging \
             --message "Staging: ${{ github.sha }}" \
+            --platform ios \
             --non-interactive
 
       - name: Summary
