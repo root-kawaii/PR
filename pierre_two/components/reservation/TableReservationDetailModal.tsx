@@ -39,6 +39,13 @@ export const TableReservationDetailModal = ({
   const [newGuestPhone, setNewGuestPhone] = useState("");
   const [newGuestName, setNewGuestName] = useState("");
 
+  // Fetch payment status when modal opens
+  useEffect(() => {
+    if (visible && reservation?.id) {
+      fetchPaymentStatus();
+    }
+  }, [visible, reservation?.id]);
+
   if (!reservation) return null;
 
   const totalAmount = parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, ""));
@@ -48,13 +55,6 @@ export const TableReservationDetailModal = ({
   const currentPeople = reservation.numPeople || 0;
   const remainingCapacity = tableCapacity - currentPeople;
   const canAddGuest = remainingCapacity > 0;
-
-  // Fetch payment status when modal opens
-  useEffect(() => {
-    if (visible && reservation?.id) {
-      fetchPaymentStatus();
-    }
-  }, [visible, reservation?.id]);
 
   const fetchPaymentStatus = async () => {
     try {

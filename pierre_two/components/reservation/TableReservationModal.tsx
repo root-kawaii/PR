@@ -113,7 +113,7 @@ export const TableReservationModal = ({
             event_id: event.id,
             owner_user_id: user.id,
             num_paying_guests: numPayingGuests,
-            guest_phone_numbers: payingGuestPhones,
+            paying_guest_phone_numbers: payingGuestPhones,
             contact_name: user.name,
             contact_email: user.email,
             contact_phone: user.phone_number || "",
