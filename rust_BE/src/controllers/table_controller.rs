@@ -654,6 +654,9 @@ pub async fn create_reservation_with_payment(
     let pi_id: stripe::PaymentIntentId = req.stripe_payment_intent_id.parse()
         .map_err(|_| (StatusCode::BAD_REQUEST, "ID PaymentIntent non valido".to_string()))?;
 
+    // Run the rest; on any failure, cancel the Stripe authorization hold immediately.
+    let result: Result<Json<CreateSplitReservationResponse>, (StatusCode, String)> = async {
+
     let payment_intent = PaymentIntent::retrieve(&state.stripe_client, &pi_id, &[])
         .await
         .map_err(|e| {
@@ -977,6 +980,18 @@ pub async fn create_reservation_with_payment(
         reservation: final_reservation.into(),
         payment_shares: share_responses,
     }))
+
+    }.await; // end of cancellation-guarded block
+
+    if result.is_err() {
+        let _ = PaymentIntent::cancel(
+            &state.stripe_client,
+            &pi_id,
+            stripe::CancelPaymentIntent::default(),
+        ).await;
+    }
+
+    result
 }
 
 fn generate_alphanumeric_code(prefix: &str) -> String {

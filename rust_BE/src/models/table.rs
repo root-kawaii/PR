@@ -376,6 +376,7 @@ pub struct CreateSplitReservationRequest {
     pub idempotency_key: Option<Uuid>,
 }
 
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentShareResponse {
