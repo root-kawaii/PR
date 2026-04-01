@@ -169,14 +169,9 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.build_app == 'true' &&
       (needs.deploy_backend.result == 'success' || needs.deploy_backend.result == 'skipped')
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -196,53 +191,14 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Switch to production endpoint
+      - name: Trigger EAS preview build
         working-directory: ./pierre_two
-        run: |
-          echo "Switching API endpoint to production..."
-          node -e "
-            const fs = require('fs');
-            const appJson = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-            appJson.expo.extra.apiUrl = 'https://pierre-two-backend.fly.dev';
-            fs.writeFileSync('app.json', JSON.stringify(appJson, null, 2) + '\n');
-          "
-
-          echo "API endpoint set to production"
-          grep -A 2 '"extra"' app.json
-
-      - name: Trigger EAS development build
-        working-directory: ./pierre_two
+        env:
+          APP_ENV: production
+          EXPO_PUBLIC_API_URL: https://pierre-two-backend.fly.dev
         run: |
           echo "Starting EAS preview build for Android..."
           eas build --platform android --profile preview --non-interactive --no-wait
-
-      - name: Revert to localhost endpoint
-        if: always()
-        working-directory: ./pierre_two
-        run: |
-          echo "Reverting API endpoint to localhost..."
-          node -e "
-            const fs = require('fs');
-            const appJson = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-            appJson.expo.extra.apiUrl = 'http://172.20.10.5:3000';
-            fs.writeFileSync('app.json', JSON.stringify(appJson, null, 2) + '\n');
-          "
-
-          echo "API endpoint reverted to localhost"
-
-      - name: Commit endpoint revert
-        if: always()
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          if ! git diff --quiet pierre_two/app.json; then
-            git add pierre_two/app.json
-            git commit -m "Revert API endpoint to localhost [skip ci]"
-            git push
-          else
-            echo "No changes to commit"
-          fi
 
   summary:
     name: Deployment Summary

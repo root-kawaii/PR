@@ -14,7 +14,7 @@ pub async fn load_all_payments_service(
     filters: PaymentFilter,
 ) -> Result<Vec<PaymentEntity>, StatusCode> {
     let mut query = QueryBuilder::<Postgres>::new(
-        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount FROM payments WHERE 1=1"
+        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id FROM payments WHERE 1=1"
     );
 
     if let Some(sender_id) = filters.sender_id {
@@ -45,7 +45,7 @@ pub async fn load_payment_service(
     app_state: &AppState,
 ) -> Result<PaymentEntity, StatusCode> {
     sqlx::query_as::<_, PaymentEntity>(
-        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount FROM payments WHERE id = $1"
+        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id FROM payments WHERE id = $1"
     )
     .bind(id)
     .fetch_optional(&app_state.db_pool)
@@ -63,7 +63,7 @@ pub async fn load_payment_by_stripe_id(
     app_state: &AppState,
 ) -> Result<PaymentEntity, StatusCode> {
     sqlx::query_as::<_, PaymentEntity>(
-        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount FROM payments WHERE stripe_payment_intent_id = $1"
+        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id FROM payments WHERE stripe_payment_intent_id = $1"
     )
     .bind(stripe_payment_intent_id)
     .fetch_optional(&app_state.db_pool)
@@ -192,7 +192,7 @@ async fn create_payment_internal(
     let payment_entity = sqlx::query_as::<_, PaymentEntity>(
         "INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_amount)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount"
+         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id"
     )
     .bind(id)
     .bind(&payload.sender_id)
@@ -322,7 +322,7 @@ async fn create_authorized_payment_internal(
     let payment_entity = sqlx::query_as::<_, PaymentEntity>(
         "INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_amount)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount"
+         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id"
     )
     .bind(id)
     .bind(&payload.sender_id)
@@ -457,7 +457,7 @@ async fn capture_payment_internal(
         "UPDATE payments
          SET status = $1, authorization_status = $2, captured_at = $3, captured_amount = $4, update_date = $5
          WHERE id = $6
-         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount"
+         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id"
     )
     .bind(PaymentStatus::Completed)
     .bind("captured")
@@ -571,7 +571,7 @@ async fn cancel_payment_internal(
         "UPDATE payments
          SET status = $1, authorization_status = $2, cancelled_at = $3, update_date = $4
          WHERE id = $5
-         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount"
+         RETURNING id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id"
     )
     .bind(PaymentStatus::Cancelled)
     .bind("cancelled")

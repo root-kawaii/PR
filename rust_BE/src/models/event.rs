@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
 pub struct Event {
@@ -19,8 +19,9 @@ pub struct Event {
     pub description: Option<String>,
     pub club_id: Option<Uuid>,
     pub tour_provider: Option<String>, // 'marzipano', 'kuula', 'matterport', 'cloudpano'
-    pub tour_id: Option<String>,
-    pub marzipano_config: Option<JsonValue>,
+    pub tour_id: Option<String>,       // DEPRECATED for marzipano
+    pub marzipano_config: Option<JsonValue>, // JSON array of MarzipanoScene objects
+    pub event_date: Option<chrono::NaiveDate>, // Machine-readable date for scheduler
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -30,6 +31,7 @@ pub struct CreateEventRequest {
     pub title: String,
     pub venue: String,
     pub date: String,
+    pub event_date: Option<chrono::NaiveDate>, // Machine-readable date (YYYY-MM-DD) for scheduler
     pub image: String,
     pub status: Option<String>,
     pub time: Option<String>,
@@ -48,6 +50,7 @@ pub struct UpdateEventRequest {
     pub title: Option<String>,
     pub venue: Option<String>,
     pub date: Option<String>,
+    pub event_date: Option<chrono::NaiveDate>, // Machine-readable date (YYYY-MM-DD) for scheduler
     pub image: Option<String>,
     pub status: Option<String>,
     pub time: Option<String>,
@@ -98,9 +101,10 @@ impl From<Event> for EventResponse {
         // Derive time from ISO date if the time column is empty/null
         let time = match event.time.as_deref() {
             Some(t) if !t.is_empty() => Some(t.to_string()),
-            _ => event.date.find('T').map(|pos| {
-                event.date[pos + 1..].chars().take(5).collect()
-            }),
+            _ => event
+                .date
+                .find('T')
+                .map(|pos| event.date[pos + 1..].chars().take(5).collect()),
         };
         // Treat empty string as no-status (allows clearing via dashboard)
         let status = event.status.filter(|s| !s.is_empty());

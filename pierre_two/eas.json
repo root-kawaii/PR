@@ -11,14 +11,29 @@
         "simulator": true
       }
     },
+    "staging": {
+      "distribution": "internal",
+      "channel": "staging",
+      "env": {
+        "APP_ENV": "staging",
+        "EXPO_PUBLIC_API_URL": "https://pierre-two-backend.fly.dev"
+      }
+    },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "preview"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "channel": "production"
     }
   },
   "submit": {
+    "staging": {
+      "ios": {
+        "ascAppId": "6761366076"
+      }
+    },
     "production": {}
   }
 }

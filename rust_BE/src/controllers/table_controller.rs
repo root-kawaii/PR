@@ -1,11 +1,16 @@
 use crate::models::{
     AppState, CreateTableRequest, UpdateTableRequest, TableResponse, TablesResponse,
-    CreateTableReservationRequest, UpdateTableReservationRequest, CreateReservationWithPaymentRequest,
+    CreateTableReservationRequest, UpdateTableReservationRequest,
     TableReservationResponse, TableReservationWithDetailsResponse,
     TableReservationsResponse, TableReservationsWithDetailsResponse,
     AddPaymentToReservationRequest, LinkTicketToReservationRequest,
-    CreatePaymentIntentRequest, CreatePaymentIntentResponse,
-    TableSummary, PaymentStatus, EventSummary,
+    CreatePaymentIntentResponse,
+    CreateSplitPaymentIntentRequest, CreateSplitReservationRequest, CreateSplitReservationResponse,
+    PaymentShareResponse, PaymentLinkPreviewResponse,
+    VerifyPaymentLinkRequest, VerifyPaymentLinkResponse,
+    CreateCheckoutRequest, CreateCheckoutResponse,
+    AddFreeGuestRequest, FreeGuestResponse, ReservationPaymentStatusResponse,
+    TableSummary, PaymentStatus, PaymentCaptureMethod, EventSummary,
 };
 use crate::persistences::{table_persistence, user_persistence};
 use axum::{
@@ -18,7 +23,8 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use chrono::Utc;
-use stripe::{CreatePaymentIntent, Currency, PaymentIntent, PaymentIntentStatus};
+use stripe::{CreatePaymentIntent, CreateCustomer, Currency, Customer, PaymentIntent, PaymentIntentCaptureMethod, PaymentIntentSetupFutureUsage, PaymentIntentStatus};
+use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
 
 // ============================================================================
 // Tables endpoints
@@ -498,57 +504,79 @@ pub async fn get_tickets_for_reservation(
 // Combined Stripe Payment + Reservation + Tickets Creation
 // ============================================================================
 
-/// Create Stripe PaymentIntent for table reservation
-/// This endpoint:
-/// 1. Looks up guest users by phone numbers
-/// 2. Gets table and calculates total amount
-/// 3. Creates PaymentIntent on Stripe
-/// 4. Returns client_secret for frontend to complete payment
+/// Create Stripe PaymentIntent for table reservation (split payment - owner's share only)
+/// Uses the table's fixed total_cost, split among num_paying_guests.
+/// The owner pays their share via this PaymentIntent.
 pub async fn create_payment_intent(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<CreatePaymentIntentRequest>,
+    Json(req): Json<CreateSplitPaymentIntentRequest>,
 ) -> Result<Json<CreatePaymentIntentResponse>, (StatusCode, String)> {
-    // Parse UUIDs
     let table_id = Uuid::parse_str(&req.table_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
     let event_id = Uuid::parse_str(&req.event_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
     let owner_user_id = Uuid::parse_str(&req.owner_user_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
 
-    // Step 1: Look up guest users by phone numbers to validate they exist
-    let mut guest_user_ids: Vec<Uuid> = Vec::new();
-    for phone in &req.guest_phone_numbers {
-        match user_persistence::find_user_by_phone(&state.db_pool, phone).await {
-            Ok(Some(user)) => guest_user_ids.push(user.id),
-            Ok(None) => {
-                let error_msg = format!("Utente non trovato per il numero di telefono: {}", phone);
-                eprintln!("{}", error_msg);
-                return Err((StatusCode::BAD_REQUEST, error_msg));
-            }
-            Err(e) => {
-                eprintln!("Database error looking up user: {}", e);
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string()));
-            }
-        }
+    if req.num_paying_guests < 1 {
+        return Err((StatusCode::BAD_REQUEST, "Almeno una persona deve pagare".to_string()));
     }
 
-    // Step 2: Get table to calculate payment amount
+    // Validate paying guest phone numbers count matches num_paying_guests - 1 (owner is one of them)
+    if req.paying_guest_phone_numbers.len() != (req.num_paying_guests - 1) as usize {
+        return Err((StatusCode::BAD_REQUEST, "Il numero di telefoni degli ospiti paganti non corrisponde".to_string()));
+    }
+
+    // Get table to use fixed total_cost
     let table = match table_persistence::get_table_by_id(&state.db_pool, table_id).await {
         Ok(t) => t,
         Err(_) => return Err((StatusCode::NOT_FOUND, "Tavolo non trovato".to_string())),
     };
 
-    // Calculate total amount: min_spend × (owner + guests)
-    let total_users = 1 + guest_user_ids.len();
-    let total_amount = table.min_spend * Decimal::from(total_users as i32);
+    let total_cost = table.total_cost;
+    let num_paying = Decimal::from(req.num_paying_guests);
 
-    // Step 3: Create PaymentIntent on Stripe
-    // Convert amount from euros to cents (Stripe expects cents)
-    let amount_in_cents = total_amount.to_f64()
+    // Calculate per-person share (floor to 2 decimal places)
+    let per_person = (total_cost / num_paying).round_dp(2);
+    // Owner pays the remainder to handle rounding
+    let owner_share = total_cost - (per_person * Decimal::from(req.num_paying_guests - 1));
+
+    // Get or create a Stripe Customer for this user (needed for off-session re-auth)
+    let owner_user = match user_persistence::find_user_by_id(&state.db_pool, owner_user_id).await {
+        Ok(Some(u)) => u,
+        Ok(None) => return Err((StatusCode::NOT_FOUND, "Utente non trovato".to_string())),
+        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())),
+    };
+
+    let mut customer_params = CreateCustomer::new();
+    customer_params.email = Some(&owner_user.email);
+    customer_params.metadata = Some(
+        [("user_id".to_string(), owner_user_id.to_string())]
+            .into_iter()
+            .collect(),
+    );
+    let stripe_customer = Customer::create(&state.stripe_client, customer_params)
+        .await
+        .map_err(|e| {
+            eprintln!("Stripe Customer create error: {:?}", e);
+            (StatusCode::BAD_GATEWAY, "Errore creazione cliente".to_string())
+        })?;
+
+    // Create Stripe PaymentIntent for owner's share with manual capture + saved payment method
+    let amount_in_cents = owner_share.to_f64()
         .ok_or_else(|| {
-            eprintln!("Invalid amount: {}", total_amount);
+            eprintln!("Invalid amount: {}", owner_share);
             (StatusCode::INTERNAL_SERVER_ERROR, "Importo non valido".to_string())
         })? * 100.0;
 
     let mut params = CreatePaymentIntent::new(amount_in_cents as i64, Currency::EUR);
+
+    // Manual capture: authorize now, charge the day before the event
+    params.capture_method = Some(PaymentIntentCaptureMethod::Manual);
+
+    // Save the payment method to the customer for future off-session re-authorization
+    params.setup_future_usage = Some(PaymentIntentSetupFutureUsage::OffSession);
+
+    // Attach the Stripe customer
+    params.customer = Some(stripe_customer.id.clone());
+
     params.automatic_payment_methods = Some(
         stripe::CreatePaymentIntentAutomaticPaymentMethods {
             enabled: true,
@@ -556,19 +584,19 @@ pub async fn create_payment_intent(
         },
     );
 
-    // Add metadata to track the reservation details in Stripe
     params.metadata = Some(
         [
             ("table_id".to_string(), table_id.to_string()),
             ("event_id".to_string(), event_id.to_string()),
             ("owner_user_id".to_string(), owner_user_id.to_string()),
-            ("num_guests".to_string(), guest_user_ids.len().to_string()),
+            ("split_payment".to_string(), "true".to_string()),
+            ("num_paying_guests".to_string(), req.num_paying_guests.to_string()),
+            ("total_cost".to_string(), total_cost.to_string()),
         ]
         .into_iter()
         .collect(),
     );
 
-    // Create the payment intent on Stripe
     let payment_intent = PaymentIntent::create(&state.stripe_client, params)
         .await
         .map_err(|e| {
@@ -576,10 +604,9 @@ pub async fn create_payment_intent(
             (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
         })?;
 
-    println!("✅ Stripe Payment Intent created: {}", payment_intent.id);
-    println!("   Amount: {} cents", amount_in_cents as i64);
+    println!("✅ Split Payment Intent created: {}", payment_intent.id);
+    println!("   Owner share: {} cents (total: {}) | Customer: {}", amount_in_cents as i64, total_cost, stripe_customer.id);
 
-    // Step 4: Return client_secret to frontend
     let client_secret = payment_intent.client_secret
         .ok_or_else(|| {
             eprintln!("No client_secret in PaymentIntent response");
@@ -589,254 +616,382 @@ pub async fn create_payment_intent(
     Ok(Json(CreatePaymentIntentResponse {
         client_secret,
         payment_intent_id: payment_intent.id.to_string(),
-        amount: format!("{:.2} €", total_amount),
+        amount: format!("{:.2} €", owner_share),
+        total_cost: Some(format!("{:.2} €", total_cost)),
+        per_person_amount: Some(format!("{:.2} €", per_person)),
+        owner_share: Some(format!("{:.2} €", owner_share)),
     }))
 }
 
-/// Create table reservation with payment and tickets in a single transaction
+/// Create table reservation with split payment in a single transaction
 /// This endpoint:
-/// 1. Looks up guest users by phone numbers
-/// 2. Validates payment amount
-/// 3. Creates payment record with Stripe payment intent ID
-/// 4. Creates table reservation with all users
-/// 5. Creates tickets for all users (owner + guests)
-/// 6. Links everything together using array fields
+/// 1. Verifies the owner's PaymentIntent (for their share only)
+/// 2. Creates payment record + reservation
+/// 3. Creates owner's payment share (paid) + pending shares for other paying guests
+/// 4. Creates ticket for owner only (guests get tickets when they pay)
+/// 5. Optionally adds free guests
 pub async fn create_reservation_with_payment(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<CreateReservationWithPaymentRequest>,
-) -> Result<Json<TableReservationResponse>, StatusCode> {
-    // Parse UUIDs
-    let table_id = Uuid::parse_str(&req.table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let event_id = Uuid::parse_str(&req.event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let owner_user_id = Uuid::parse_str(&req.owner_user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    Json(req): Json<CreateSplitReservationRequest>,
+) -> Result<Json<CreateSplitReservationResponse>, (StatusCode, String)> {
+    let table_id = Uuid::parse_str(&req.table_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
+    let event_id = Uuid::parse_str(&req.event_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
+    let owner_user_id = Uuid::parse_str(&req.owner_user_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
 
-    // Step 1: Look up guest users by phone numbers
-    let mut guest_user_ids: Vec<Uuid> = Vec::new();
-    for phone in &req.guest_phone_numbers {
-        match user_persistence::find_user_by_phone(&state.db_pool, phone).await {
-            Ok(Some(user)) => guest_user_ids.push(user.id),
-            Ok(None) => {
-                eprintln!("User not found for phone: {}", phone);
-                return Err(StatusCode::BAD_REQUEST); // User not found
-            }
-            Err(e) => {
-                eprintln!("Database error looking up user: {}", e);
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        }
-    }
-
-    // Step 2: Get table to validate payment amount
+    // Get table
     let table = match table_persistence::get_table_by_id(&state.db_pool, table_id).await {
         Ok(t) => t,
-        Err(_) => return Err(StatusCode::NOT_FOUND),
+        Err(_) => return Err((StatusCode::NOT_FOUND, "Tavolo non trovato".to_string())),
     };
 
-    let total_users = 1 + guest_user_ids.len(); // owner + guests
-    let expected_amount = table.min_spend * Decimal::from(total_users as i32);
-    let payment_amount = Decimal::from_f64_retain(req.payment_amount).ok_or(StatusCode::BAD_REQUEST)?;
+    let total_cost = table.total_cost;
+    let num_paying = (1 + req.paying_guest_phone_numbers.len()) as i32; // owner + paying guests
+    let num_paying_dec = Decimal::from(num_paying);
+    let per_person = (total_cost / num_paying_dec).round_dp(2);
+    let owner_share = total_cost - (per_person * Decimal::from(num_paying - 1));
 
-    if payment_amount != expected_amount {
-        eprintln!("Payment amount mismatch: expected {}, got {}", expected_amount, payment_amount);
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    // Step 2.5: Verify PaymentIntent with Stripe
+    // Verify owner's PaymentIntent with Stripe
     let pi_id: stripe::PaymentIntentId = req.stripe_payment_intent_id.parse()
-        .map_err(|_| {
-            eprintln!("Invalid Stripe PaymentIntent ID: {}", req.stripe_payment_intent_id);
-            StatusCode::BAD_REQUEST
-        })?;
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID PaymentIntent non valido".to_string()))?;
+
+    // Run the rest; on any failure, cancel the Stripe authorization hold immediately.
+    let result: Result<Json<CreateSplitReservationResponse>, (StatusCode, String)> = async {
 
     let payment_intent = PaymentIntent::retrieve(&state.stripe_client, &pi_id, &[])
         .await
         .map_err(|e| {
             eprintln!("Failed to retrieve PaymentIntent from Stripe: {:?}", e);
-            StatusCode::BAD_GATEWAY
+            (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
         })?;
 
-    // Verify status is Succeeded or RequiresCapture
     match payment_intent.status {
         PaymentIntentStatus::Succeeded | PaymentIntentStatus::RequiresCapture => {}
         ref other => {
             eprintln!("PaymentIntent {} has invalid status: {:?}", pi_id, other);
-            return Err(StatusCode::BAD_REQUEST);
+            return Err((StatusCode::BAD_REQUEST, "Pagamento non completato".to_string()));
         }
     }
 
-    // Verify amount matches expected amount in cents
-    let expected_cents = (expected_amount.to_f64().unwrap_or(0.0) * 100.0) as i64;
+    // Verify amount matches owner's share in cents
+    let expected_cents = (owner_share.to_f64().unwrap_or(0.0) * 100.0) as i64;
     if payment_intent.amount != expected_cents {
-        eprintln!(
-            "PaymentIntent amount mismatch: expected {} cents, got {}",
-            expected_cents, payment_intent.amount
-        );
-        return Err(StatusCode::BAD_REQUEST);
+        eprintln!("PaymentIntent amount mismatch: expected {} cents, got {}", expected_cents, payment_intent.amount);
+        return Err((StatusCode::BAD_REQUEST, "Importo del pagamento non corrispondente".to_string()));
     }
 
-    // Prepare data before transaction
+    let num_free_guests = req.free_guest_phone_numbers.as_ref().map_or(0, |v| v.len());
+    let total_people = num_paying as usize + num_free_guests;
+
+    // Validate capacity
+    if total_people as i32 > table.capacity {
+        return Err((StatusCode::BAD_REQUEST, format!("Capacità massima del tavolo superata: {} persone", table.capacity)));
+    }
+
+    // Extract Stripe customer and payment method IDs for future off-session re-authorization
+    let stripe_customer_id = payment_intent.customer.as_ref()
+        .map(|c| c.id().to_string());
+    let stripe_payment_method_id = payment_intent.payment_method.as_ref()
+        .map(|pm| pm.id().to_string());
+
+    // Prepare data
     let payment_id = Uuid::new_v4();
-    let mut all_user_ids = vec![owner_user_id];
-    all_user_ids.extend(&guest_user_ids);
     let now = Utc::now().naive_utc();
 
-    // Begin database transaction — steps 3-8 are atomic
+    // Begin transaction
     let mut tx = state.db_pool.begin().await.map_err(|e| {
         eprintln!("Failed to begin transaction: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
     })?;
 
-    // Step 3: Create payment record (on tx)
+    // Step 1: Create payment record for owner
     sqlx::query(
         r#"
-        INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, stripe_customer_id, stripe_payment_method_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         "#
     )
     .bind(payment_id)
     .bind(owner_user_id)
     .bind(owner_user_id)
-    .bind(payment_amount)
+    .bind(owner_share)
     .bind(PaymentStatus::Pending)
     .bind(now)
     .bind(now)
     .bind(&req.stripe_payment_intent_id)
-    .bind(&all_user_ids)
+    .bind(&vec![owner_user_id])
+    .bind(PaymentCaptureMethod::Manual)
+    .bind("authorized")
+    .bind(&stripe_customer_id)
+    .bind(&stripe_payment_method_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("Failed to create payment: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore creazione pagamento".to_string())
     })?;
 
-    // Step 4: Generate reservation code and create reservation (on tx)
+    // Step 2: Create reservation with total_cost as total_amount
     let reservation_code = generate_alphanumeric_code("RES-");
     let reservation_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO table_reservations (
-            table_id, user_id, event_id, num_people, total_amount,
+            table_id, user_id, event_id, num_people, total_amount, amount_paid,
             contact_name, contact_email, contact_phone, special_requests, reservation_code
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id
         "#
     )
     .bind(table_id)
     .bind(owner_user_id)
     .bind(event_id)
-    .bind(total_users as i32)
-    .bind(expected_amount)
-    .bind(req.contact_name)
-    .bind(req.contact_email)
-    .bind(req.contact_phone)
-    .bind(req.special_requests)
+    .bind(total_people as i32)
+    .bind(total_cost)
+    .bind(owner_share) // amount_paid = owner's share
+    .bind(&req.contact_name)
+    .bind(&req.contact_email)
+    .bind(&req.contact_phone)
+    .bind(&req.special_requests)
     .bind(&reservation_code)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         eprintln!("Failed to create reservation: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore creazione prenotazione".to_string())
     })?;
 
-    // Step 5: Add payment to reservation and update amount_paid (on tx)
+    // Step 3: Link payment to reservation
     sqlx::query(
-        r#"
-        UPDATE table_reservations
-        SET payment_ids = array_append(COALESCE(payment_ids, '{}'), $1),
-            amount_paid = amount_paid + $2,
-            updated_at = NOW()
-        WHERE id = $3
-        "#
+        "UPDATE table_reservations SET payment_ids = array_append(COALESCE(payment_ids, '{}'), $1) WHERE id = $2"
     )
     .bind(payment_id)
-    .bind(payment_amount)
     .bind(reservation_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to add payment to reservation: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        eprintln!("Failed to link payment: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
     })?;
 
-    // Step 6: Add guest users to reservation (on tx)
-    for guest_id in &guest_user_ids {
-        sqlx::query(
-            r#"
-            UPDATE table_reservations
-            SET guest_user_ids = array_append(COALESCE(guest_user_ids, '{}'), $1),
-                updated_at = NOW()
-            WHERE id = $2
-            "#
+    // Step 4: Create owner's payment share (status = paid)
+    let owner_share_row = sqlx::query_as::<_, crate::models::ReservationPaymentShare>(
+        r#"
+        INSERT INTO reservation_payment_shares (
+            reservation_id, user_id, phone_number, amount, status,
+            stripe_payment_intent_id, is_owner, payment_id
         )
-        .bind(guest_id)
-        .bind(reservation_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to add guest to reservation: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    }
+        VALUES ($1, $2, $3, $4, 'paid', $5, true, $6)
+        RETURNING *
+        "#
+    )
+    .bind(reservation_id)
+    .bind(owner_user_id)
+    .bind(&req.contact_phone)
+    .bind(owner_share)
+    .bind(&req.stripe_payment_intent_id)
+    .bind(payment_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to create owner payment share: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+    })?;
 
-    // Step 7: Create tickets for all users (on tx)
-    let mut ticket_ids: Vec<Uuid> = Vec::new();
-    for user_id in &all_user_ids {
-        let ticket_code = generate_alphanumeric_code("TKT-");
-        let ticket_id: Uuid = sqlx::query_scalar(
+    // Step 5: Create pending payment shares for each paying guest
+    let mut all_shares: Vec<crate::models::ReservationPaymentShare> = vec![owner_share_row];
+    for phone in &req.paying_guest_phone_numbers {
+        let token = generate_payment_link_token();
+        let share = sqlx::query_as::<_, crate::models::ReservationPaymentShare>(
             r#"
-            INSERT INTO tickets (id, event_id, user_id, ticket_code, ticket_type, price, status, purchase_date, qr_code, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NULL, NOW(), NOW())
-            RETURNING id
+            INSERT INTO reservation_payment_shares (
+                reservation_id, phone_number, amount, status, payment_link_token, is_owner
+            )
+            VALUES ($1, $2, $3, 'pending', $4, false)
+            RETURNING *
             "#
         )
-        .bind(Uuid::new_v4())
-        .bind(event_id)
-        .bind(user_id)
-        .bind(&ticket_code)
-        .bind("table")
-        .bind(table.min_spend)
-        .bind("active")
+        .bind(reservation_id)
+        .bind(phone)
+        .bind(per_person)
+        .bind(&token)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to create ticket: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            eprintln!("Failed to create guest payment share: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
-        ticket_ids.push(ticket_id);
+        all_shares.push(share);
     }
 
-    // Step 8: Link tickets to reservation (on tx)
-    for ticket_id in &ticket_ids {
-        sqlx::query(
-            r#"
-            UPDATE table_reservations
-            SET ticket_ids = array_append(COALESCE(ticket_ids, '{}'), $1),
-                updated_at = NOW()
-            WHERE id = $2
-            "#
-        )
-        .bind(ticket_id)
-        .bind(reservation_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to link ticket to reservation: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    }
-
-    // Commit transaction — all steps 3-8 succeed or none do
-    tx.commit().await.map_err(|e| {
-        eprintln!("Failed to commit transaction: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+    // Step 6: Create owner's ticket
+    let ticket_code = generate_alphanumeric_code("TKT-");
+    let owner_ticket_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO tickets (id, event_id, user_id, ticket_code, ticket_type, price, status, purchase_date, qr_code, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NULL, NOW(), NOW())
+        RETURNING id
+        "#
+    )
+    .bind(Uuid::new_v4())
+    .bind(event_id)
+    .bind(owner_user_id)
+    .bind(&ticket_code)
+    .bind("table")
+    .bind(owner_share)
+    .bind("active")
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to create owner ticket: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
     })?;
 
-    // Step 9: Fetch the final reservation and return
-    // Payment stays as Pending — Stripe webhook will update to Completed
-    match table_persistence::get_reservation_by_id(&state.db_pool, reservation_id).await {
-        Ok(final_reservation) => Ok(Json(final_reservation.into())),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    // Link owner's ticket to reservation
+    sqlx::query(
+        "UPDATE table_reservations SET ticket_ids = array_append(COALESCE(ticket_ids, '{}'), $1) WHERE id = $2"
+    )
+    .bind(owner_ticket_id)
+    .bind(reservation_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to link ticket: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+    })?;
+
+    // Step 7: Add free guests if any
+    if let Some(ref free_phones) = req.free_guest_phone_numbers {
+        for phone in free_phones {
+            // Look up user by phone (optional - they may not have an account)
+            let user_id = match user_persistence::find_user_by_phone(&state.db_pool, phone).await {
+                Ok(Some(user)) => Some(user.id),
+                _ => None,
+            };
+
+            // Create ticket for free guest
+            let free_ticket_code = generate_alphanumeric_code("TKT-");
+            let free_ticket_id: Uuid = sqlx::query_scalar(
+                r#"
+                INSERT INTO tickets (id, event_id, user_id, ticket_code, ticket_type, price, status, purchase_date, qr_code, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NULL, NOW(), NOW())
+                RETURNING id
+                "#
+            )
+            .bind(Uuid::new_v4())
+            .bind(event_id)
+            .bind(user_id)
+            .bind(&free_ticket_code)
+            .bind("table")
+            .bind(Decimal::ZERO)
+            .bind("active")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to create free guest ticket: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+            })?;
+
+            // Add to reservation_guests
+            sqlx::query(
+                r#"
+                INSERT INTO reservation_guests (reservation_id, user_id, phone_number, added_by, ticket_id)
+                VALUES ($1, $2, $3, $4, $5)
+                "#
+            )
+            .bind(reservation_id)
+            .bind(user_id)
+            .bind(phone)
+            .bind(owner_user_id)
+            .bind(free_ticket_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to add free guest: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+            })?;
+
+            // Link ticket to reservation array
+            sqlx::query(
+                "UPDATE table_reservations SET ticket_ids = array_append(COALESCE(ticket_ids, '{}'), $1) WHERE id = $2"
+            )
+            .bind(free_ticket_id)
+            .bind(reservation_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to link free guest ticket: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+            })?;
+
+            // Add to guest_user_ids array if user exists
+            if let Some(uid) = user_id {
+                sqlx::query(
+                    "UPDATE table_reservations SET guest_user_ids = array_append(COALESCE(guest_user_ids, '{}'), $1) WHERE id = $2"
+                )
+                .bind(uid)
+                .bind(reservation_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to add guest user id: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+                })?;
+            }
+        }
     }
+
+    // Commit transaction
+    tx.commit().await.map_err(|e| {
+        eprintln!("Failed to commit transaction: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
+    })?;
+
+    // Fire-and-forget: SMS each paying guest with their payment link
+    let app_base_url = std::env::var("APP_BASE_URL").unwrap_or_default();
+    if !app_base_url.is_empty() {
+        for share in &all_shares {
+            if !share.is_owner {
+                if let (Some(phone), Some(token)) = (&share.phone_number, &share.payment_link_token) {
+                    let link = format!("{}/pay/{}", app_base_url, token);
+                    let msg = format!(
+                        "{} ti ha invitato al tavolo {}. La tua parte è €{:.2}. Paga qui: {}",
+                        req.contact_name, table.name, per_person, link
+                    );
+                    let phone = phone.clone();
+                    tokio::spawn(async move {
+                        crate::services::notification_service::send_sms(&phone, &msg).await;
+                    });
+                }
+            }
+        }
+    }
+
+    // Fetch final reservation and return with payment shares
+    let final_reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_id)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to fetch reservation: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    let share_responses: Vec<PaymentShareResponse> = all_shares.into_iter().map(|s| s.into()).collect();
+
+    Ok(Json(CreateSplitReservationResponse {
+        reservation: final_reservation.into(),
+        payment_shares: share_responses,
+    }))
+
+    }.await; // end of cancellation-guarded block
+
+    if result.is_err() {
+        let _ = PaymentIntent::cancel(
+            &state.stripe_client,
+            &pi_id,
+            stripe::CancelPaymentIntent::default(),
+        ).await;
+    }
+
+    result
 }
 
 fn generate_alphanumeric_code(prefix: &str) -> String {
@@ -849,4 +1004,401 @@ fn generate_alphanumeric_code(prefix: &str) -> String {
         })
         .collect();
     format!("{}{}", prefix, random_part)
+}
+
+fn generate_payment_link_token() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let random_part: String = (0..32)
+        .map(|_| {
+            let idx = rng.gen_range(0..36);
+            if idx < 26 { (b'a' + idx) as char } else { (b'0' + (idx - 26)) as char }
+        })
+        .collect();
+    format!("pay_{}", random_part)
+}
+
+// ============================================================================
+// Payment Link Endpoints (Split Payment)
+// ============================================================================
+
+/// JWT claims for payment link verification
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct PaymentLinkClaims {
+    pub share_id: String,
+    pub token: String,
+    pub exp: usize,
+}
+
+/// GET /payment-links/:token — Public preview of a payment share
+pub async fn get_payment_link_preview(
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+) -> Result<Json<PaymentLinkPreviewResponse>, StatusCode> {
+    let share = table_persistence::get_payment_share_by_token(&state.db_pool, &token)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    // Get reservation + table + event names
+    let reservation = table_persistence::get_reservation_by_id(&state.db_pool, share.reservation_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let event_name: String = sqlx::query_scalar("SELECT title FROM events WHERE id = $1")
+        .bind(reservation.event_id)
+        .fetch_one(&state.db_pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(PaymentLinkPreviewResponse {
+        amount: format!("{:.2} €", share.amount),
+        event_name,
+        table_name: table.name,
+        status: share.status,
+    }))
+}
+
+/// POST /payment-links/:token/verify — Verify identity before allowing payment
+pub async fn verify_payment_link(
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+    Json(req): Json<VerifyPaymentLinkRequest>,
+) -> Result<Json<VerifyPaymentLinkResponse>, (StatusCode, String)> {
+    let share = table_persistence::get_payment_share_by_token(&state.db_pool, &token)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, "Link di pagamento non trovato".to_string()))?;
+
+    if share.status == "paid" {
+        return Err((StatusCode::BAD_REQUEST, "Questo pagamento è già stato completato".to_string()));
+    }
+
+    // Check phone or email matches
+    let verified = match (&req.phone_number, &req.email) {
+        (Some(phone), _) => share.phone_number.as_deref() == Some(phone.as_str()),
+        (_, Some(email)) => share.guest_email.as_deref() == Some(email.as_str()),
+        _ => false,
+    };
+
+    if !verified {
+        return Err((StatusCode::FORBIDDEN, "Verifica dell'identità fallita".to_string()));
+    }
+
+    // Get reservation + table + event details
+    let reservation = table_persistence::get_reservation_by_id(&state.db_pool, share.reservation_id)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to get reservation: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to get table: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    let event_name: String = sqlx::query_scalar("SELECT title FROM events WHERE id = $1")
+        .bind(reservation.event_id)
+        .fetch_one(&state.db_pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to get event: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    // Create short-lived JWT (1 hour)
+    let claims = PaymentLinkClaims {
+        share_id: share.id.to_string(),
+        token: token.clone(),
+        exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp() as usize,
+    };
+
+    let jwt_token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(state.jwt_secret.as_bytes()),
+    )
+    .map_err(|e| {
+        eprintln!("Failed to create JWT: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+    })?;
+
+    Ok(Json(VerifyPaymentLinkResponse {
+        token: jwt_token,
+        amount: format!("{:.2} €", share.amount),
+        event_name,
+        table_name: table.name,
+        reservation_code: reservation.reservation_code,
+    }))
+}
+
+/// POST /payment-links/:token/checkout — Create Stripe Checkout Session (requires verification JWT)
+pub async fn create_payment_link_checkout(
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<CreateCheckoutRequest>,
+) -> Result<Json<CreateCheckoutResponse>, (StatusCode, String)> {
+    // Validate verification JWT from Authorization header
+    let auth_header = headers.get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Token di verifica mancante".to_string()))?;
+
+    let claims = decode::<PaymentLinkClaims>(
+        auth_header,
+        &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map_err(|_| (StatusCode::UNAUTHORIZED, "Token di verifica non valido o scaduto".to_string()))?
+    .claims;
+
+    if claims.token != token {
+        return Err((StatusCode::UNAUTHORIZED, "Token non corrisponde".to_string()));
+    }
+
+    let share = table_persistence::get_payment_share_by_token(&state.db_pool, &token)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, "Link di pagamento non trovato".to_string()))?;
+
+    if share.status == "paid" {
+        return Err((StatusCode::BAD_REQUEST, "Questo pagamento è già stato completato".to_string()));
+    }
+
+    // Get reservation for context
+    let reservation = table_persistence::get_reservation_by_id(&state.db_pool, share.reservation_id)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to get reservation: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    let event_name: String = sqlx::query_scalar("SELECT title FROM events WHERE id = $1")
+        .bind(reservation.event_id)
+        .fetch_one(&state.db_pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to get event: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    // Create Stripe Checkout Session
+    let amount_in_cents = share.amount.to_f64()
+        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "Importo non valido".to_string()))? * 100.0;
+
+    let mut checkout_params = stripe::CreateCheckoutSession::new();
+    checkout_params.mode = Some(stripe::CheckoutSessionMode::Payment);
+    checkout_params.line_items = Some(vec![
+        stripe::CreateCheckoutSessionLineItems {
+            price_data: Some(stripe::CreateCheckoutSessionLineItemsPriceData {
+                currency: Currency::EUR,
+                product_data: Some(stripe::CreateCheckoutSessionLineItemsPriceDataProductData {
+                    name: format!("Tavolo - {}", event_name),
+                    ..Default::default()
+                }),
+                unit_amount: Some(amount_in_cents as i64),
+                ..Default::default()
+            }),
+            quantity: Some(1),
+            ..Default::default()
+        }
+    ]);
+
+    // TODO: Configure success_url and cancel_url based on frontend deployment
+    checkout_params.success_url = Some("https://app.example.com/payment/success?session_id={CHECKOUT_SESSION_ID}");
+    checkout_params.cancel_url = Some("https://app.example.com/payment/cancel");
+
+    if let Some(ref email) = req.email {
+        checkout_params.customer_email = Some(email);
+    }
+
+    checkout_params.metadata = Some(
+        [
+            ("payment_share_id".to_string(), share.id.to_string()),
+            ("reservation_id".to_string(), share.reservation_id.to_string()),
+            ("payment_link_token".to_string(), token.clone()),
+        ]
+        .into_iter()
+        .collect(),
+    );
+
+    let session = stripe::CheckoutSession::create(&state.stripe_client, checkout_params)
+        .await
+        .map_err(|e| {
+            eprintln!("Stripe Checkout error: {:?}", e);
+            (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
+        })?;
+
+    // Store checkout session ID and guest info on the share
+    table_persistence::set_payment_share_checkout_session(
+        &state.db_pool,
+        share.id,
+        &session.id.to_string(),
+        req.name.clone(),
+        req.email.clone(),
+    )
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to update share: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+    })?;
+
+    let checkout_url = session.url.ok_or_else(|| {
+        (StatusCode::INTERNAL_SERVER_ERROR, "URL di checkout non disponibile".to_string())
+    })?;
+
+    println!("✅ Checkout Session created for share {}: {}", share.id, session.id);
+
+    Ok(Json(CreateCheckoutResponse { checkout_url }))
+}
+
+// ============================================================================
+// Reservation Guest Management Endpoints
+// ============================================================================
+
+/// POST /reservations/:id/add-guest — Add a free (non-paying) guest
+pub async fn add_free_guest_to_reservation(
+    State(state): State<Arc<AppState>>,
+    Path(reservation_id): Path<String>,
+    Json(req): Json<AddFreeGuestRequest>,
+) -> Result<Json<FreeGuestResponse>, (StatusCode, String)> {
+    let reservation_uuid = Uuid::parse_str(&reservation_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID prenotazione non valido".to_string()))?;
+    let added_by = Uuid::parse_str(&req.added_by)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
+
+    // Get reservation
+    let reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, "Prenotazione non trovata".to_string()))?;
+
+    // Get table for capacity check
+    let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to get table: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    // Check capacity
+    let current_count = table_persistence::get_total_people_count(&state.db_pool, reservation_uuid)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to count people: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    if current_count + 1 > table.capacity as i64 {
+        return Err((StatusCode::BAD_REQUEST, format!("Capacità massima del tavolo raggiunta: {}", table.capacity)));
+    }
+
+    // Look up user by phone (optional)
+    let user_id = match user_persistence::find_user_by_phone(&state.db_pool, &req.phone_number).await {
+        Ok(Some(user)) => Some(user.id),
+        _ => None,
+    };
+
+    // Create ticket for free guest
+    let ticket_code = generate_alphanumeric_code("TKT-");
+    let ticket_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO tickets (id, event_id, user_id, ticket_code, ticket_type, price, status, purchase_date, qr_code, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NULL, NOW(), NOW())
+        RETURNING id
+        "#
+    )
+    .bind(Uuid::new_v4())
+    .bind(reservation.event_id)
+    .bind(user_id)
+    .bind(&ticket_code)
+    .bind("table")
+    .bind(Decimal::ZERO)
+    .bind("active")
+    .fetch_one(&state.db_pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to create ticket: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore creazione biglietto".to_string())
+    })?;
+
+    // Add to reservation_guests table
+    let guest = table_persistence::add_free_guest(
+        &state.db_pool,
+        reservation_uuid,
+        user_id,
+        &req.phone_number,
+        req.email.clone(),
+        req.name.clone(),
+        added_by,
+        Some(ticket_id),
+    )
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to add guest: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Errore aggiunta ospite".to_string())
+    })?;
+
+    // Update num_people and ticket_ids on reservation
+    let new_count = (current_count + 1) as i32;
+    table_persistence::update_reservation_num_people(&state.db_pool, reservation_uuid, new_count)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to update num_people: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    table_persistence::add_ticket_to_reservation(&state.db_pool, reservation_uuid, ticket_id)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to link ticket: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+        })?;
+
+    // Add to guest_user_ids array if user exists
+    if let Some(uid) = user_id {
+        table_persistence::add_guest_to_reservation(&state.db_pool, reservation_uuid, uid)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to add guest user id: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+            })?;
+    }
+
+    Ok(Json(guest.into()))
+}
+
+/// GET /reservations/:id/payment-status — Get split payment status
+pub async fn get_reservation_payment_status(
+    State(state): State<Arc<AppState>>,
+    Path(reservation_id): Path<String>,
+) -> Result<Json<ReservationPaymentStatusResponse>, StatusCode> {
+    let reservation_uuid = Uuid::parse_str(&reservation_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let shares = table_persistence::get_payment_shares_by_reservation(&state.db_pool, reservation_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let free_guests = table_persistence::get_free_guests_by_reservation(&state.db_pool, reservation_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let amount_remaining = reservation.total_amount - reservation.amount_paid;
+
+    Ok(Json(ReservationPaymentStatusResponse {
+        reservation_id: reservation.id.to_string(),
+        total_cost: format!("{:.2} €", reservation.total_amount),
+        amount_paid: format!("{:.2} €", reservation.amount_paid),
+        amount_remaining: format!("{:.2} €", amount_remaining),
+        payment_shares: shares.into_iter().map(|s| s.into()).collect(),
+        free_guests: free_guests.into_iter().map(|g| g.into()).collect(),
+    }))
 }
