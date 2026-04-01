@@ -307,6 +307,7 @@ export default function EventTablesPage() {
         <p className="text-gray-500">Nessun risultato per i filtri applicati.</p>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -355,6 +356,7 @@ export default function EventTablesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
