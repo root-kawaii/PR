@@ -71,6 +71,7 @@ export default function DashboardPage() {
                 <CalendarDays size={18} className="text-gray-500" />
                 <h3 className="font-semibold text-gray-900">Ultimi eventi</h3>
               </div>
+              <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
@@ -105,6 +106,7 @@ export default function DashboardPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>

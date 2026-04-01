@@ -153,3 +153,8 @@ Reservations use Stripe's authorize-then-capture pattern: `/reservations/create-
 ### Idempotency
 
 Payment mutations accept an `Idempotency-Key` header. The `IdempotencyService` stores request fingerprints and cached responses in the `idempotency_keys` table; an hourly Tokio task cleans expired records.
+
+## Workflow
+
+### Before committing
+Always propose updating (or creating) the daily progress log in `docs/daily-progress/` before creating a git commit. File name format: `YYYY-MM-DD-<short-slug>.md`. Follow the structure of existing files in that folder: Overview → Changes grouped by layer (Backend / Dashboard / Mobile / Database) → Files Modified table.
