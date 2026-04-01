@@ -6,3 +6,4 @@ pub mod club_persistence;
 pub mod ticket_persistence;
 pub mod table_persistence;
 pub mod club_owner_persistence;
+pub mod area_persistence;

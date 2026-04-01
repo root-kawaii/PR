@@ -31,6 +31,35 @@ export type Table = {
   marzipanoPosition?: MarzipanoPosition; // NEW: Hotspot position in 360° view
 };
 
+export type PaymentShare = {
+  id: string;
+  phoneNumber?: string;
+  amount: string;
+  status: string; // 'pending' | 'paid' | 'expired' | 'cancelled'
+  paymentLinkToken?: string;
+  isOwner: boolean;
+  guestName?: string;
+  guestEmail?: string;
+};
+
+export type FreeGuest = {
+  id: string;
+  phoneNumber: string;
+  email?: string;
+  name?: string;
+  ticketId?: string;
+  createdAt: string;
+};
+
+export type ReservationPaymentStatus = {
+  reservationId: string;
+  totalCost: string;
+  amountPaid: string;
+  amountRemaining: string;
+  paymentShares: PaymentShare[];
+  freeGuests: FreeGuest[];
+};
+
 export type TableReservation = {
   id: string;
   reservationCode: string;
@@ -50,12 +79,15 @@ export type TableReservation = {
     numPeople: number;
     amountPaid: string;
   }>;
+  paymentShares?: PaymentShare[];
+  freeGuests?: FreeGuest[];
   table?: {
     id: string;
     name: string;
     zone?: string;
     capacity: number;
     minSpend: string;
+    totalCost?: string;
     locationDescription?: string;
     features?: string[];
   };

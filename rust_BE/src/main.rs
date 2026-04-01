@@ -9,7 +9,7 @@ use sqlx::PgPool;
 use std::env;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{error, info};
+use tracing::info;
 
 // Declare your modules
 mod controllers;
@@ -22,8 +22,11 @@ mod services;
 mod utils;
 
 // Import specific items from your modules
+use crate::controllers::area_controller::{
+    assign_table_area, create_area, delete_area, list_areas_by_club, list_my_areas, update_area,
+};
 use crate::controllers::auth_controller::{
-    login, register, send_sms_verification, verify_sms_code,
+    login, register, register_push_token, send_sms_verification, verify_sms_code,
 };
 use crate::controllers::club_controller::{
     create_club, delete_club, get_all_clubs, get_club, update_club,
@@ -47,12 +50,13 @@ use crate::controllers::payment_controller::{
     post_authorized_payment, post_payment,
 };
 use crate::controllers::table_controller::{
-    add_payment_to_reservation, create_payment_intent, create_reservation,
-    create_reservation_with_payment, create_table, delete_reservation, delete_table,
-    get_all_reservations, get_all_tables, get_available_tables_by_event, get_reservation,
-    get_reservation_by_code, get_reservations_by_table, get_table, get_tables_by_event,
-    get_tickets_for_reservation, get_user_reservations_with_details, link_ticket_to_reservation,
-    update_reservation, update_table,
+    add_free_guest_to_reservation, add_payment_to_reservation, create_payment_intent,
+    create_payment_link_checkout, create_reservation, create_reservation_with_payment,
+    create_table, delete_reservation, delete_table, get_all_reservations, get_all_tables,
+    get_available_tables_by_event, get_payment_link_preview, get_reservation,
+    get_reservation_by_code, get_reservation_payment_status, get_reservations_by_table, get_table,
+    get_tables_by_event, get_tickets_for_reservation, get_user_reservations_with_details,
+    link_ticket_to_reservation, update_reservation, update_table, verify_payment_link,
 };
 use crate::controllers::ticket_controller::{
     create_ticket, delete_ticket, get_all_tickets, get_ticket, get_ticket_by_code,
@@ -78,6 +82,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/auth/login", post(login))
         .route("/auth/send-sms-verification", post(send_sms_verification))
         .route("/auth/verify-sms-code", post(verify_sms_code))
+        .route("/auth/push-token", post(register_push_token))
         // Club owner auth routes
         .route("/auth/club-owner/register", post(register_club_owner))
         .route("/auth/club-owner/login", post(login_club_owner))
@@ -151,6 +156,21 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
             "/reservations/create-with-payment",
             post(create_reservation_with_payment),
         )
+        .route(
+            "/reservations/:reservation_id/add-guest",
+            post(add_free_guest_to_reservation),
+        )
+        .route(
+            "/reservations/:reservation_id/payment-status",
+            get(get_reservation_payment_status),
+        )
+        // Payment link routes (for split payment guests - no auth, token-based)
+        .route("/payment-links/:token", get(get_payment_link_preview))
+        .route("/payment-links/:token/verify", post(verify_payment_link))
+        .route(
+            "/payment-links/:token/checkout",
+            post(create_payment_link_checkout),
+        )
         // Club owner scoped routes (JWT protected)
         .route("/owner/club", get(get_my_club).put(update_my_club))
         .route(
@@ -202,6 +222,17 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/payments/:id", get(get_payment).delete(delete_payment))
         .route("/payments/:id/capture", post(capture_payment))
         .route("/payments/:id/cancel", post(cancel_payment))
+        // Area routes (public list + owner CRUD)
+        .route("/clubs/:club_id/areas", get(list_areas_by_club))
+        .route("/owner/areas", get(list_my_areas).post(create_area))
+        .route(
+            "/owner/areas/:area_id",
+            axum::routing::patch(update_area).delete(delete_area),
+        )
+        .route(
+            "/owner/tables/:table_id/area",
+            axum::routing::patch(assign_table_area),
+        )
         // Stripe webhook (no JWT auth — Stripe verifies via signature)
         .route("/stripe/webhooks", post(handle_stripe_webhook))
         .with_state(app_state)
@@ -256,6 +287,22 @@ async fn main() {
     let idempotency_service = IdempotencyService::new(db_pool.clone(), idempotency_config);
     info!("Idempotency service initialized");
 
+    // Load optional alert webhook URL (Discord or Slack)
+    let alert_webhook_url = env::var("ALERT_WEBHOOK_URL").ok().filter(|s| !s.is_empty());
+    if alert_webhook_url.is_some() {
+        info!("Alert webhook configured — scheduler failures will be reported");
+    }
+
+    // Payment share TTL (how long guests have to pay before their share expires)
+    let payment_share_ttl_hours: i64 = env::var("PAYMENT_SHARE_TTL_HOURS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(48);
+    info!(
+        ttl_hours = payment_share_ttl_hours,
+        "Payment share TTL configured"
+    );
+
     // Create application state with db_pool, stripe_client, jwt_secret, and idempotency_service
     let app_state = Arc::new(AppState {
         db_pool: db_pool.clone(),
@@ -263,7 +310,16 @@ async fn main() {
         jwt_secret,
         idempotency_service,
         stripe_webhook_secret,
+        alert_webhook_url,
+        payment_share_ttl_hours,
     });
+
+    // Spawn daily payment scheduler (capture day-before, re-authorize every 6 days)
+    let scheduler_state = Arc::clone(&app_state);
+    tokio::spawn(async move {
+        crate::services::payment_scheduler::run(scheduler_state).await;
+    });
+    info!("Payment scheduler started (runs daily at 09:00 UTC)");
 
     // Spawn periodic cleanup job for expired idempotency records
     let cleanup_pool = db_pool.clone();
@@ -283,7 +339,7 @@ async fn main() {
                         info!(deleted_records = rows, "Idempotency cleanup completed");
                     }
                 }
-                Err(e) => error!(error = %e, "Idempotency cleanup failed"),
+                Err(e) => tracing::error!("Idempotency cleanup failed: {}", e),
             }
         }
     });

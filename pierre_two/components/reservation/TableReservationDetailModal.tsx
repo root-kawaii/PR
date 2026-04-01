@@ -1,7 +1,4 @@
-// ====================================
-// components/reservation/TableReservationDetailModal.tsx
-// ====================================
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Modal,
   View,
@@ -11,12 +8,16 @@ import {
   StyleSheet,
   ActivityIndicator,
   TextInput,
+  Alert,
+  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTheme } from "@/context/ThemeContext";
-import { TableReservation } from "@/types";
+import { useAuth } from "@/context/AuthContext";
+import { TableReservation, PaymentShare, FreeGuest } from "@/types";
+import { API_URL } from "@/config/api";
 
 type TableReservationDetailModalProps = {
   visible: boolean;
@@ -29,63 +30,109 @@ export const TableReservationDetailModal = ({
   visible,
   reservation,
   onClose,
-  onPaymentSubmit,
 }: TableReservationDetailModalProps) => {
   const { theme } = useTheme();
-  const [numPeople, setNumPeople] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+  const [paymentShares, setPaymentShares] = useState<PaymentShare[]>([]);
+  const [freeGuests, setFreeGuests] = useState<FreeGuest[]>([]);
+  const [addingGuest, setAddingGuest] = useState(false);
+  const [newGuestPhone, setNewGuestPhone] = useState("");
+  const [newGuestName, setNewGuestName] = useState("");
+
+  // Fetch payment status when modal opens
+  useEffect(() => {
+    if (visible && reservation?.id) {
+      fetchPaymentStatus();
+    }
+  }, [visible, reservation?.id]);
 
   if (!reservation) return null;
 
-  const minSpendPerPerson = parseFloat(
-    reservation.table?.minSpend?.replace(" €", "") || "0"
-  );
-  const totalAmount = parseFloat(reservation.totalAmount.replace(" €", ""));
-  const amountPaid = parseFloat(reservation.amountPaid.replace(" €", ""));
-  const amountRemaining = parseFloat(
-    reservation.amountRemaining.replace(" €", "")
-  );
-  const contributionAmount = minSpendPerPerson * numPeople;
+  const totalAmount = parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, ""));
+  const amountPaid = parseFloat(reservation.amountPaid.replace(/[^0-9.]/g, ""));
 
-  const handlePayment = async () => {
-    setLoading(true);
-    try {
-      await onPaymentSubmit(numPeople);
-      setNumPeople(1);
-    } catch (error) {
-      console.error("Payment failed:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Calculate remaining capacity
   const tableCapacity = reservation.table?.capacity || 0;
   const currentPeople = reservation.numPeople || 0;
   const remainingCapacity = tableCapacity - currentPeople;
-  const canAddPeople = remainingCapacity > 0;
+  const canAddGuest = remainingCapacity > 0;
 
-  const incrementPeople = () => {
-    if (numPeople < remainingCapacity) {
-      setNumPeople(numPeople + 1);
+  const fetchPaymentStatus = async () => {
+    try {
+      const response = await fetch(
+        `${API_URL}/reservations/${reservation!.id}/payment-status`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setPaymentShares(data.paymentShares || []);
+        setFreeGuests(data.freeGuests || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch payment status:", error);
     }
   };
 
-  const decrementPeople = () => {
-    if (numPeople > 1) {
-      setNumPeople(numPeople - 1);
+  const handleAddFreeGuest = async () => {
+    if (!newGuestPhone.trim() || !user) return;
+
+    setAddingGuest(true);
+    try {
+      const response = await fetch(
+        `${API_URL}/reservations/${reservation!.id}/add-guest`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone_number: newGuestPhone.trim(),
+            name: newGuestName.trim() || null,
+            email: null,
+            added_by: user.id,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText);
+      }
+
+      Alert.alert("Ospite Aggiunto", "L'ospite è stato aggiunto al tavolo.");
+      setNewGuestPhone("");
+      setNewGuestName("");
+      fetchPaymentStatus();
+    } catch (error) {
+      console.error("Failed to add guest:", error);
+      Alert.alert("Errore", "Impossibile aggiungere l'ospite. Riprova.");
+    } finally {
+      setAddingGuest(false);
+    }
+  };
+
+  const handleSharePaymentLink = async (share: PaymentShare) => {
+    if (!share.paymentLinkToken) return;
+
+    try {
+      // TODO: Replace with actual app domain
+      const paymentUrl = `https://app.pierre.com/pay/${share.paymentLinkToken}`;
+      await Share.share({
+        message: `Paga la tua quota di ${share.amount} per il tavolo!\n${paymentUrl}`,
+        title: "Link di Pagamento",
+      });
+    } catch (error) {
+      console.error("Share error:", error);
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "confirmed":
+      case "paid":
         return theme.success;
       case "pending":
         return theme.warning;
       case "completed":
         return theme.info;
       case "cancelled":
+      case "expired":
         return theme.error;
       default:
         return theme.textTertiary;
@@ -98,14 +145,21 @@ export const TableReservationDetailModal = ({
         return "Confermata";
       case "pending":
         return "In attesa";
+      case "paid":
+        return "Pagato";
       case "completed":
         return "Completata";
       case "cancelled":
         return "Cancellata";
+      case "expired":
+        return "Scaduto";
       default:
         return status;
     }
   };
+
+  const paidShares = paymentShares.filter((s) => s.status === "paid");
+  const pendingShares = paymentShares.filter((s) => s.status === "pending");
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -205,17 +259,9 @@ export const TableReservationDetailModal = ({
                       {reservation.table.capacity} persone
                     </ThemedText>
                   </View>
-                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
-                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>
-                      Min. a persona
-                    </ThemedText>
-                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>
-                      {reservation.table.minSpend}
-                    </ThemedText>
-                  </View>
                   {reservation.table.locationDescription && (
                     <View style={[styles.locationContainer, { borderTopColor: theme.border }]}>
-                      <IconSymbol name="location" size={16} color={theme.textTertiary} />
+                      <IconSymbol name="location.fill" size={16} color={theme.textTertiary} />
                       <ThemedText style={[styles.locationText, { color: theme.textTertiary }]}>
                         {reservation.table.locationDescription}
                       </ThemedText>
@@ -279,7 +325,7 @@ export const TableReservationDetailModal = ({
                     </ThemedText>
                   </View>
                 </View>
-                {!canAddPeople && (
+                {!canAddGuest && (
                   <View style={[styles.fullCapacityBanner, { backgroundColor: theme.warningLight, borderColor: theme.warning }]}>
                     <IconSymbol name="exclamationmark.triangle.fill" size={16} color={theme.warning} />
                     <ThemedText style={[styles.fullCapacityText, { color: theme.warning }]}>
@@ -290,8 +336,94 @@ export const TableReservationDetailModal = ({
               </View>
             </View>
 
-            {/* Participants */}
-            {reservation.participants && reservation.participants.length > 0 && (
+            {/* Payment Shares */}
+            {paymentShares.length > 0 && (
+              <View style={styles.section}>
+                <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
+                  Quote di Pagamento ({paidShares.length}/{paymentShares.length} pagate)
+                </ThemedText>
+                <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  {paymentShares.map((share) => (
+                    <View key={share.id} style={[styles.shareRow, { borderBottomColor: theme.border }]}>
+                      <View style={[
+                        styles.shareIcon,
+                        { backgroundColor: share.isOwner ? `${theme.primary}1A` : `${getStatusColor(share.status)}1A` }
+                      ]}>
+                        <IconSymbol
+                          name={share.isOwner ? "heart.fill" : "person"}
+                          size={18}
+                          color={share.isOwner ? theme.primary : getStatusColor(share.status)}
+                        />
+                      </View>
+                      <View style={styles.shareInfo}>
+                        <ThemedText style={[styles.shareName, { color: theme.text }]}>
+                          {share.isOwner
+                            ? "Tu (Proprietario)"
+                            : share.guestName || share.phoneNumber || "Ospite"}
+                        </ThemedText>
+                        <View style={styles.shareStatusRow}>
+                          <View style={[
+                            styles.shareStatusBadge,
+                            { backgroundColor: `${getStatusColor(share.status)}33` }
+                          ]}>
+                            <ThemedText style={[styles.shareStatusText, { color: getStatusColor(share.status) }]}>
+                              {getStatusText(share.status)}
+                            </ThemedText>
+                          </View>
+                          <ThemedText style={[styles.shareAmount, { color: theme.text }]}>
+                            {share.amount}
+                          </ThemedText>
+                        </View>
+                      </View>
+                      {!share.isOwner && share.status === "pending" && share.paymentLinkToken && (
+                        <TouchableOpacity
+                          style={[styles.shareLinkButton, { backgroundColor: `${theme.primary}1A` }]}
+                          onPress={() => handleSharePaymentLink(share)}
+                        >
+                          <IconSymbol name="arrow.right.square.fill" size={18} color={theme.primary} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Free Guests */}
+            {freeGuests.length > 0 && (
+              <View style={styles.section}>
+                <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
+                  Ospiti Gratuiti ({freeGuests.length})
+                </ThemedText>
+                <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  {freeGuests.map((guest) => (
+                    <View key={guest.id} style={[styles.shareRow, { borderBottomColor: theme.border }]}>
+                      <View style={[styles.shareIcon, { backgroundColor: `${theme.success}1A` }]}>
+                        <IconSymbol name="person" size={18} color={theme.success} />
+                      </View>
+                      <View style={styles.shareInfo}>
+                        <ThemedText style={[styles.shareName, { color: theme.text }]}>
+                          {guest.name || guest.phoneNumber}
+                        </ThemedText>
+                        {guest.name && (
+                          <ThemedText style={[styles.sharePhone, { color: theme.textTertiary }]}>
+                            {guest.phoneNumber}
+                          </ThemedText>
+                        )}
+                      </View>
+                      <View style={[styles.freeGuestBadge, { backgroundColor: `${theme.success}33` }]}>
+                        <ThemedText style={[styles.freeGuestBadgeText, { color: theme.success }]}>
+                          Gratis
+                        </ThemedText>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Legacy Participants (backward compat) */}
+            {paymentShares.length === 0 && reservation.participants && reservation.participants.length > 0 && (
               <View style={styles.section}>
                 <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                   Partecipanti ({reservation.participants.length})
@@ -322,14 +454,6 @@ export const TableReservationDetailModal = ({
                 Dettagli Prenotazione
               </ThemedText>
               <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-                <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
-                  <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>
-                    Nome contatto
-                  </ThemedText>
-                  <ThemedText style={[styles.infoValue, { color: theme.text }]}>
-                    {reservation.contactName}
-                  </ThemedText>
-                </View>
                 <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
                   <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>
                     Nome contatto
@@ -403,104 +527,72 @@ export const TableReservationDetailModal = ({
                     <View
                       style={[
                         styles.progressFill,
-                        { width: `${(amountPaid / totalAmount) * 100}%`, backgroundColor: theme.success },
+                        {
+                          width: `${totalAmount > 0 ? (amountPaid / totalAmount) * 100 : 0}%`,
+                          backgroundColor: theme.success,
+                        },
                       ]}
                     />
                   </View>
                   <ThemedText style={[styles.progressText, { color: theme.textTertiary }]}>
-                    {Math.round((amountPaid / totalAmount) * 100)}% pagato
+                    {totalAmount > 0 ? Math.round((amountPaid / totalAmount) * 100) : 0}% pagato
                   </ThemedText>
                 </View>
+
+                {/* Pending shares info */}
+                {pendingShares.length > 0 && (
+                  <View style={[styles.pendingInfo, { backgroundColor: `${theme.warning}1A`, borderColor: `${theme.warning}4D` }]}>
+                    <IconSymbol name="clock.fill" size={16} color={theme.warning} />
+                    <ThemedText style={[styles.pendingInfoText, { color: theme.warning }]}>
+                      {pendingShares.length} {pendingShares.length === 1 ? "pagamento in attesa" : "pagamenti in attesa"}
+                    </ThemedText>
+                  </View>
+                )}
               </View>
             </View>
 
-            {/* Payment Contribution */}
-            {canAddPeople && amountRemaining > 0 && reservation.status !== "cancelled" && (
+            {/* Add Free Guest */}
+            {canAddGuest && reservation.status !== "cancelled" && (
               <View style={styles.section}>
                 <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
-                  Aggiungi Persone
+                  Aggiungi Ospite Gratuito
                 </ThemedText>
                 <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-                  <ThemedText style={[styles.contributionDescription, { color: theme.textTertiary }]}>
-                    Ci sono ancora {remainingCapacity} {remainingCapacity === 1 ? 'posto disponibile' : 'posti disponibili'} al tavolo.
-                    Seleziona per quante persone vuoi pagare la quota minima di{" "}
-                    {reservation.table?.minSpend} a persona.
+                  <ThemedText style={[styles.addGuestDescription, { color: theme.textTertiary }]}>
+                    Aggiungi una persona al tavolo senza pagamento.
+                    {remainingCapacity > 0 && ` ${remainingCapacity} ${remainingCapacity === 1 ? "posto disponibile" : "posti disponibili"}.`}
                   </ThemedText>
 
-                  {/* People Counter */}
-                  <View style={styles.counterContainer}>
-                    <ThemedText style={[styles.counterLabel, { color: theme.textTertiary }]}>
-                      Numero di persone da aggiungere
-                    </ThemedText>
-                    <View style={styles.counter}>
-                      <TouchableOpacity
-                        style={[
-                          styles.counterButton,
-                          { backgroundColor: theme.backgroundSurface },
-                          numPeople <= 1 && styles.counterButtonDisabled,
-                        ]}
-                        onPress={decrementPeople}
-                        disabled={numPeople <= 1}
-                      >
-                        <IconSymbol
-                          name="minus"
-                          size={20}
-                          color={numPeople <= 1 ? theme.textTertiary : theme.text}
-                        />
-                      </TouchableOpacity>
-                      <View style={styles.counterValueContainer}>
-                        <ThemedText style={[styles.counterValue, { color: theme.text }]}>
-                          {numPeople}
-                        </ThemedText>
-                      </View>
-                      <TouchableOpacity
-                        style={[
-                          styles.counterButton,
-                          { backgroundColor: theme.backgroundSurface },
-                          numPeople >= remainingCapacity &&
-                            styles.counterButtonDisabled,
-                        ]}
-                        onPress={incrementPeople}
-                        disabled={numPeople >= remainingCapacity}
-                      >
-                        <IconSymbol
-                          name="plus"
-                          size={20}
-                          color={
-                            numPeople >= remainingCapacity
-                              ? theme.textTertiary
-                              : theme.text
-                          }
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+                  <TextInput
+                    style={[styles.addGuestInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+                    placeholder="Numero di telefono"
+                    placeholderTextColor={theme.textTertiary}
+                    value={newGuestPhone}
+                    onChangeText={setNewGuestPhone}
+                    keyboardType="phone-pad"
+                  />
+                  <TextInput
+                    style={[styles.addGuestInput, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
+                    placeholder="Nome (opzionale)"
+                    placeholderTextColor={theme.textTertiary}
+                    value={newGuestName}
+                    onChangeText={setNewGuestName}
+                  />
 
-                  {/* Contribution Amount */}
-                  <View style={[styles.contributionAmountContainer, { backgroundColor: theme.background }]}>
-                    <ThemedText style={[styles.contributionAmountLabel, { color: theme.textTertiary }]}>
-                      Importo da pagare
-                    </ThemedText>
-                    <ThemedText style={[styles.contributionAmount, { color: theme.primary }]}>
-                      {contributionAmount.toFixed(2)} €
-                    </ThemedText>
-                  </View>
-
-                  {/* Pay Button */}
                   <TouchableOpacity
                     style={[
-                      styles.payButton,
-                      { backgroundColor: theme.primary },
-                      loading && styles.payButtonDisabled,
+                      styles.addGuestButton,
+                      { backgroundColor: theme.success },
+                      (!newGuestPhone.trim() || addingGuest) && styles.addGuestButtonDisabled,
                     ]}
-                    onPress={handlePayment}
-                    disabled={loading}
+                    onPress={handleAddFreeGuest}
+                    disabled={!newGuestPhone.trim() || addingGuest}
                   >
-                    {loading ? (
+                    {addingGuest ? (
                       <ActivityIndicator size="small" color={theme.textInverse} />
                     ) : (
-                      <ThemedText style={[styles.payButtonText, { color: theme.textInverse }]}>
-                        Paga {contributionAmount.toFixed(2)} €
+                      <ThemedText style={[styles.addGuestButtonText, { color: theme.textInverse }]}>
+                        Aggiungi Ospite
                       </ThemedText>
                     )}
                   </TouchableOpacity>
@@ -508,7 +600,6 @@ export const TableReservationDetailModal = ({
               </View>
             )}
 
-            {/* Spacing at bottom */}
             <View style={{ height: 30 }} />
           </ScrollView>
         </View>
@@ -744,6 +835,73 @@ const styles = StyleSheet.create({
     color: "#f59e0b",
     fontWeight: "600",
   },
+  // Payment shares
+  shareRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a2a",
+  },
+  shareIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  shareInfo: {
+    flex: 1,
+  },
+  shareName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 4,
+  },
+  sharePhone: {
+    fontSize: 13,
+    color: "#9ca3af",
+  },
+  shareStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  shareStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  shareStatusText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  shareAmount: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  shareLinkButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  // Free guests
+  freeGuestBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  freeGuestBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  // Participants (legacy)
   participantRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -773,6 +931,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#9ca3af",
   },
+  // Payment summary
   paymentRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -823,79 +982,45 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: "center",
   },
-  contributionDescription: {
+  pendingInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  pendingInfoText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  // Add free guest
+  addGuestDescription: {
     fontSize: 14,
     color: "#9ca3af",
-    marginBottom: 20,
+    marginBottom: 16,
     lineHeight: 20,
   },
-  counterContainer: {
-    marginBottom: 20,
-  },
-  counterLabel: {
-    fontSize: 10,
-    color: "#9ca3af",
-    marginBottom: 12,
-    fontWeight: "500",
-  },
-  counter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-  },
-  counterButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#2a2a2a",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  counterButtonDisabled: {
-    opacity: 0.4,
-  },
-  counterValueContainer: {
-    minWidth: 60,
-    alignItems: "center",
-  },
-  counterValue: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  contributionAmountContainer: {
-    backgroundColor: "#0f0f0f",
+  addGuestInput: {
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  contributionAmountLabel: {
+    padding: 14,
     fontSize: 14,
-    color: "#9ca3af",
-    fontWeight: "500",
+    borderWidth: 1,
+    marginBottom: 12,
   },
-  contributionAmount: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#ec4899",
-  },
-  payButton: {
-    backgroundColor: "#ec4899",
+  addGuestButton: {
     borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  payButtonDisabled: {
-    opacity: 0.6,
+  addGuestButtonDisabled: {
+    opacity: 0.5,
   },
-  payButtonText: {
+  addGuestButtonText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#fff",
   },
 });

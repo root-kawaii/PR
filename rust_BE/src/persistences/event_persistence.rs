@@ -1,4 +1,4 @@
-use crate::models::{Event, CreateEventRequest, UpdateEventRequest};
+use crate::models::{CreateEventRequest, Event, UpdateEventRequest};
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
@@ -7,7 +7,7 @@ pub async fn get_all_events(pool: &PgPool) -> Result<Vec<Event>> {
     let events = sqlx::query_as::<_, Event>(
         r#"
         SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
-               tour_provider, tour_id, marzipano_config, created_at, updated_at
+               matterport_id, tour_provider, tour_id, marzipano_config, event_date, created_at, updated_at
         FROM events
         ORDER BY created_at DESC
         "#,
@@ -23,7 +23,7 @@ pub async fn get_event_by_id(pool: &PgPool, event_id: Uuid) -> Result<Option<Eve
     let event = sqlx::query_as::<_, Event>(
         r#"
         SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
-               tour_provider, tour_id, marzipano_config, created_at, updated_at
+               matterport_id, tour_provider, tour_id, marzipano_config, event_date, created_at, updated_at
         FROM events
         WHERE id = $1
         "#,
@@ -36,17 +36,14 @@ pub async fn get_event_by_id(pool: &PgPool, event_id: Uuid) -> Result<Option<Eve
 }
 
 /// Create a new event
-pub async fn create_event(
-    pool: &PgPool,
-    request: CreateEventRequest,
-) -> Result<Event> {
+pub async fn create_event(pool: &PgPool, request: CreateEventRequest) -> Result<Event> {
     let event = sqlx::query_as::<_, Event>(
         r#"
         INSERT INTO events (id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
-                           tour_provider, tour_id, marzipano_config, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+                           matterport_id, tour_provider, tour_id, marzipano_config, event_date, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
         RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
-                  tour_provider, tour_id, marzipano_config, created_at, updated_at
+                  matterport_id, tour_provider, tour_id, marzipano_config, event_date, created_at, updated_at
         "#,
     )
     .bind(Uuid::new_v4())
@@ -64,6 +61,7 @@ pub async fn create_event(
     .bind(request.tour_provider)
     .bind(request.tour_id)
     .bind(request.marzipano_config)
+    .bind(request.event_date)
     .fetch_one(pool)
     .await?;
 
@@ -91,13 +89,15 @@ pub async fn update_event(
             price = COALESCE($9, price),
             description = COALESCE($10, description),
             club_id = COALESCE($11, club_id),
-            tour_provider = COALESCE($12, tour_provider),
-            tour_id = COALESCE($13, tour_id),
-            marzipano_config = COALESCE($14, marzipano_config),
+            matterport_id = COALESCE($12, matterport_id),
+            tour_provider = COALESCE($13, tour_provider),
+            tour_id = COALESCE($14, tour_id),
+            marzipano_config = COALESCE($15, marzipano_config),
+            event_date = COALESCE($16, event_date),
             updated_at = NOW()
-        WHERE id = $15
+        WHERE id = $17
         RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
-                  tour_provider, tour_id, marzipano_config, created_at, updated_at
+                  matterport_id, tour_provider, tour_id, marzipano_config, event_date, created_at, updated_at
         "#,
     )
     .bind(request.title)
@@ -114,6 +114,7 @@ pub async fn update_event(
     .bind(request.tour_provider)
     .bind(request.tour_id)
     .bind(request.marzipano_config)
+    .bind(request.event_date)
     .bind(event_id)
     .fetch_optional(pool)
     .await?;
@@ -126,7 +127,7 @@ pub async fn get_events_by_club_id(pool: &PgPool, club_id: Uuid) -> Result<Vec<E
     let events = sqlx::query_as::<_, Event>(
         r#"
         SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
-               tour_provider, tour_id, marzipano_config, created_at, updated_at
+               matterport_id, tour_provider, tour_id, marzipano_config, event_date, created_at, updated_at
         FROM events
         WHERE club_id = $1
         ORDER BY created_at DESC

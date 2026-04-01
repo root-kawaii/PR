@@ -22,7 +22,8 @@ pub struct Table {
     pub available: bool,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-    pub marzipano_position: Option<JsonValue>, // NEW: {sceneId, yaw, pitch}
+    pub marzipano_position: Option<JsonValue>,
+    pub area_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -65,6 +66,7 @@ pub struct TableResponse {
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
     pub marzipano_position: Option<JsonValue>,
+    pub area_id: Option<String>,
 }
 
 impl From<Table> for TableResponse {
@@ -81,6 +83,7 @@ impl From<Table> for TableResponse {
             location_description: table.location_description,
             features: table.features,
             marzipano_position: table.marzipano_position,
+            area_id: table.area_id.map(|id| id.to_string()),
         }
     }
 }
@@ -299,4 +302,192 @@ pub struct CreatePaymentIntentResponse {
     pub client_secret: String,
     pub payment_intent_id: String,
     pub amount: String, // Formatted as "X.XX €"
+    pub total_cost: Option<String>,
+    pub per_person_amount: Option<String>,
+    pub owner_share: Option<String>,
+}
+
+// ============================================================================
+// Split Payment Models
+// ============================================================================
+
+#[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
+pub struct ReservationPaymentShare {
+    pub id: Uuid,
+    pub reservation_id: Uuid,
+    pub user_id: Option<Uuid>,
+    pub phone_number: Option<String>,
+    pub amount: Decimal,
+    pub status: String,
+    pub stripe_payment_intent_id: Option<String>,
+    pub payment_link_token: Option<String>,
+    pub payment_id: Option<Uuid>,
+    pub is_owner: bool,
+    pub guest_name: Option<String>,
+    pub guest_email: Option<String>,
+    pub stripe_checkout_session_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
+pub struct ReservationGuest {
+    pub id: Uuid,
+    pub reservation_id: Uuid,
+    pub user_id: Option<Uuid>,
+    pub phone_number: String,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub added_by: Uuid,
+    pub ticket_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// Split Payment Request/Response Types
+// ============================================================================
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct CreateSplitPaymentIntentRequest {
+    pub table_id: String,
+    pub event_id: String,
+    pub owner_user_id: String,
+    pub num_paying_guests: i32,
+    pub paying_guest_phone_numbers: Vec<String>,
+    pub contact_name: String,
+    pub contact_email: String,
+    pub contact_phone: String,
+    pub special_requests: Option<String>,
+    pub idempotency_key: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct CreateSplitReservationRequest {
+    pub table_id: String,
+    pub event_id: String,
+    pub owner_user_id: String,
+    pub paying_guest_phone_numbers: Vec<String>,
+    pub free_guest_phone_numbers: Option<Vec<String>>,
+    pub stripe_payment_intent_id: String,
+    pub contact_name: String,
+    pub contact_email: String,
+    pub contact_phone: String,
+    pub special_requests: Option<String>,
+    pub idempotency_key: Option<Uuid>,
+}
+
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentShareResponse {
+    pub id: String,
+    pub phone_number: Option<String>,
+    pub amount: String,
+    pub status: String,
+    pub payment_link_token: Option<String>,
+    pub is_owner: bool,
+    pub guest_name: Option<String>,
+    pub guest_email: Option<String>,
+}
+
+impl From<ReservationPaymentShare> for PaymentShareResponse {
+    fn from(share: ReservationPaymentShare) -> Self {
+        PaymentShareResponse {
+            id: share.id.to_string(),
+            phone_number: share.phone_number,
+            amount: format!("{:.2} €", share.amount),
+            status: share.status,
+            payment_link_token: share.payment_link_token,
+            is_owner: share.is_owner,
+            guest_name: share.guest_name,
+            guest_email: share.guest_email,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSplitReservationResponse {
+    pub reservation: TableReservationResponse,
+    pub payment_shares: Vec<PaymentShareResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentLinkPreviewResponse {
+    pub amount: String,
+    pub event_name: String,
+    pub table_name: String,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyPaymentLinkRequest {
+    pub phone_number: Option<String>,
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyPaymentLinkResponse {
+    pub token: String,
+    pub amount: String,
+    pub event_name: String,
+    pub table_name: String,
+    pub reservation_code: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCheckoutRequest {
+    pub name: Option<String>,
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCheckoutResponse {
+    pub checkout_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddFreeGuestRequest {
+    pub phone_number: String,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub added_by: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeGuestResponse {
+    pub id: String,
+    pub phone_number: String,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub ticket_id: Option<String>,
+    pub created_at: String,
+}
+
+impl From<ReservationGuest> for FreeGuestResponse {
+    fn from(guest: ReservationGuest) -> Self {
+        FreeGuestResponse {
+            id: guest.id.to_string(),
+            phone_number: guest.phone_number,
+            email: guest.email,
+            name: guest.name,
+            ticket_id: guest.ticket_id.map(|id| id.to_string()),
+            created_at: guest.created_at.to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReservationPaymentStatusResponse {
+    pub reservation_id: String,
+    pub total_cost: String,
+    pub amount_paid: String,
+    pub amount_remaining: String,
+    pub payment_shares: Vec<PaymentShareResponse>,
+    pub free_guests: Vec<FreeGuestResponse>,
 }

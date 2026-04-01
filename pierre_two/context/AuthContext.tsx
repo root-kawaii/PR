@@ -2,10 +2,54 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 import { API_URL } from '../config/api';
 const TOKEN_KEY = '@auth_token';
 const USER_KEY = '@auth_user';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+async function registerPushToken(authToken: string): Promise<void> {
+  if (!Constants.isDevice) return;
+
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== 'granted') return;
+
+  try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    const tokenData = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+    await fetch(`${API_URL}/auth/push-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ push_token: tokenData.data }),
+    });
+  } catch (e) {
+    console.warn('Push token registration failed:', e);
+  }
+
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+    });
+  }
+}
 
 interface AuthContextType {
   user: User | null;
@@ -75,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(data.token);
       await AsyncStorage.setItem(TOKEN_KEY, data.token);
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      registerPushToken(data.token);
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -103,6 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(authData.token);
       await AsyncStorage.setItem(TOKEN_KEY, authData.token);
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(authData.user));
+      registerPushToken(authData.token);
     } catch (error) {
       console.error('Registration error:', error);
       throw error;

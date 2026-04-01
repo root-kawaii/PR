@@ -26,8 +26,17 @@ pub use table::{
     TableReservationResponse, TableReservationWithDetailsResponse, TableReservationsResponse, TableReservationsWithDetailsResponse,
     TableSummary,
     AddPaymentToReservationRequest, LinkTicketToReservationRequest,
-    CreateReservationWithPaymentRequest, CreatePaymentIntentRequest, CreatePaymentIntentResponse
+    CreateReservationWithPaymentRequest, CreatePaymentIntentRequest, CreatePaymentIntentResponse,
+    ReservationPaymentShare, ReservationGuest,
+    CreateSplitPaymentIntentRequest, CreateSplitReservationRequest, CreateSplitReservationResponse,
+    PaymentShareResponse, PaymentLinkPreviewResponse,
+    VerifyPaymentLinkRequest, VerifyPaymentLinkResponse,
+    CreateCheckoutRequest, CreateCheckoutResponse,
+    AddFreeGuestRequest, FreeGuestResponse, ReservationPaymentStatusResponse
 };
+
+pub mod area;
+pub use area::{Area, CreateAreaRequest, UpdateAreaRequest, AreaResponse, AssignAreaRequest};
 
 use crate::idempotency::IdempotencyService;
 
@@ -37,4 +46,8 @@ pub struct AppState {
     pub jwt_secret: String,
     pub idempotency_service: IdempotencyService,
     pub stripe_webhook_secret: String,
+    /// Optional Discord/Slack webhook URL for failure alerts
+    pub alert_webhook_url: Option<String>,
+    /// Hours before a pending payment share expires (default: 48)
+    pub payment_share_ttl_hours: i64,
 }
