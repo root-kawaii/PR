@@ -22,6 +22,7 @@ pub struct Event {
     pub tour_provider: Option<String>, // 'marzipano', 'kuula', 'matterport', 'cloudpano'
     pub tour_id: Option<String>, // DEPRECATED for marzipano
     pub marzipano_config: Option<JsonValue>, // JSON array of MarzipanoScene objects
+    pub event_date: Option<chrono::NaiveDate>, // Machine-readable date for scheduler
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -31,6 +32,7 @@ pub struct CreateEventRequest {
     pub title: String,
     pub venue: String,
     pub date: String,
+    pub event_date: Option<chrono::NaiveDate>, // Machine-readable date (YYYY-MM-DD) for scheduler
     pub image: String,
     pub status: Option<String>,
     pub time: Option<String>,
@@ -50,6 +52,7 @@ pub struct UpdateEventRequest {
     pub title: Option<String>,
     pub venue: Option<String>,
     pub date: Option<String>,
+    pub event_date: Option<chrono::NaiveDate>, // Machine-readable date (YYYY-MM-DD) for scheduler
     pub image: Option<String>,
     pub status: Option<String>,
     pub time: Option<String>,

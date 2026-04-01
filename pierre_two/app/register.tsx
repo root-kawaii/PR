@@ -1,29 +1,40 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native";
+import { useRouter } from "expo-router";
+import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import Constants from "expo-constants";
 
-const API_URL = 'http://172.20.10.5:3000';
-
-type RegistrationStep = 'info' | 'phone-verification';
+type RegistrationStep = "info" | "phone-verification";
 
 export default function RegisterScreen() {
+  const API_URL = Constants.expoConfig?.extra?.apiUrl;
+
   // Step management
-  const [step, setStep] = useState<RegistrationStep>('info');
+  const [step, setStep] = useState<RegistrationStep>("info");
 
   // User info
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState<Date | undefined>(undefined);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Phone verification
-  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationCode, setVerificationCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [tempUserId, setTempUserId] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -37,28 +48,28 @@ export default function RegisterScreen() {
   const handleContinueToPhoneVerification = async () => {
     // Validation
     if (!name || !email || !password || !dateOfBirth || !phone) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      Alert.alert("Error", "Please fill in all required fields");
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert("Error", "Password must be at least 6 characters");
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      Alert.alert("Error", "Passwords do not match");
       return;
     }
 
-    if (!email.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email address');
+    if (!email.includes("@")) {
+      Alert.alert("Error", "Please enter a valid email address");
       return;
     }
 
     // Validate phone number (must be 10 digits for Italian numbers)
     if (phone.length < 8) {
-      Alert.alert('Error', 'Please enter a valid phone number');
+      Alert.alert("Error", "Please enter a valid phone number");
       return;
     }
 
@@ -66,29 +77,32 @@ export default function RegisterScreen() {
     try {
       // Create the account first
       const response = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
           email: email.trim(),
           password,
-          date_of_birth: dateOfBirth.toISOString().split('T')[0],
+          date_of_birth: dateOfBirth.toISOString().split("T")[0],
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Registration failed');
+        throw new Error(data.message || "Registration failed");
       }
 
       // Store temp user ID for phone verification
       setTempUserId(data.user.id);
 
       // Move to phone verification step
-      setStep('phone-verification');
+      setStep("phone-verification");
     } catch (error: any) {
-      Alert.alert('Registration Failed', error.message || 'Could not create account');
+      Alert.alert(
+        "Registration Failed",
+        error.message || "Could not create account",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -101,8 +115,8 @@ export default function RegisterScreen() {
     setIsLoading(true);
     try {
       const response = await fetch(`${API_URL}/auth/send-sms-verification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: tempUserId,
           phone_number: `+39${phone.trim()}`,
@@ -110,13 +124,13 @@ export default function RegisterScreen() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send verification code');
+        throw new Error("Failed to send verification code");
       }
 
       setCodeSent(true);
-      Alert.alert('Success', 'Verification code sent to your phone!');
+      Alert.alert("Success", "Verification code sent to your phone!");
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to send verification code');
+      Alert.alert("Error", error.message || "Failed to send verification code");
     } finally {
       setIsLoading(false);
     }
@@ -125,15 +139,15 @@ export default function RegisterScreen() {
   // Step 3: Verify code and complete registration
   const handleVerifyAndCompleteRegistration = async () => {
     if (!tempUserId || !phone || !verificationCode) {
-      Alert.alert('Error', 'Please enter the verification code');
+      Alert.alert("Error", "Please enter the verification code");
       return;
     }
 
     setIsVerifying(true);
     try {
       const response = await fetch(`${API_URL}/auth/verify-sms-code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: tempUserId,
           phone_number: `+39${phone.trim()}`,
@@ -144,13 +158,13 @@ export default function RegisterScreen() {
       const data = await response.json();
 
       if (!response.ok || !data.verified) {
-        throw new Error(data.message || 'Invalid verification code');
+        throw new Error(data.message || "Invalid verification code");
       }
 
       // Phone verified! Now complete the login
-      Alert.alert('Success', 'Phone verified! Logging you in...', [
+      Alert.alert("Success", "Phone verified! Logging you in...", [
         {
-          text: 'OK',
+          text: "OK",
           onPress: async () => {
             try {
               await register({
@@ -158,73 +172,120 @@ export default function RegisterScreen() {
                 email: email.trim(),
                 password,
                 phone_number: `+39${phone.trim()}`,
-                date_of_birth: dateOfBirth!.toISOString().split('T')[0],
+                date_of_birth: dateOfBirth!.toISOString().split("T")[0],
               });
-              router.replace('/(tabs)');
-            } catch (error) {
-              Alert.alert('Error', 'Account created but login failed. Please log in manually.');
-              router.replace('/');
+              router.replace("/(tabs)");
+            } catch {
+              Alert.alert(
+                "Error",
+                "Account created but login failed. Please log in manually.",
+              );
+              router.replace("/");
             }
           },
         },
       ]);
     } catch (error: any) {
-      Alert.alert('Verification Failed', error.message || 'Invalid code. Please try again.');
+      Alert.alert(
+        "Verification Failed",
+        error.message || "Invalid code. Please try again.",
+      );
     } finally {
       setIsVerifying(false);
     }
   };
 
   const formatDate = (date: Date | undefined) => {
-    if (!date) return 'Not Set';
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    if (!date) return "Not Set";
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
+    setShowDatePicker(Platform.OS === "ios");
     if (selectedDate) {
       setDateOfBirth(selectedDate);
     }
   };
 
   // Render different UI based on step
-  if (step === 'phone-verification') {
+  if (step === "phone-verification") {
     return (
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: theme.background }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.content}>
-            <Text style={[styles.title, { color: theme.text }]}>Verify Your Phone</Text>
+            <Text style={[styles.title, { color: theme.text }]}>
+              Verify Your Phone
+            </Text>
             <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
               We'll send a verification code to +39 {phone}
             </Text>
 
             <View style={styles.form}>
-              <View style={[styles.phoneDisplay, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-                <Text style={[styles.phoneDisplayLabel, { color: theme.textTertiary }]}>Phone Number</Text>
-                <Text style={[styles.phoneDisplayValue, { color: theme.text }]}>+39 {phone}</Text>
+              <View
+                style={[
+                  styles.phoneDisplay,
+                  {
+                    backgroundColor: theme.backgroundElevated,
+                    borderColor: theme.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.phoneDisplayLabel,
+                    { color: theme.textTertiary },
+                  ]}
+                >
+                  Phone Number
+                </Text>
+                <Text style={[styles.phoneDisplayValue, { color: theme.text }]}>
+                  +39 {phone}
+                </Text>
               </View>
 
               {!codeSent ? (
                 <TouchableOpacity
-                  style={[styles.button, { backgroundColor: theme.primary }, isLoading && styles.buttonDisabled]}
+                  style={[
+                    styles.button,
+                    { backgroundColor: theme.primary },
+                    isLoading && styles.buttonDisabled,
+                  ]}
                   onPress={handleSendVerificationCode}
                   disabled={isLoading}
                 >
-                  <Text style={[styles.buttonText, { color: theme.textInverse }]}>
-                    {isLoading ? 'Sending...' : 'Send Verification Code'}
+                  <Text
+                    style={[styles.buttonText, { color: theme.textInverse }]}
+                  >
+                    {isLoading ? "Sending..." : "Send Verification Code"}
                   </Text>
                 </TouchableOpacity>
               ) : (
                 <>
-                  <Text style={[styles.instructionText, { color: theme.textTertiary }]}>
+                  <Text
+                    style={[
+                      styles.instructionText,
+                      { color: theme.textTertiary },
+                    ]}
+                  >
                     Enter the 6-digit code sent to your phone
                   </Text>
 
                   <TextInput
-                    style={[styles.codeInput, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
+                    style={[
+                      styles.codeInput,
+                      {
+                        backgroundColor: theme.backgroundElevated,
+                        borderColor: theme.border,
+                        color: theme.text,
+                      },
+                    ]}
                     placeholder="000000"
                     placeholderTextColor={theme.textTertiary}
                     value={verificationCode}
@@ -235,12 +296,19 @@ export default function RegisterScreen() {
                   />
 
                   <TouchableOpacity
-                    style={[styles.button, { backgroundColor: theme.primary }, (isVerifying || verificationCode.length !== 6) && styles.buttonDisabled]}
+                    style={[
+                      styles.button,
+                      { backgroundColor: theme.primary },
+                      (isVerifying || verificationCode.length !== 6) &&
+                        styles.buttonDisabled,
+                    ]}
                     onPress={handleVerifyAndCompleteRegistration}
                     disabled={isVerifying || verificationCode.length !== 6}
                   >
-                    <Text style={[styles.buttonText, { color: theme.textInverse }]}>
-                      {isVerifying ? 'Verifying...' : 'Verify & Complete'}
+                    <Text
+                      style={[styles.buttonText, { color: theme.textInverse }]}
+                    >
+                      {isVerifying ? "Verifying..." : "Verify & Complete"}
                     </Text>
                   </TouchableOpacity>
 
@@ -259,12 +327,14 @@ export default function RegisterScreen() {
               <TouchableOpacity
                 style={styles.backButton}
                 onPress={() => {
-                  setStep('info');
+                  setStep("info");
                   setCodeSent(false);
-                  setVerificationCode('');
+                  setVerificationCode("");
                 }}
               >
-                <Text style={[styles.linkText, { color: theme.primary }]}>← Back to registration</Text>
+                <Text style={[styles.linkText, { color: theme.primary }]}>
+                  ← Back to registration
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -277,16 +347,27 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
-          <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
-          <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Sign up to get started</Text>
+          <Text style={[styles.title, { color: theme.text }]}>
+            Create Account
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
+            Sign up to get started
+          </Text>
 
           <View style={styles.form}>
             <TextInput
-              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
               placeholder="Full Name"
               placeholderTextColor={theme.textTertiary}
               value={name}
@@ -295,7 +376,14 @@ export default function RegisterScreen() {
             />
 
             <TextInput
-              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
               placeholder="Email"
               placeholderTextColor={theme.textTertiary}
               value={email}
@@ -305,8 +393,18 @@ export default function RegisterScreen() {
               editable={!isLoading}
             />
 
-            <View style={[styles.phoneInputContainer, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-              <Text style={[styles.phonePrefix, { color: theme.text }]}>+39</Text>
+            <View
+              style={[
+                styles.phoneInputContainer,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <Text style={[styles.phonePrefix, { color: theme.text }]}>
+                +39
+              </Text>
               <TextInput
                 style={[styles.phoneInput, { color: theme.text }]}
                 placeholder="3935130925"
@@ -319,12 +417,27 @@ export default function RegisterScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                },
+              ]}
               onPress={() => setShowDatePicker(true)}
               disabled={isLoading}
             >
-              <Text style={dateOfBirth ? [styles.datePickerText, { color: theme.text }] : [styles.datePickerPlaceholder, { color: theme.textTertiary }]}>
-                {dateOfBirth ? formatDate(dateOfBirth) : 'Date of Birth'}
+              <Text
+                style={
+                  dateOfBirth
+                    ? [styles.datePickerText, { color: theme.text }]
+                    : [
+                        styles.datePickerPlaceholder,
+                        { color: theme.textTertiary },
+                      ]
+                }
+              >
+                {dateOfBirth ? formatDate(dateOfBirth) : "Date of Birth"}
               </Text>
             </TouchableOpacity>
 
@@ -332,14 +445,21 @@ export default function RegisterScreen() {
               <DateTimePicker
                 value={dateOfBirth || new Date()}
                 mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                display={Platform.OS === "ios" ? "spinner" : "default"}
                 onChange={onDateChange}
                 maximumDate={new Date()}
               />
             )}
 
             <TextInput
-              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
               placeholder="Password"
               placeholderTextColor={theme.textTertiary}
               value={password}
@@ -349,7 +469,14 @@ export default function RegisterScreen() {
             />
 
             <TextInput
-              style={[styles.input, { backgroundColor: theme.backgroundElevated, borderColor: theme.border, color: theme.text }]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
               placeholder="Confirm Password"
               placeholderTextColor={theme.textTertiary}
               value={confirmPassword}
@@ -359,19 +486,27 @@ export default function RegisterScreen() {
             />
 
             <TouchableOpacity
-              style={[styles.button, { backgroundColor: theme.primary }, isLoading && styles.buttonDisabled]}
+              style={[
+                styles.button,
+                { backgroundColor: theme.primary },
+                isLoading && styles.buttonDisabled,
+              ]}
               onPress={handleContinueToPhoneVerification}
               disabled={isLoading}
             >
               <Text style={[styles.buttonText, { color: theme.textInverse }]}>
-                {isLoading ? 'Creating Account...' : 'Continue →'}
+                {isLoading ? "Creating Account..." : "Continue →"}
               </Text>
             </TouchableOpacity>
 
             <View style={styles.footer}>
-              <Text style={[styles.footerText, { color: theme.textTertiary }]}>Already have an account? </Text>
+              <Text style={[styles.footerText, { color: theme.textTertiary }]}>
+                Already have an account?{" "}
+              </Text>
               <TouchableOpacity onPress={() => router.back()}>
-                <Text style={[styles.linkText, { color: theme.primary }]}>Log In</Text>
+                <Text style={[styles.linkText, { color: theme.primary }]}>
+                  Log In
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -384,142 +519,142 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: "#000",
   },
   scrollContent: {
     flexGrow: 1,
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     padding: 24,
     paddingTop: 60,
   },
   title: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#999',
+    color: "#999",
     marginBottom: 32,
   },
   form: {
     gap: 16,
   },
   input: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: "#1a1a1a",
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#fff',
+    color: "#fff",
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: "#333",
   },
   phoneInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1a1a1a",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: "#333",
     paddingLeft: 16,
   },
   phonePrefix: {
     fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
+    color: "#fff",
+    fontWeight: "600",
     marginRight: 8,
   },
   phoneInput: {
     flex: 1,
     padding: 16,
     fontSize: 16,
-    color: '#fff',
+    color: "#fff",
   },
   button: {
-    backgroundColor: '#6C63FF',
+    backgroundColor: "#6C63FF",
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 8,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     marginTop: 16,
   },
   footerText: {
-    color: '#999',
+    color: "#999",
     fontSize: 14,
   },
   linkText: {
-    color: '#6C63FF',
+    color: "#6C63FF",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   datePickerText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
   },
   datePickerPlaceholder: {
-    color: '#999',
+    color: "#999",
     fontSize: 16,
   },
   phoneDisplay: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: "#1a1a1a",
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: "#333",
   },
   phoneDisplayLabel: {
-    color: '#999',
+    color: "#999",
     fontSize: 14,
     marginBottom: 8,
   },
   phoneDisplayValue: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   instructionText: {
-    color: '#999',
+    color: "#999",
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 16,
   },
   codeInput: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: "#1a1a1a",
     borderRadius: 12,
     padding: 16,
     fontSize: 24,
-    color: '#fff',
+    color: "#fff",
     borderWidth: 1,
-    borderColor: '#333',
-    textAlign: 'center',
+    borderColor: "#333",
+    textAlign: "center",
     letterSpacing: 8,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   resendButton: {
     marginTop: 16,
     padding: 12,
   },
   resendText: {
-    color: '#6C63FF',
+    color: "#6C63FF",
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
   },
   backButton: {
     marginTop: 24,
