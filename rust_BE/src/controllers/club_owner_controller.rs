@@ -1,11 +1,15 @@
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{
     AppState, ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest,
-    EventResponse, TableResponse, TablesResponse,
+    EventResponse, TableResponse, TablesResponse, UpdateClubRequest,
 };
 use crate::models::club_owner::{
-    ClubOwnerAuthResponse, ClubOwnerLoginRequest, ClubOwnerRegisterRequest, ClubOwnerResponse,
+    AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
+    ClubOwnerRegisterRequest, ClubOwnerResponse, CreateManualReservationRequest,
+    OwnerUpdateClubRequest, ScanResult, TableImageRow, UpdateReservationStatusRequest,
+    OwnerStats,
 };
+use crate::models::table::TableReservationResponse;
 use crate::persistences::{club_owner_persistence, club_persistence, event_persistence, table_persistence};
 use crate::utils::jwt;
 use axum::{
@@ -253,4 +257,372 @@ pub async fn create_club_table(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok((StatusCode::CREATED, Json(TableResponse::from(table))))
+}
+
+/// Update the authenticated club owner's club settings
+pub async fn update_my_club(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Json(payload): Json<OwnerUpdateClubRequest>,
+) -> Result<Json<ClubResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let update_req = UpdateClubRequest {
+        name: payload.name,
+        subtitle: payload.subtitle,
+        image: None,
+        address: payload.address,
+        phone_number: payload.phone_number,
+        website: payload.website,
+        owner_id: None,
+    };
+
+    let updated = club_persistence::update_club(&state.db_pool, club.id, update_req)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(ClubResponse::from(updated)))
+}
+
+/// Get images for the authenticated club owner's club
+pub async fn get_my_club_images(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+) -> Result<Json<Vec<ClubImageRow>>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let images = club_owner_persistence::get_club_images(&state.db_pool, club.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(images))
+}
+
+/// Add an image to the authenticated club owner's club
+pub async fn add_my_club_image(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Json(payload): Json<AddImageRequest>,
+) -> Result<(StatusCode, Json<ClubImageRow>), StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let image = club_owner_persistence::add_club_image(
+        &state.db_pool,
+        club.id,
+        payload.url,
+        payload.display_order,
+        payload.alt_text,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((StatusCode::CREATED, Json(image)))
+}
+
+/// Delete a club image (ownership checked)
+pub async fn delete_my_club_image(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(image_id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let image_uuid = Uuid::parse_str(&image_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let deleted = club_owner_persistence::delete_club_image(&state.db_pool, image_uuid, club.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
+/// Get images for a specific table (verifies table belongs to owner's club)
+pub async fn get_table_images_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(table_id): Path<String>,
+) -> Result<Json<Vec<TableImageRow>>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let table_uuid = Uuid::parse_str(&table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Verify table belongs to owner's club via event
+    let table = table_persistence::get_table_by_id(&state.db_pool, table_uuid)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, table.event_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let images = club_owner_persistence::get_table_images(&state.db_pool, table_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(images))
+}
+
+/// Add an image to a table (verifies ownership)
+pub async fn add_table_image_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(table_id): Path<String>,
+    Json(payload): Json<AddImageRequest>,
+) -> Result<(StatusCode, Json<TableImageRow>), StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let table_uuid = Uuid::parse_str(&table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let table = table_persistence::get_table_by_id(&state.db_pool, table_uuid)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, table.event_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let image = club_owner_persistence::add_table_image(
+        &state.db_pool,
+        table_uuid,
+        payload.url,
+        payload.display_order,
+        payload.alt_text,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((StatusCode::CREATED, Json(image)))
+}
+
+/// Delete a table image
+pub async fn delete_table_image_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(image_id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let image_uuid = Uuid::parse_str(&image_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let deleted = club_owner_persistence::delete_table_image(&state.db_pool, image_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
+/// Get all reservations for a specific event owned by the club owner
+pub async fn get_event_reservations_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<String>,
+) -> Result<Json<Vec<TableReservationResponse>>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let reservations = club_owner_persistence::get_event_reservations(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let responses: Vec<TableReservationResponse> = reservations
+        .into_iter()
+        .map(TableReservationResponse::from)
+        .collect();
+
+    Ok(Json(responses))
+}
+
+/// Create a manual reservation (no Stripe, no user account needed)
+pub async fn create_manual_reservation_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<String>,
+    Json(payload): Json<CreateManualReservationRequest>,
+) -> Result<(StatusCode, Json<TableReservationResponse>), StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let table_uuid = Uuid::parse_str(&payload.table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let reservation = club_owner_persistence::create_manual_reservation(
+        &state.db_pool,
+        event_uuid,
+        table_uuid,
+        payload.contact_name,
+        payload.contact_phone,
+        payload.contact_email,
+        payload.num_people,
+        payload.manual_notes,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((StatusCode::CREATED, Json(TableReservationResponse::from(reservation))))
+}
+
+/// Update the status of a reservation
+pub async fn update_reservation_status_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(reservation_id): Path<String>,
+    Json(payload): Json<UpdateReservationStatusRequest>,
+) -> Result<Json<TableReservationResponse>, StatusCode> {
+    let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let reservation_uuid = Uuid::parse_str(&reservation_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let reservation = club_owner_persistence::update_reservation_status(
+        &state.db_pool,
+        reservation_uuid,
+        payload.status,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(TableReservationResponse::from(reservation)))
+}
+
+/// Scan a QR code (ticket or reservation) — read-only lookup
+pub async fn scan_code_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(code): Path<String>,
+) -> Result<Json<ScanResult>, StatusCode> {
+    let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let result = club_owner_persistence::scan_code(&state.db_pool, &code)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match result {
+        Some(scan) => Ok(Json(scan)),
+        None => Ok(Json(ScanResult {
+            valid: false,
+            already_used: false,
+            scan_type: "unknown".to_string(),
+            guest_name: None,
+            num_people: None,
+            event_title: None,
+            table_name: None,
+            code,
+        })),
+    }
+}
+
+/// Check in a ticket or reservation by code — marks it as used/completed
+pub async fn checkin_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(code): Path<String>,
+) -> Result<Json<ScanResult>, StatusCode> {
+    let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let result = club_owner_persistence::checkin_by_code(&state.db_pool, &code)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match result {
+        Some(scan) => Ok(Json(scan)),
+        None => Ok(Json(ScanResult {
+            valid: false,
+            already_used: false,
+            scan_type: "unknown".to_string(),
+            guest_name: None,
+            num_people: None,
+            event_title: None,
+            table_name: None,
+            code,
+        })),
+    }
+}
+
+/// Get aggregated stats for the authenticated club owner
+pub async fn get_owner_stats_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+) -> Result<Json<OwnerStats>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let stats = club_owner_persistence::get_owner_stats(&state.db_pool, club.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(stats))
 }

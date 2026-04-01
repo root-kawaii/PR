@@ -1,4 +1,4 @@
-use crate::models::{Table, TableReservation};
+use crate::models::{Table, TableReservation, ReservationPaymentShare, ReservationGuest};
 use sqlx::PgPool;
 use uuid::Uuid;
 use rust_decimal::Decimal;
@@ -522,6 +522,304 @@ pub async fn add_guest_to_reservation(
     .bind(reservation_id)
     .execute(pool)
     .await?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Payment Shares (Split Payment)
+// ============================================================================
+
+/// Generate unique payment link token
+fn generate_payment_link_token() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let token: String = (0..32)
+        .map(|_| {
+            let idx = rng.gen_range(0..36);
+            if idx < 26 {
+                (b'a' + idx) as char
+            } else {
+                (b'0' + (idx - 26)) as char
+            }
+        })
+        .collect();
+    format!("pay_{}", token)
+}
+
+/// Create a payment share for a reservation
+pub async fn create_payment_share(
+    pool: &PgPool,
+    reservation_id: Uuid,
+    user_id: Option<Uuid>,
+    phone_number: Option<String>,
+    amount: Decimal,
+    is_owner: bool,
+    status: &str,
+    stripe_payment_intent_id: Option<String>,
+) -> Result<ReservationPaymentShare, sqlx::Error> {
+    let payment_link_token = if !is_owner {
+        // Generate unique token, retry on collision
+        let mut token = generate_payment_link_token();
+        let mut attempts = 0;
+        while attempts < 10 {
+            let existing = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM reservation_payment_shares WHERE payment_link_token = $1"
+            )
+            .bind(&token)
+            .fetch_one(pool)
+            .await?;
+            if existing == 0 {
+                break;
+            }
+            token = generate_payment_link_token();
+            attempts += 1;
+        }
+        Some(token)
+    } else {
+        None
+    };
+
+    let share = sqlx::query_as::<_, ReservationPaymentShare>(
+        r#"
+        INSERT INTO reservation_payment_shares (
+            reservation_id, user_id, phone_number, amount, status,
+            stripe_payment_intent_id, payment_link_token, is_owner
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *
+        "#,
+    )
+    .bind(reservation_id)
+    .bind(user_id)
+    .bind(phone_number)
+    .bind(amount)
+    .bind(status)
+    .bind(stripe_payment_intent_id)
+    .bind(payment_link_token)
+    .bind(is_owner)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(share)
+}
+
+/// Get payment share by token
+pub async fn get_payment_share_by_token(
+    pool: &PgPool,
+    token: &str,
+) -> Result<ReservationPaymentShare, sqlx::Error> {
+    sqlx::query_as::<_, ReservationPaymentShare>(
+        "SELECT * FROM reservation_payment_shares WHERE payment_link_token = $1"
+    )
+    .bind(token)
+    .fetch_one(pool)
+    .await
+}
+
+/// Get payment share by Stripe checkout session ID
+pub async fn get_payment_share_by_checkout_session(
+    pool: &PgPool,
+    session_id: &str,
+) -> Result<ReservationPaymentShare, sqlx::Error> {
+    sqlx::query_as::<_, ReservationPaymentShare>(
+        "SELECT * FROM reservation_payment_shares WHERE stripe_checkout_session_id = $1"
+    )
+    .bind(session_id)
+    .fetch_one(pool)
+    .await
+}
+
+/// Get all payment shares for a reservation
+pub async fn get_payment_shares_by_reservation(
+    pool: &PgPool,
+    reservation_id: Uuid,
+) -> Result<Vec<ReservationPaymentShare>, sqlx::Error> {
+    sqlx::query_as::<_, ReservationPaymentShare>(
+        "SELECT * FROM reservation_payment_shares WHERE reservation_id = $1 ORDER BY is_owner DESC, created_at ASC"
+    )
+    .bind(reservation_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Update payment share status and link Stripe IDs
+pub async fn update_payment_share_paid(
+    pool: &PgPool,
+    share_id: Uuid,
+    payment_id: Uuid,
+    stripe_payment_intent_id: Option<String>,
+) -> Result<ReservationPaymentShare, sqlx::Error> {
+    sqlx::query_as::<_, ReservationPaymentShare>(
+        r#"
+        UPDATE reservation_payment_shares
+        SET status = 'paid', payment_id = $1, stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+            updated_at = NOW()
+        WHERE id = $3
+        RETURNING *
+        "#,
+    )
+    .bind(payment_id)
+    .bind(stripe_payment_intent_id)
+    .bind(share_id)
+    .fetch_one(pool)
+    .await
+}
+
+/// Set Stripe checkout session ID on a payment share
+pub async fn set_payment_share_checkout_session(
+    pool: &PgPool,
+    share_id: Uuid,
+    checkout_session_id: &str,
+    guest_name: Option<String>,
+    guest_email: Option<String>,
+) -> Result<ReservationPaymentShare, sqlx::Error> {
+    sqlx::query_as::<_, ReservationPaymentShare>(
+        r#"
+        UPDATE reservation_payment_shares
+        SET stripe_checkout_session_id = $1, guest_name = $2, guest_email = $3, updated_at = NOW()
+        WHERE id = $4
+        RETURNING *
+        "#,
+    )
+    .bind(checkout_session_id)
+    .bind(guest_name)
+    .bind(guest_email)
+    .bind(share_id)
+    .fetch_one(pool)
+    .await
+}
+
+// ============================================================================
+// Reservation Guests (Free / Non-paying)
+// ============================================================================
+
+/// Add a free guest to a reservation
+pub async fn add_free_guest(
+    pool: &PgPool,
+    reservation_id: Uuid,
+    user_id: Option<Uuid>,
+    phone_number: &str,
+    email: Option<String>,
+    name: Option<String>,
+    added_by: Uuid,
+    ticket_id: Option<Uuid>,
+) -> Result<ReservationGuest, sqlx::Error> {
+    sqlx::query_as::<_, ReservationGuest>(
+        r#"
+        INSERT INTO reservation_guests (reservation_id, user_id, phone_number, email, name, added_by, ticket_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *
+        "#,
+    )
+    .bind(reservation_id)
+    .bind(user_id)
+    .bind(phone_number)
+    .bind(email)
+    .bind(name)
+    .bind(added_by)
+    .bind(ticket_id)
+    .fetch_one(pool)
+    .await
+}
+
+/// Get all free guests for a reservation
+pub async fn get_free_guests_by_reservation(
+    pool: &PgPool,
+    reservation_id: Uuid,
+) -> Result<Vec<ReservationGuest>, sqlx::Error> {
+    sqlx::query_as::<_, ReservationGuest>(
+        "SELECT * FROM reservation_guests WHERE reservation_id = $1 ORDER BY created_at ASC"
+    )
+    .bind(reservation_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Count total people in a reservation (paying shares + free guests)
+pub async fn get_total_people_count(
+    pool: &PgPool,
+    reservation_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let shares_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM reservation_payment_shares WHERE reservation_id = $1"
+    )
+    .bind(reservation_id)
+    .fetch_one(pool)
+    .await?;
+
+    let guests_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM reservation_guests WHERE reservation_id = $1"
+    )
+    .bind(reservation_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(shares_count + guests_count)
+}
+
+/// Update reservation amount_paid by adding a share amount
+pub async fn increment_reservation_amount_paid(
+    pool: &PgPool,
+    reservation_id: Uuid,
+    amount: Decimal,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE table_reservations
+        SET amount_paid = amount_paid + $1, updated_at = NOW()
+        WHERE id = $2
+        "#,
+    )
+    .bind(amount)
+    .bind(reservation_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Update reservation num_people
+pub async fn update_reservation_num_people(
+    pool: &PgPool,
+    reservation_id: Uuid,
+    num_people: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE table_reservations
+        SET num_people = $1, updated_at = NOW()
+        WHERE id = $2
+        "#,
+    )
+    .bind(num_people)
+    .bind(reservation_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Check if all payment shares are paid and update reservation status if so
+pub async fn check_and_confirm_reservation(
+    pool: &PgPool,
+    reservation_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    let pending_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM reservation_payment_shares WHERE reservation_id = $1 AND status != 'paid'"
+    )
+    .bind(reservation_id)
+    .fetch_one(pool)
+    .await?;
+
+    if pending_count == 0 {
+        sqlx::query(
+            "UPDATE table_reservations SET status = 'confirmed', updated_at = NOW() WHERE id = $1"
+        )
+        .bind(reservation_id)
+        .execute(pool)
+        .await?;
+    }
 
     Ok(())
 }

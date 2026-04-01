@@ -21,3 +21,7 @@ node_modules/
 # Logs
 rust_BE/logs/*.log
 rust_BE/server.log
+
+
+
+.claude/

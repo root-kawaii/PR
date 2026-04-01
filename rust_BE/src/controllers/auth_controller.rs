@@ -2,6 +2,7 @@ use crate::models::{AppState, AuthResponse, LoginRequest, RegisterRequest, UserR
 use crate::persistences::user_persistence;
 use crate::utils::jwt;
 use crate::services::sms_service;
+use crate::middleware::auth::AuthUser;
 use axum::{extract::State, http::StatusCode, Json};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use std::sync::Arc;
@@ -139,6 +140,40 @@ pub struct VerifySmsRequest {
 pub struct VerifySmsResponse {
     message: String,
     verified: bool,
+}
+
+/// Register or update the Expo push token for the authenticated user.
+///
+/// Called by the frontend after login and whenever the token refreshes.
+#[derive(Debug, Deserialize)]
+pub struct RegisterPushTokenRequest {
+    pub push_token: String,
+}
+
+pub async fn register_push_token(
+    State(state): State<Arc<AppState>>,
+    AuthUser(claims): AuthUser,
+    Json(payload): Json<RegisterPushTokenRequest>,
+) -> StatusCode {
+    let user_id = match Uuid::parse_str(&claims.sub) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::UNAUTHORIZED,
+    };
+
+    match sqlx::query(
+        "UPDATE users SET expo_push_token = $1, updated_at = NOW() WHERE id = $2",
+    )
+    .bind(&payload.push_token)
+    .bind(user_id)
+    .execute(&state.db_pool)
+    .await
+    {
+        Ok(_) => StatusCode::NO_CONTENT,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to save push token");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
 }
 
 /// Send SMS verification code using Twilio Verify

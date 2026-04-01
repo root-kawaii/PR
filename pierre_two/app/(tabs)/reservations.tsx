@@ -18,7 +18,6 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { TableReservationDetailModal } from '@/components/reservation/TableReservationDetailModal';
 import * as Clipboard from 'expo-clipboard';
-import { useStripe } from '@stripe/stripe-react-native';
 
 type ReservationFilter = 'upcoming' | 'past';
 
@@ -31,7 +30,6 @@ export default function ReservationsScreen() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const { user } = useAuth();
   const { theme } = useTheme();
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const fetchReservations = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -99,103 +97,8 @@ export default function ReservationsScreen() {
     Alert.alert('Copiato!', 'Codice prenotazione copiato negli appunti');
   };
 
-  const handlePaymentSubmit = async (numPeople: number) => {
-    if (!selectedReservation || !user) return;
-
-    const minSpendPerPerson = parseFloat(
-      selectedReservation.table?.minSpend?.replace(' €', '') || '0'
-    );
-    const amount = minSpendPerPerson * numPeople;
-
-    try {
-      console.log('Creating payment intent for additional people...');
-      const paymentIntentResponse = await fetch(
-        `${API_URL}/reservations/${selectedReservation.id}/add-payment`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            num_people: numPeople,
-            user_id: user.id,
-          }),
-        }
-      );
-
-      if (!paymentIntentResponse.ok) {
-        const errorText = await paymentIntentResponse.text();
-        console.error('Payment intent error:', errorText);
-        throw new Error(`Failed to create payment intent: ${errorText}`);
-      }
-
-      const paymentIntentData = await paymentIntentResponse.json();
-      console.log('Payment intent created:', paymentIntentData.paymentIntentId);
-
-      const { error: initError } = await initPaymentSheet({
-        paymentIntentClientSecret: paymentIntentData.clientSecret,
-        merchantDisplayName: 'Pierre Two',
-        returnURL: 'pierre-two://stripe-redirect',
-      });
-
-      if (initError) {
-        console.error('Payment sheet init error:', initError);
-        Alert.alert('Errore', 'Impossibile inizializzare il pagamento. Riprova.');
-        return;
-      }
-
-      const { error: presentError } = await presentPaymentSheet();
-
-      if (presentError) {
-        if (presentError.code !== 'Canceled') {
-          console.error('Payment sheet present error:', presentError);
-          Alert.alert('Errore', 'Pagamento non riuscito. Riprova.');
-        }
-        return;
-      }
-
-      console.log('Payment successful');
-
-      const confirmResponse = await fetch(
-        `${API_URL}/reservations/${selectedReservation.id}/confirm-payment`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            stripe_payment_intent_id: paymentIntentData.paymentIntentId,
-            payment_amount: amount,
-            user_id: user.id,
-          }),
-        }
-      );
-
-      if (!confirmResponse.ok) {
-        throw new Error('Failed to confirm payment');
-      }
-
-      Alert.alert(
-        'Pagamento Confermato!',
-        `Hai aggiunto ${numPeople} ${numPeople === 1 ? 'persona' : 'persone'} alla prenotazione per €${amount.toFixed(2)}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setShowDetailModal(false);
-              setSelectedReservation(null);
-              fetchReservations(true);
-            },
-          },
-        ]
-      );
-    } catch (error) {
-      console.error('Payment error:', error);
-      Alert.alert(
-        'Errore',
-        'Non è stato possibile completare il pagamento. Riprova più tardi.'
-      );
-    }
+  const handlePaymentSubmit = async (_numPeople: number) => {
+    // Legacy: split payments are now handled via payment links in the detail modal
   };
 
   if (loading) {
@@ -345,6 +248,31 @@ export default function ReservationsScreen() {
                       </View>
                     </View>
 
+                    {/* Payment Progress */}
+                    {reservation.amountPaid && reservation.totalAmount && (
+                      <View style={[styles.paymentProgress, { backgroundColor: `${theme.border}33` }]}>
+                        <View style={styles.paymentProgressBar}>
+                          <View
+                            style={[
+                              styles.paymentProgressFill,
+                              {
+                                backgroundColor: theme.success,
+                                width: `${Math.min(
+                                  100,
+                                  (parseFloat(reservation.amountPaid.replace(/[^0-9.]/g, '')) /
+                                    parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, ''))) *
+                                    100
+                                )}%`,
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={[styles.paymentProgressText, { color: theme.textTertiary }]}>
+                          {reservation.amountPaid} / {reservation.totalAmount}
+                        </Text>
+                      </View>
+                    )}
+
                     {/* Copy Code Button */}
                     {reservation.reservationCode && (
                       <TouchableOpacity
@@ -379,6 +307,7 @@ export default function ReservationsScreen() {
         onClose={() => {
           setShowDetailModal(false);
           setSelectedReservation(null);
+          fetchReservations(true);
         }}
         onPaymentSubmit={handlePaymentSubmit}
       />
@@ -513,6 +442,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     letterSpacing: 1,
+  },
+  paymentProgress: {
+    marginTop: 12,
+    padding: 8,
+    borderRadius: 8,
+  },
+  paymentProgressBar: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  paymentProgressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  paymentProgressText: {
+    fontSize: 12,
+    textAlign: 'center',
   },
   chevronIcon: {
     position: 'absolute',
