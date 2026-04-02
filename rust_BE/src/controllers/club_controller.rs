@@ -1,5 +1,6 @@
 use crate::models::{AppState, CreateClubRequest, UpdateClubRequest, ClubResponse};
 use crate::persistences::club_persistence;
+use crate::middleware::auth::ClubOwnerUser;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -35,8 +36,9 @@ pub async fn get_club(
     }
 }
 
-/// Create a new club
+/// Create a new club (requires club_owner JWT)
 pub async fn create_club(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateClubRequest>,
 ) -> Result<(StatusCode, Json<ClubResponse>), StatusCode> {
@@ -46,8 +48,9 @@ pub async fn create_club(
     }
 }
 
-/// Update a club
+/// Update a club (requires club_owner JWT)
 pub async fn update_club(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateClubRequest>,
@@ -61,8 +64,9 @@ pub async fn update_club(
     }
 }
 
-/// Delete a club
+/// Delete a club (requires club_owner JWT)
 pub async fn delete_club(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {

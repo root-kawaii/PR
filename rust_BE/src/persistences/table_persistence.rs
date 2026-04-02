@@ -194,14 +194,17 @@ fn generate_reservation_code() -> String {
     format!("RES-{}", random_part)
 }
 
-/// Get all reservations
-pub async fn get_all_reservations(pool: &PgPool) -> Result<Vec<TableReservation>, sqlx::Error> {
+/// Get all reservations (paginated)
+pub async fn get_all_reservations(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<TableReservation>, sqlx::Error> {
     let reservations = sqlx::query_as::<_, TableReservation>(
         r#"
         SELECT * FROM table_reservations
         ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
         "#,
     )
+    .bind(limit)
+    .bind(offset)
     .fetch_all(pool)
     .await?;
 

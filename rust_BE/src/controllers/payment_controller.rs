@@ -16,8 +16,10 @@ use crate::persistences::payment_persistence::{
     erase_payment_service,
 };
 use crate::models::{PaymentEntity, PaymentRequest, PaymentFilter, AppState, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentRequest, CancelPaymentResponse};
+use crate::middleware::auth::ClubOwnerUser;
 
 pub async fn get_all_payments(
+    _: ClubOwnerUser,
     State(app_state): State<Arc<AppState>>,
     Query(filters): Query<PaymentFilter>
 ) -> Result<Json<Vec<PaymentEntity>>, StatusCode> {
@@ -34,6 +36,7 @@ pub async fn get_payment(
 }
 
 pub async fn post_payment(
+    _: ClubOwnerUser,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<PaymentRequest>
 ) -> Result<(StatusCode, Json<PaymentEntity>), StatusCode> {
@@ -42,6 +45,7 @@ pub async fn post_payment(
 }
 
 pub async fn delete_payment(
+    _: ClubOwnerUser,
     Path(id): Path<Uuid>,
     State(app_state): State<Arc<AppState>>
 ) -> StatusCode {
@@ -52,8 +56,9 @@ pub async fn delete_payment(
     }
 }
 
-// Create payment with authorization (manual capture)
+// Create payment with authorization (manual capture) — requires club_owner JWT
 pub async fn post_authorized_payment(
+    _: ClubOwnerUser,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<PaymentRequest>
 ) -> Result<(StatusCode, Json<PaymentEntity>), StatusCode> {
@@ -61,8 +66,9 @@ pub async fn post_authorized_payment(
     Ok((StatusCode::CREATED, Json(payment)))
 }
 
-// Capture an authorized payment
+// Capture an authorized payment — requires club_owner JWT
 pub async fn capture_payment(
+    _: ClubOwnerUser,
     Path(id): Path<Uuid>,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CapturePaymentRequest>
@@ -80,8 +86,9 @@ pub async fn capture_payment(
     Ok(Json(response))
 }
 
-// Cancel an authorized payment
+// Cancel an authorized payment — requires club_owner JWT
 pub async fn cancel_payment(
+    _: ClubOwnerUser,
     Path(id): Path<Uuid>,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CancelPaymentRequest>,

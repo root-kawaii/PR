@@ -54,11 +54,11 @@ pub async fn send_verification_sms(phone_number: &str) -> Result<(), Box<dyn std
 
     if response.status().is_success() {
         let twilio_response: TwilioVerifyResponse = response.json().await?;
-        println!("✅ Verification SMS sent successfully. SID: {}, Status: {}", twilio_response.sid, twilio_response.status);
+        tracing::info!(sid = %twilio_response.sid, status = %twilio_response.status, "Verification SMS sent");
         Ok(())
     } else {
         let error_text = response.text().await?;
-        eprintln!("❌ Failed to send verification SMS: {}", error_text);
+        tracing::error!(error = %error_text, "Failed to send verification SMS via Twilio");
         Err(format!("Twilio Verify API error: {}", error_text).into())
     }
 }
@@ -101,11 +101,11 @@ pub async fn verify_code(phone_number: &str, code: &str) -> Result<bool, Box<dyn
 
     if response.status().is_success() {
         let twilio_response: TwilioVerifyCheckResponse = response.json().await?;
-        println!("✅ Verification check: Status: {}, Valid: {}", twilio_response.status, twilio_response.valid);
+        tracing::info!(status = %twilio_response.status, valid = %twilio_response.valid, "Verification check completed");
         Ok(twilio_response.valid && twilio_response.status == "approved")
     } else {
         let error_text = response.text().await?;
-        eprintln!("❌ Failed to verify code: {}", error_text);
+        tracing::error!(error = %error_text, "Failed to verify code via Twilio");
         Ok(false) // Return false instead of error for invalid codes
     }
 }

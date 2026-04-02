@@ -9,18 +9,26 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Validate an email address — must contain @ and a dot after it
+fn is_valid_email(email: &str) -> bool {
+    let parts: Vec<&str> = email.splitn(2, '@').collect();
+    if parts.len() != 2 { return false; }
+    let domain = parts[1];
+    !parts[0].is_empty() && domain.contains('.') && domain.len() > 2
+}
+
 /// Register a new user
 pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<AuthResponse>), StatusCode> {
     // Validate email format
-    if !payload.email.contains('@') {
+    if !is_valid_email(&payload.email) {
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Validate password strength (minimum 6 characters)
-    if payload.password.len() < 6 {
+    // Validate password strength (minimum 8 characters)
+    if payload.password.len() < 8 {
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -77,44 +85,33 @@ pub async fn register(
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
-    // Find user by email
+) -> Result<Json<AuthResponse>, (StatusCode, axum::Json<crate::models::ApiError>)> {
     let user = match user_persistence::find_user_by_email(&state.db_pool, &payload.email).await {
         Ok(Some(user)) => user,
-        Ok(None) => {
-            // User not found
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-        Err(_) => {
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
+        Ok(None) => return Err(crate::models::ApiError::new(StatusCode::UNAUTHORIZED, "Email o password non corretti")),
+        Err(_) => return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno")),
     };
 
-    // Verify password
     let is_valid = match verify(payload.password, &user.password_hash) {
         Ok(valid) => valid,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(_) => return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno")),
     };
 
     if !is_valid {
-        return Err(StatusCode::UNAUTHORIZED);
+        return Err(crate::models::ApiError::new(StatusCode::UNAUTHORIZED, "Email o password non corretti"));
     }
 
-    // Update last login (optional)
     let _ = user_persistence::update_last_login(&state.db_pool, user.id).await;
 
-    // Generate JWT token
     let token = match jwt::generate_token(user.id, user.email.clone(), "user".to_string(), &state.jwt_secret) {
         Ok(token) => token,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(_) => return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore durante la generazione del token")),
     };
 
-    let response = AuthResponse {
+    Ok(Json(AuthResponse {
         user: UserResponse::from(user),
         token,
-    };
-
-    Ok(Json(response))
+    }))
 }
 
 
@@ -204,7 +201,7 @@ pub async fn send_sms_verification(
             }))
         },
         Err(e) => {
-            eprintln!("SMS sending error: {}", e);
+            tracing::error!(error = %e, "SMS sending error");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -224,7 +221,7 @@ pub async fn verify_sms_code(
     let is_valid = match sms_service::verify_code(&payload.phone_number, &payload.verification_code).await {
         Ok(valid) => valid,
         Err(e) => {
-            eprintln!("Twilio Verify error: {}", e);
+            tracing::error!(error = %e, "Twilio Verify error");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
@@ -256,7 +253,7 @@ pub async fn verify_sms_code(
             }))
         },
         Err(e) => {
-            eprintln!("Database error updating user: {}", e);
+            tracing::error!(error = %e, "Database error updating user phone verification");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
