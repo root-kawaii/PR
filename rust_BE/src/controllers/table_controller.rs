@@ -393,6 +393,8 @@ pub async fn create_reservation(
     let table_id = Uuid::parse_str(&req.table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let event_id = Uuid::parse_str(&req.event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
+    tracing::info!(user_id = %user_uuid, table_id = %table_id, event_id = %event_id, num_people = ?req.num_people, "Creating reservation");
+
     match table_persistence::create_reservation(
         &state.db_pool,
         table_id,
@@ -406,8 +408,14 @@ pub async fn create_reservation(
     )
     .await
     {
-        Ok(reservation) => Ok(Json(reservation.into())),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(reservation) => {
+            tracing::info!(reservation_id = %reservation.id, user_id = %user_uuid, "Reservation created");
+            Ok(Json(reservation.into()))
+        }
+        Err(e) => {
+            tracing::error!(error = %e, user_id = %user_uuid, table_id = %table_id, "Failed to create reservation");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
@@ -611,8 +619,7 @@ pub async fn create_payment_intent(
             (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
         })?;
 
-    println!("✅ Split Payment Intent created: {}", payment_intent.id);
-    println!("   Owner share: {} cents (total: {}) | Customer: {}", amount_in_cents as i64, total_cost, stripe_customer.id);
+    tracing::info!(payment_intent_id = %payment_intent.id, owner_share_cents = amount_in_cents as i64, total_cost = %total_cost, stripe_customer_id = %stripe_customer.id, "Split PaymentIntent created");
 
     let client_secret = payment_intent.client_secret
         .ok_or_else(|| {
@@ -644,6 +651,16 @@ pub async fn create_reservation_with_payment(
     let table_id = Uuid::parse_str(&req.table_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
     let event_id = Uuid::parse_str(&req.event_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
     let owner_user_id = Uuid::parse_str(&req.owner_user_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
+
+    tracing::info!(
+        owner_user_id = %owner_user_id,
+        table_id = %table_id,
+        event_id = %event_id,
+        paying_guests = req.paying_guest_phone_numbers.len(),
+        free_guests = req.free_guest_phone_numbers.as_ref().map_or(0, |v| v.len()),
+        payment_intent_id = %req.stripe_payment_intent_id,
+        "Creating split reservation with payment"
+    );
 
     // Get table
     let table = match table_persistence::get_table_by_id(&state.db_pool, table_id).await {
@@ -983,6 +1000,14 @@ pub async fn create_reservation_with_payment(
 
     let share_responses: Vec<PaymentShareResponse> = all_shares.into_iter().map(|s| s.into()).collect();
 
+    tracing::info!(
+        reservation_id = %reservation_id,
+        owner_user_id = %owner_user_id,
+        payment_id = %payment_id,
+        payment_intent_id = %req.stripe_payment_intent_id,
+        "Split reservation created successfully"
+    );
+
     Ok(Json(CreateSplitReservationResponse {
         reservation: final_reservation.into(),
         payment_shares: share_responses,
@@ -991,6 +1016,7 @@ pub async fn create_reservation_with_payment(
     }.await; // end of cancellation-guarded block
 
     if result.is_err() {
+        tracing::error!(owner_user_id = %owner_user_id, table_id = %table_id, "Split reservation failed — cancelling Stripe authorization");
         let _ = PaymentIntent::cancel(
             &state.stripe_client,
             &pi_id,
@@ -1261,7 +1287,7 @@ pub async fn create_payment_link_checkout(
         (StatusCode::INTERNAL_SERVER_ERROR, "URL di checkout non disponibile".to_string())
     })?;
 
-    println!("✅ Checkout Session created for share {}: {}", share.id, session.id);
+    tracing::info!(share_id = %share.id, checkout_session_id = %session.id, "Stripe Checkout Session created for guest payment");
 
     Ok(Json(CreateCheckoutResponse { checkout_url }))
 }

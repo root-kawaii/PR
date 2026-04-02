@@ -1,5 +1,5 @@
 import { ThemedText } from '@/components/themed-text';
-import { Image, StyleSheet, Text, View, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import { Image, StyleSheet, Text, View, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTickets } from '@/hooks/useTickets';
 import { useFocusEffect } from 'expo-router';
@@ -21,6 +21,12 @@ export default function TicketsScreen() {
   const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
   const [filter, setFilter] = useState<TicketFilter>('current');
   const [refreshing, setRefreshing] = useState(false);
+
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const nearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 300;
+    if (nearBottom && hasMore && !loadingMore) loadMore();
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -131,6 +137,8 @@ export default function TicketsScreen() {
 
         <ScrollView
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={400}
           contentContainerStyle={[
             styles.scrollContent,
             (loading || error || filteredTickets.length === 0) && styles.scrollContentCentered
@@ -281,17 +289,8 @@ export default function TicketsScreen() {
               );
             })}
 
-            {hasMore && (
-              <TouchableOpacity
-                style={[styles.loadMoreButton, { borderColor: theme.border }]}
-                onPress={loadMore}
-                disabled={loadingMore}
-              >
-                {loadingMore
-                  ? <ActivityIndicator size="small" color={theme.primary} />
-                  : <Text style={[styles.loadMoreText, { color: theme.primary }]}>Carica altri ticket</Text>
-                }
-              </TouchableOpacity>
+            {loadingMore && (
+              <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
             )}
 
             <View style={{ height: 20 }} />
@@ -556,17 +555,5 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderBottomLeftRadius: 20,
     marginRight: -10,
-  },
-  loadMoreButton: {
-    marginHorizontal: 16,
-    marginVertical: 8,
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  loadMoreText: {
-    fontSize: 15,
-    fontWeight: '600',
   },
 });

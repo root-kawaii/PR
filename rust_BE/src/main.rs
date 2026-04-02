@@ -12,7 +12,7 @@ use axum::{
     Json,
 };
 use tower_http::cors::CorsLayer;
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer, key_extractor::SmartIpKeyExtractor};
 use tracing::{info, error};
 
 // Declare your modules
@@ -169,6 +169,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
     // Rate limiter for auth endpoints: 10 requests per minute per IP
     let auth_governor_conf = Arc::new(
         GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
             .per_second(6)   // replenish 1 token every 6s = 10 req/min
             .burst_size(10)
             .finish()

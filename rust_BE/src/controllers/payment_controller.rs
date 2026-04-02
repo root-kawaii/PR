@@ -5,6 +5,7 @@ use axum::{
 };
 use uuid::Uuid;
 use std::sync::Arc;
+use tracing::{info, error};
 
 use crate::persistences::payment_persistence::{
     load_all_payments_service,
@@ -40,7 +41,9 @@ pub async fn post_payment(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<PaymentRequest>
 ) -> Result<(StatusCode, Json<PaymentEntity>), StatusCode> {
+    info!(amount = ?payload.amount, "Creating payment");
     let payment = create_payment_service(payload, &app_state).await?;
+    info!(payment_id = %payment.id, status = ?payment.status, "Payment created");
     Ok((StatusCode::CREATED, Json(payment)))
 }
 
@@ -73,8 +76,11 @@ pub async fn capture_payment(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CapturePaymentRequest>
 ) -> Result<Json<CapturePaymentResponse>, StatusCode> {
-    let payment = capture_payment_service(id, payload.amount, payload.idempotency_key, &app_state).await?;
+    info!(payment_id = %id, amount = ?payload.amount, "Capturing payment");
+    let payment = capture_payment_service(id, payload.amount, payload.idempotency_key, &app_state).await
+        .map_err(|e| { error!(payment_id = %id, status = ?e, "Payment capture failed"); e })?;
 
+    info!(payment_id = %payment.id, captured_amount = ?payment.captured_amount, "Payment captured successfully");
     let response = CapturePaymentResponse {
         id: payment.id,
         status: payment.status,
@@ -93,8 +99,11 @@ pub async fn cancel_payment(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CancelPaymentRequest>,
 ) -> Result<Json<CancelPaymentResponse>, StatusCode> {
-    let payment = cancel_payment_authorization_service(id, payload.idempotency_key, &app_state).await?;
+    info!(payment_id = %id, "Cancelling payment authorization");
+    let payment = cancel_payment_authorization_service(id, payload.idempotency_key, &app_state).await
+        .map_err(|e| { error!(payment_id = %id, status = ?e, "Payment cancellation failed"); e })?;
 
+    info!(payment_id = %payment.id, "Payment authorization cancelled");
     let response = CancelPaymentResponse {
         id: payment.id,
         status: payment.status,

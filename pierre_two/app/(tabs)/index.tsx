@@ -9,7 +9,8 @@ import {
   Text,
   Modal,
   ActivityIndicator,
-  TouchableOpacity,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar } from "react-native-calendars";
@@ -209,6 +210,12 @@ export default function HomeScreen() {
 
   const groupedEvents = groupEventsByDate(selectedDate);
 
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const nearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 300;
+    if (nearBottom && hasMore && !loadingMore) loadMore();
+  };
+
   const handleFABPress = () => {
     codeInputModal.open();
   };
@@ -270,6 +277,8 @@ export default function HomeScreen() {
         <ScrollView
           style={styles.mainScroll}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={400}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -323,18 +332,8 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {/* Pagination — load more */}
-          {hasMore && (
-            <TouchableOpacity
-              style={[styles.loadMoreButton, { borderColor: theme.border }]}
-              onPress={loadMore}
-              disabled={loadingMore}
-            >
-              {loadingMore
-                ? <ActivityIndicator size="small" color={theme.primary} />
-                : <Text style={[styles.loadMoreText, { color: theme.primary }]}>Carica altri eventi</Text>
-              }
-            </TouchableOpacity>
+          {loadingMore && (
+            <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
           )}
         </ScrollView>
       </View>
@@ -485,16 +484,5 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     textAlign: "center",
-  },
-  loadMoreButton: {
-    margin: 16,
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  loadMoreText: {
-    fontSize: 15,
-    fontWeight: "600",
   },
 });
