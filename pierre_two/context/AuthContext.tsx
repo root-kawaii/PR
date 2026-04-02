@@ -1,12 +1,13 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 import { API_URL } from '../config/api';
-const TOKEN_KEY = '@auth_token';
-const USER_KEY = '@auth_user';
+
+const TOKEN_KEY = 'auth_token';
+const USER_KEY = 'auth_user';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -39,8 +40,8 @@ async function registerPushToken(authToken: string): Promise<void> {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
       body: JSON.stringify({ push_token: tokenData.data }),
     });
-  } catch (e) {
-    console.warn('Push token registration failed:', e);
+  } catch {
+    // Push token registration is non-critical — fail silently
   }
 
   if (Platform.OS === 'android') {
@@ -48,6 +49,64 @@ async function registerPushToken(authToken: string): Promise<void> {
       name: 'default',
       importance: Notifications.AndroidImportance.MAX,
     });
+  }
+}
+
+/** Extract a human-readable message from a failed response (handles JSON or plain text). */
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const text = await response.text();
+    if (!text) return fallback;
+    const json = JSON.parse(text);
+    return json.error || json.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Parse a successful response as JSON, throwing a clean error if it fails. */
+async function safeJson<T>(response: Response, fallback: string): Promise<T> {
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new Error(fallback);
+  }
+}
+
+/** Decode JWT exp claim without a library — returns null if unparseable. */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const payload = token.split('.')[1];
+    const decoded = JSON.parse(atob(payload));
+    return typeof decoded.exp === 'number' ? decoded.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  const exp = getTokenExpiry(token);
+  if (exp === null) return false; // can't determine — assume valid
+  return Date.now() / 1000 >= exp;
+}
+
+async function secureGet(key: string): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function secureSet(key: string, value: string): Promise<void> {
+  await SecureStore.setItemAsync(key, value);
+}
+
+async function secureDelete(key: string): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch {
+    // ignore if key doesn't exist
   }
 }
 
@@ -68,7 +127,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load saved auth data on mount
   useEffect(() => {
     loadAuthData();
   }, []);
@@ -76,96 +134,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadAuthData = async () => {
     try {
       const [savedToken, savedUser] = await Promise.all([
-        AsyncStorage.getItem(TOKEN_KEY),
-        AsyncStorage.getItem(USER_KEY),
+        secureGet(TOKEN_KEY),
+        secureGet(USER_KEY),
       ]);
 
       if (savedToken && savedUser) {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
+        if (isTokenExpired(savedToken)) {
+          // Token expired — clear storage and start fresh
+          await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+        } else {
+          try {
+            setToken(savedToken);
+            setUser(JSON.parse(savedUser));
+          } catch {
+            // Corrupt stored data — clear and force re-login
+            await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+          }
+        }
       }
-    } catch (error) {
-      console.error('Failed to load auth data:', error);
+    } catch {
+      // Storage read failed — start unauthenticated
     } finally {
       setIsLoading(false);
     }
   };
 
+  const logout = useCallback(async () => {
+    setUser(null);
+    setToken(null);
+    await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+  }, []);
+
   const login = async (credentials: LoginRequest) => {
-    try {
-      console.log('=== DEBUG INFO ===');
-      console.log('Attempting login with URL:', `${API_URL}/auth/login`);
-      console.log('Platform:', Platform.OS);
-      console.log('Is Physical Device:', Constants.isDevice);
-      console.log('Device Name:', Constants.deviceName);
-      console.log('==================');
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(credentials),
-      });
+    const response = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials),
+    });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || 'Login failed');
-      }
-
-      const data: AuthResponse = await response.json();
-
-      // Save to state and async storage
-      setUser(data.user);
-      setToken(data.token);
-      await AsyncStorage.setItem(TOKEN_KEY, data.token);
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
-      registerPushToken(data.token);
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error(await extractErrorMessage(response, 'Login failed'));
     }
+
+    const data: AuthResponse = await safeJson(response, 'Login failed');
+
+    setUser(data.user);
+    setToken(data.token);
+    await Promise.all([
+      secureSet(TOKEN_KEY, data.token),
+      secureSet(USER_KEY, JSON.stringify(data.user)),
+    ]);
+    registerPushToken(data.token);
   };
 
   const register = async (data: RegisterRequest) => {
-    try {
-      const response = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
+    const response = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || 'Registration failed');
-      }
-
-      const authData: AuthResponse = await response.json();
-
-      // Save to state and async storage
-      setUser(authData.user);
-      setToken(authData.token);
-      await AsyncStorage.setItem(TOKEN_KEY, authData.token);
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(authData.user));
-      registerPushToken(authData.token);
-    } catch (error) {
-      console.error('Registration error:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error(await extractErrorMessage(response, 'Registration failed'));
     }
-  };
 
-  const logout = async () => {
-    try {
-      // Clear state
-      setUser(null);
-      setToken(null);
+    const authData: AuthResponse = await safeJson(response, 'Registration failed');
 
-      // Clear async storage
-      await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    setUser(authData.user);
+    setToken(authData.token);
+    await Promise.all([
+      secureSet(TOKEN_KEY, authData.token),
+      secureSet(USER_KEY, JSON.stringify(authData.user)),
+    ]);
+    registerPushToken(authData.token);
   };
 
   const value = {

@@ -2,10 +2,11 @@ import { ThemedText } from '@/components/themed-text';
 import { Image, StyleSheet, Text, View, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTickets } from '@/hooks/useTickets';
+import { useFocusEffect } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 
 export const options = {
   icon: 'confirmation-number',
@@ -15,11 +16,17 @@ export const options = {
 type TicketFilter = 'current' | 'past';
 
 export default function TicketsScreen() {
-  const { tickets, loading, error, refetch } = useTickets();
+  const { tickets, loading, loadingMore, error, hasMore, refetch, loadMore } = useTickets();
   const { theme } = useTheme();
   const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
   const [filter, setFilter] = useState<TicketFilter>('current');
   const [refreshing, setRefreshing] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refetch(true);
+    }, []),
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -273,6 +280,19 @@ export default function TicketsScreen() {
                 </TouchableOpacity>
               );
             })}
+
+            {hasMore && (
+              <TouchableOpacity
+                style={[styles.loadMoreButton, { borderColor: theme.border }]}
+                onPress={loadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore
+                  ? <ActivityIndicator size="small" color={theme.primary} />
+                  : <Text style={[styles.loadMoreText, { color: theme.primary }]}>Carica altri ticket</Text>
+                }
+              </TouchableOpacity>
+            )}
 
             <View style={{ height: 20 }} />
             </>
@@ -536,5 +556,17 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderBottomLeftRadius: 20,
     marginRight: -10,
+  },
+  loadMoreButton: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  loadMoreText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

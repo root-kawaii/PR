@@ -36,6 +36,14 @@ export default {
     plugins: [
       'expo-router',
       [
+        'expo-notifications',
+        {
+          icon: './assets/images/icon.png',
+          color: '#ec4899',
+          sounds: [],
+        },
+      ],
+      [
         'expo-splash-screen',
         {
           image: './assets/images/splash-icon.png',
@@ -64,9 +72,7 @@ export default {
         projectId: '4e65bba3-9d05-4b27-9300-a81a9b8181be',
       },
       apiUrl: process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.4:3000',
-      stripePublishableKey:
-        process.env.EXPO_PUBLIC_STRIPE_KEY ||
-        'pk_test_51SNYzEIyXBlTTF3RmSRveZFwJPPkaKiG7MUacAZTSTkEyo2iqyqpWkUIaZ3TIkH2enw0qYApvWBQlUp0r4TzYXzb009O0oylKv',
+      stripePublishableKey: process.env.EXPO_PUBLIC_STRIPE_KEY || '',
     },
   },
 };

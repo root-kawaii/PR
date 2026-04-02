@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ScrollView,
   View,
@@ -8,6 +8,8 @@ import {
   Alert,
   Text,
   Modal,
+  ActivityIndicator,
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar } from "react-native-calendars";
@@ -22,7 +24,7 @@ import { useEvents } from "@/hooks/useEvents";
 import { useModal } from "@/hooks/useModal";
 import { useTheme } from "@/context/ThemeContext";
 import { Event, Table, TableReservation } from "@/types";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { API_URL } from "@/config/api";
 
 export default function HomeScreen() {
@@ -35,12 +37,19 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
-  const { events, refetch: refetchEvents } = useEvents();
+  const { events, refetch: refetchEvents, loadMore, loadingMore, hasMore } = useEvents();
   const eventModal = useModal();
   const reservationModal = useModal();
   const codeInputModal = useModal();
   const reservationDetailModal = useModal();
   const params = useLocalSearchParams();
+
+  // Silently refetch events whenever this tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      refetchEvents(true);
+    }, []),
+  );
 
   // Handle navigation from search page
   useEffect(() => {
@@ -313,6 +322,20 @@ export default function HomeScreen() {
               </Text>
             </View>
           )}
+
+          {/* Pagination — load more */}
+          {hasMore && (
+            <TouchableOpacity
+              style={[styles.loadMoreButton, { borderColor: theme.border }]}
+              onPress={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore
+                ? <ActivityIndicator size="small" color={theme.primary} />
+                : <Text style={[styles.loadMoreText, { color: theme.primary }]}>Carica altri eventi</Text>
+              }
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </View>
 
@@ -462,5 +485,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     textAlign: "center",
+  },
+  loadMoreButton: {
+    margin: 16,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  loadMoreText: {
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

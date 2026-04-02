@@ -111,8 +111,7 @@ export const TableReservationDetailModal = ({
     if (!share.paymentLinkToken) return;
 
     try {
-      // TODO: Replace with actual app domain
-      const paymentUrl = `https://app.pierre.com/pay/${share.paymentLinkToken}`;
+      const paymentUrl = `https://pierre-two-backend.fly.dev/pay/${share.paymentLinkToken}`;
       await Share.share({
         message: `Paga la tua quota di ${share.amount} per il tavolo!\n${paymentUrl}`,
         title: "Link di Pagamento",

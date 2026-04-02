@@ -2,9 +2,11 @@ import { ThemeProvider as NavigationThemeProvider, Theme } from '@react-navigati
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import 'react-native-reanimated';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
@@ -27,13 +29,30 @@ function RootLayoutNav() {
     const inAuthGroup = segments[0] === '(tabs)';
 
     if (!isAuthenticated && inAuthGroup) {
-      // Redirect to login if not authenticated and trying to access protected routes
       router.replace('/login');
     } else if (isAuthenticated && !inAuthGroup) {
-      // Redirect to tabs if authenticated and on auth screens
       router.replace('/(tabs)');
     }
   }, [isAuthenticated, segments, isLoading]);
+
+  // Navigate to reservations tab when user taps a push notification
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(() => {
+      if (isAuthenticated) {
+        router.push('/(tabs)/reservations');
+      }
+    });
+    return () => sub.remove();
+  }, [isAuthenticated]);
+
+  // Block rendering until auth state is resolved — prevents flash of protected screens
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
 
   // Create navigation theme from app theme
   const navigationTheme: Theme = useMemo(() => ({
