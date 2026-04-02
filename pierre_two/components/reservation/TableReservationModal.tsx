@@ -64,12 +64,11 @@ export const TableReservationModal = ({
   }
 
   // Fixed total cost from the table
-  const tableTotalCost = parseFloat(
-    (table.totalCost || "0").replace(/[^0-9.]/g, "")
-  );
+  const rawCost = parseFloat((table.totalCost || "0").replace(/[^0-9.]/g, ""));
+  const tableTotalCost = isNaN(rawCost) || rawCost < 0 ? 0 : rawCost;
 
-  // Number of paying people = owner + paying guests
-  const numPayingGuests = 1 + payingGuestPhones.length;
+  // Number of paying people = owner + paying guests (always ≥ 1)
+  const numPayingGuests = Math.max(1, 1 + payingGuestPhones.length);
 
   // Per-person amount (for display)
   const perPersonAmount = tableTotalCost / numPayingGuests;

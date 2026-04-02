@@ -9,6 +9,10 @@ import { useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { API_URL } from '@/config/api';
+import { apiFetch } from '@/config/apiFetch';
+import * as Notifications from 'expo-notifications';
+import * as Linking from 'expo-linking';
+import Constants from 'expo-constants';
 import { ThemeSelector } from '@/components/settings/ThemeSelector';
 
 export const options = {
@@ -17,13 +21,13 @@ export const options = {
 };
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
 
   // Settings state
-  const [pushNotifications, setPushNotifications] = useState(true);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [eventReminders, setEventReminders] = useState(true);
 
@@ -71,26 +75,17 @@ export default function ProfileScreen() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/auth/send-sms-verification`, {
+      const response = await apiFetch(`${API_URL}/auth/send-sms-verification`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: user?.id,
-          phone_number: phoneNumber,
-        }),
+        body: JSON.stringify({ user_id: user?.id, phone_number: phoneNumber }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to send verification code');
-      }
+      if (!response.ok) throw new Error('Failed to send verification code');
 
       setCodeSent(true);
       Alert.alert('Codice Inviato', 'Controlla i tuoi SMS per il codice di verifica');
-    } catch (error) {
-      console.error('Error sending verification code:', error);
-      Alert.alert('Errore', 'Impossibile inviare il codice di verifica');
+    } catch (e: any) {
+      Alert.alert('Errore', e.message || 'Impossibile inviare il codice di verifica');
     }
   };
 
@@ -101,11 +96,8 @@ export default function ProfileScreen() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/auth/verify-sms-code`, {
+      const response = await apiFetch(`${API_URL}/auth/verify-sms-code`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           user_id: user?.id,
           phone_number: phoneNumber,
@@ -113,18 +105,60 @@ export default function ProfileScreen() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Invalid verification code');
-      }
+      if (!response.ok) throw new Error('Invalid verification code');
 
       setIsPhoneVerified(true);
       setShowPhoneVerification(false);
       setCodeSent(false);
       setVerificationCode('');
       Alert.alert('Verificato!', 'Il tuo numero di telefono è stato verificato con successo');
-    } catch (error) {
-      console.error('Error verifying code:', error);
-      Alert.alert('Errore', 'Codice di verifica non valido');
+    } catch (e: any) {
+      Alert.alert('Errore', e.message || 'Codice di verifica non valido');
+    }
+  };
+
+  const handleEnableNotifications = async () => {
+    setNotifLoading(true);
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+
+      if (status === 'denied') {
+        // iOS won't re-prompt after denial — send user to Settings
+        Alert.alert(
+          'Notifiche disabilitate',
+          'Abilita le notifiche nelle Impostazioni del dispositivo per ricevere aggiornamenti sui pagamenti.',
+          [
+            { text: 'Annulla', style: 'cancel' },
+            { text: 'Apri Impostazioni', onPress: () => Linking.openSettings() },
+          ],
+        );
+        return;
+      }
+
+      // Request if undetermined, or re-register if already granted
+      if (status !== 'granted') {
+        const { status: newStatus } = await Notifications.requestPermissionsAsync();
+        if (newStatus !== 'granted') {
+          Alert.alert('Permesso negato', 'Non è stato possibile attivare le notifiche.');
+          return;
+        }
+      }
+
+      // Permission is granted — register/refresh the token
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      const tokenData = await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : undefined,
+      );
+      await apiFetch(`${API_URL}/auth/push-token`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ push_token: tokenData.data }),
+      });
+      Alert.alert('Notifiche attivate', 'Riceverai notifiche per i pagamenti e le prenotazioni.');
+    } catch {
+      Alert.alert('Errore', 'Impossibile attivare le notifiche. Riprova.');
+    } finally {
+      setNotifLoading(false);
     }
   };
 
@@ -302,7 +336,7 @@ export default function ProfileScreen() {
               </View>
             )}
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Prossimamente', 'La modifica della password sarà disponibile a breve.')}>
               <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                 <View style={styles.actionLeft}>
                   <View style={[styles.actionIconCircle, { backgroundColor: `${theme.warning}33` }]}>
@@ -317,7 +351,7 @@ export default function ProfileScreen() {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Prossimamente', 'La modifica del profilo sarà disponibile a breve.')}>
               <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                 <View style={styles.actionLeft}>
                   <View style={[styles.actionIconCircle, { backgroundColor: `${theme.primary}33` }]}>
@@ -337,7 +371,11 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={dynamicStyles.sectionTitle}>Notifiche</Text>
 
-            <View style={styles.actionCard}>
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={handleEnableNotifications}
+              disabled={notifLoading}
+            >
               <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                 <View style={styles.actionLeft}>
                   <View style={[styles.actionIconCircle, { backgroundColor: `${theme.primary}33` }]}>
@@ -345,17 +383,14 @@ export default function ProfileScreen() {
                   </View>
                   <View>
                     <Text style={dynamicStyles.actionTitle}>Notifiche Push</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Ricevi notifiche push</Text>
+                    <Text style={dynamicStyles.actionSubtitle}>
+                      {notifLoading ? 'Attivazione...' : 'Attiva o ripristina le notifiche'}
+                    </Text>
                   </View>
                 </View>
-                <Switch
-                  value={pushNotifications}
-                  onValueChange={setPushNotifications}
-                  trackColor={{ false: theme.border, true: theme.primary }}
-                  thumbColor="#fff"
-                />
+                <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
               </View>
-            </View>
+            </TouchableOpacity>
 
             <View style={styles.actionCard}>
               <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
@@ -402,7 +437,7 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={dynamicStyles.sectionTitle}>App</Text>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Prossimamente', 'Le preferenze musicali saranno disponibili a breve.')}>
               <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                 <View style={styles.actionLeft}>
                   <View style={[styles.actionIconCircle, { backgroundColor: `${theme.secondary}33` }]}>
@@ -420,7 +455,7 @@ export default function ProfileScreen() {
             {/* Theme Selector */}
             <ThemeSelector />
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Lingua', 'Al momento l\'app è disponibile solo in italiano.')}>
               <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                 <View style={styles.actionLeft}>
                   <View style={[styles.actionIconCircle, { backgroundColor: `${theme.success}33` }]}>
@@ -440,7 +475,7 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={dynamicStyles.sectionTitle}>Supporto</Text>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Centro Assistenza', 'Per supporto scrivi a support@pierre.app')}>
               <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                 <View style={styles.actionLeft}>
                   <View style={[styles.actionIconCircle, { backgroundColor: `${theme.info}33` }]}>
@@ -455,7 +490,7 @@ export default function ProfileScreen() {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => Alert.alert('Termini e Privacy', 'Disponibili su pierre.app/terms')}>
               <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                 <View style={styles.actionLeft}>
                   <View style={[styles.actionIconCircle, { backgroundColor: `${theme.warning}33` }]}>

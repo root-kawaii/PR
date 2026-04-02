@@ -46,63 +46,74 @@ export default function RegisterScreen() {
 
   // Step 1: Validate and create account (without phone verification yet)
   const handleContinueToPhoneVerification = async () => {
-    // Validation
-    if (!name || !email || !password || !dateOfBirth || !phone) {
-      Alert.alert("Error", "Please fill in all required fields");
+    if (!name.trim()) {
+      Alert.alert("Errore", "Inserisci il tuo nome completo");
       return;
     }
-
+    if (!email.trim() || !email.includes("@")) {
+      Alert.alert("Errore", "Inserisci un indirizzo email valido");
+      return;
+    }
+    if (!dateOfBirth) {
+      Alert.alert("Errore", "Seleziona la tua data di nascita");
+      return;
+    }
+    // Italian mobile: starts with 3, 9-10 digits (e.g. 3331234567)
+    const italianMobileRegex = /^3\d{8,9}$/;
+    if (!italianMobileRegex.test(phone.trim())) {
+      Alert.alert("Errore", "Inserisci un numero di cellulare italiano valido (es. 3331234567)");
+      return;
+    }
     if (password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters");
+      Alert.alert("Errore", "La password deve contenere almeno 6 caratteri");
       return;
     }
-
     if (password !== confirmPassword) {
-      Alert.alert("Error", "Passwords do not match");
-      return;
-    }
-
-    if (!email.includes("@")) {
-      Alert.alert("Error", "Please enter a valid email address");
-      return;
-    }
-
-    // Validate phone number (must be 10 digits for Italian numbers)
-    if (phone.length < 8) {
-      Alert.alert("Error", "Please enter a valid phone number");
+      Alert.alert("Errore", "Le password non coincidono");
       return;
     }
 
     setIsLoading(true);
     try {
-      // Create the account first
       const response = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           password,
           date_of_birth: dateOfBirth.toISOString().split("T")[0],
         }),
       });
 
-      const data = await response.json();
-
+      let errorMessage = "Registrazione fallita";
       if (!response.ok) {
-        throw new Error(data.message || "Registration failed");
+        try {
+          const text = await response.text();
+          if (text) {
+            const json = JSON.parse(text);
+            errorMessage = json.error || json.message || errorMessage;
+          }
+        } catch { /* use fallback */ }
+        if (response.status === 409) errorMessage = "Esiste già un account con questa email";
+        throw new Error(errorMessage);
       }
 
-      // Store temp user ID for phone verification
-      setTempUserId(data.user.id);
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Risposta non valida dal server");
+      }
 
-      // Move to phone verification step
+      if (!data?.user?.id) {
+        throw new Error("Risposta non valida dal server");
+      }
+
+      setTempUserId(data.user.id);
       setStep("phone-verification");
     } catch (error: any) {
-      Alert.alert(
-        "Registration Failed",
-        error.message || "Could not create account",
-      );
+      Alert.alert("Registrazione fallita", error.message || "Impossibile creare l'account");
     } finally {
       setIsLoading(false);
     }
@@ -124,13 +135,21 @@ export default function RegisterScreen() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to send verification code");
+        let msg = "Invio del codice fallito";
+        try {
+          const text = await response.text();
+          if (text) {
+            const json = JSON.parse(text);
+            msg = json.error || json.message || msg;
+          }
+        } catch { /* use fallback */ }
+        throw new Error(msg);
       }
 
       setCodeSent(true);
-      Alert.alert("Success", "Verification code sent to your phone!");
+      Alert.alert("Codice inviato", `Codice di verifica inviato al +39${phone.trim()}`);
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to send verification code");
+      Alert.alert("Errore", error.message || "Impossibile inviare il codice. Riprova.");
     } finally {
       setIsLoading(false);
     }
@@ -138,8 +157,16 @@ export default function RegisterScreen() {
 
   // Step 3: Verify code and complete registration
   const handleVerifyAndCompleteRegistration = async () => {
-    if (!tempUserId || !phone || !verificationCode) {
-      Alert.alert("Error", "Please enter the verification code");
+    if (!verificationCode || verificationCode.trim().length !== 6) {
+      Alert.alert("Errore", "Inserisci il codice a 6 cifre");
+      return;
+    }
+    if (!tempUserId || !phone) {
+      Alert.alert("Errore", "Dati di registrazione mancanti. Ricomincia dall'inizio.");
+      return;
+    }
+    if (!dateOfBirth) {
+      Alert.alert("Errore", "Data di nascita mancante. Ricomincia dall'inizio.");
       return;
     }
 
@@ -155,41 +182,46 @@ export default function RegisterScreen() {
         }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.verified) {
-        throw new Error(data.message || "Invalid verification code");
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Risposta non valida dal server");
       }
 
-      // Phone verified! Now complete the login
-      Alert.alert("Success", "Phone verified! Logging you in...", [
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || "Verifica fallita");
+      }
+      if (!data.verified) {
+        throw new Error("Codice non valido o scaduto. Richiedi un nuovo codice.");
+      }
+
+      // Phone verified — complete registration and auto-login
+      Alert.alert("Verificato!", "Numero confermato. Accesso in corso...", [
         {
           text: "OK",
           onPress: async () => {
             try {
               await register({
                 name: name.trim(),
-                email: email.trim(),
+                email: email.trim().toLowerCase(),
                 password,
                 phone_number: `+39${phone.trim()}`,
-                date_of_birth: dateOfBirth!.toISOString().split("T")[0],
+                date_of_birth: dateOfBirth.toISOString().split("T")[0],
               });
               router.replace("/(tabs)");
-            } catch {
+            } catch (err: any) {
               Alert.alert(
-                "Error",
-                "Account created but login failed. Please log in manually.",
+                "Errore di accesso",
+                err.message || "Account creato ma accesso fallito. Effettua il login manualmente.",
               );
-              router.replace("/");
+              router.replace("/login");
             }
           },
         },
       ]);
     } catch (error: any) {
-      Alert.alert(
-        "Verification Failed",
-        error.message || "Invalid code. Please try again.",
-      );
+      Alert.alert("Verifica fallita", error.message || "Codice non valido. Riprova.");
     } finally {
       setIsVerifying(false);
     }
