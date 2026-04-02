@@ -10,7 +10,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { API_URL } from '@/config/api';
 import { apiFetch } from '@/config/apiFetch';
-import * as Notifications from 'expo-notifications';
+let Notifications: typeof import('expo-notifications') | null = null;
+try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
 import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
 import { ThemeSelector } from '@/components/settings/ThemeSelector';
@@ -118,6 +119,10 @@ export default function ProfileScreen() {
   };
 
   const handleEnableNotifications = async () => {
+    if (!Notifications) {
+      Alert.alert('Non disponibile', 'Le notifiche non sono supportate in questa modalità.');
+      return;
+    }
     setNotifLoading(true);
     try {
       const { status } = await Notifications.getPermissionsAsync();

@@ -1,47 +1,71 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 import { API_URL } from '../config/api';
 
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// expo-secure-store and expo-notifications are only available in native builds (not Expo Go).
+// Fall back gracefully so the app works during local development.
+let SecureStore: typeof import('expo-secure-store') | null = null;
+try { SecureStore = require('expo-secure-store'); } catch { /* Expo Go */ }
+const _memStore: Record<string, string> = {};
+
+let Notifications: typeof import('expo-notifications') | null = null;
+try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
+
+if (Notifications) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 async function registerPushToken(authToken: string): Promise<void> {
-  if (!Constants.isDevice) return;
+  if (!Notifications) {
+    console.log('[PushToken] Skipped: expo-notifications not available (Expo Go)');
+    return;
+  }
+  if (!Constants.isDevice) {
+    console.log('[PushToken] Skipped: not a physical device');
+    return;
+  }
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
+  console.log('[PushToken] Permission status:', existingStatus);
 
   if (existingStatus !== 'granted') {
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
+    console.log('[PushToken] Permission after request:', status);
   }
 
-  if (finalStatus !== 'granted') return;
+  if (finalStatus !== 'granted') {
+    console.log('[PushToken] Permission denied — token not registered');
+    return;
+  }
 
   try {
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    console.log('[PushToken] Using projectId:', projectId);
     const tokenData = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
-    await fetch(`${API_URL}/auth/push-token`, {
+    console.log('[PushToken] Token obtained:', tokenData.data);
+    const res = await fetch(`${API_URL}/auth/push-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
       body: JSON.stringify({ push_token: tokenData.data }),
     });
-  } catch {
-    // Push token registration is non-critical — fail silently
+    console.log('[PushToken] Server response:', res.status);
+  } catch (e) {
+    console.error('[PushToken] Failed to register push token:', e);
   }
 
   if (Platform.OS === 'android') {
@@ -91,6 +115,7 @@ function isTokenExpired(token: string): boolean {
 }
 
 async function secureGet(key: string): Promise<string | null> {
+  if (!SecureStore) return _memStore[key] ?? null;
   try {
     return await SecureStore.getItemAsync(key);
   } catch {
@@ -99,10 +124,12 @@ async function secureGet(key: string): Promise<string | null> {
 }
 
 async function secureSet(key: string, value: string): Promise<void> {
+  if (!SecureStore) { _memStore[key] = value; return; }
   await SecureStore.setItemAsync(key, value);
 }
 
 async function secureDelete(key: string): Promise<void> {
+  if (!SecureStore) { delete _memStore[key]; return; }
   try {
     await SecureStore.deleteItemAsync(key);
   } catch {

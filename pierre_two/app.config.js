@@ -71,7 +71,7 @@ export default {
       eas: {
         projectId: '4e65bba3-9d05-4b27-9300-a81a9b8181be',
       },
-      apiUrl: process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.4:3000',
+      apiUrl: process.env.EXPO_PUBLIC_API_URL || 'https://pierre-two-backend.fly.dev',
       stripePublishableKey: process.env.EXPO_PUBLIC_STRIPE_KEY || '',
     },
   },

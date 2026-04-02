@@ -6,7 +6,8 @@ import { View, ActivityIndicator } from 'react-native';
 import 'react-native-reanimated';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
+let Notifications: typeof import('expo-notifications') | null = null;
+try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
 
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
@@ -37,6 +38,7 @@ function RootLayoutNav() {
 
   // Navigate to reservations tab when user taps a push notification
   useEffect(() => {
+    if (!Notifications) return;
     const sub = Notifications.addNotificationResponseReceivedListener(() => {
       if (isAuthenticated) {
         router.push('/(tabs)/reservations');
