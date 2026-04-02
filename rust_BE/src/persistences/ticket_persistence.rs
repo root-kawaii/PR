@@ -2,15 +2,18 @@ use crate::models::{Ticket, CreateTicketRequest, UpdateTicketRequest};
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
-/// Get all tickets (admin view - returns all tickets)
-pub async fn get_all_tickets(pool: &PgPool) -> Result<Vec<Ticket>> {
+/// Get all tickets (admin view - paginated)
+pub async fn get_all_tickets(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<Ticket>> {
     let tickets = sqlx::query_as::<_, Ticket>(
         r#"
         SELECT id, event_id, user_id, ticket_code, ticket_type, price, status, purchase_date, qr_code, created_at, updated_at
         FROM tickets
         ORDER BY purchase_date DESC
+        LIMIT $1 OFFSET $2
         "#,
     )
+    .bind(limit)
+    .bind(offset)
     .fetch_all(pool)
     .await?;
 

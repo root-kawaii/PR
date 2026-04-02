@@ -1,7 +1,8 @@
-use crate::models::{AppState, CreateTicketRequest, UpdateTicketRequest, TicketResponse, TicketWithEventResponse, EventSummary};
+use crate::models::{AppState, CreateTicketRequest, UpdateTicketRequest, TicketResponse, TicketWithEventResponse, EventSummary, PaginationParams};
 use crate::persistences::ticket_persistence;
+use crate::middleware::auth::ClubOwnerUser;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -19,11 +20,13 @@ pub struct TicketsWithEventsResponse {
     pub tickets: Vec<TicketWithEventResponse>,
 }
 
-/// Get all tickets (admin endpoint - returns all tickets from all users)
+/// Get all tickets (admin endpoint - paginated, default limit=50)
 pub async fn get_all_tickets(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<TicketsResponse>, StatusCode> {
-    match ticket_persistence::get_all_tickets(&state.db_pool).await {
+    match ticket_persistence::get_all_tickets(&state.db_pool, pagination.limit, pagination.offset).await {
         Ok(tickets) => {
             let responses: Vec<TicketResponse> = tickets.into_iter().map(|t| t.into()).collect();
             Ok(Json(TicketsResponse { tickets: responses }))
@@ -96,8 +99,9 @@ pub async fn get_ticket_by_code(
     }
 }
 
-/// Create a new ticket
+/// Create a new ticket (requires club_owner JWT)
 pub async fn create_ticket(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateTicketRequest>,
 ) -> Result<(StatusCode, Json<TicketResponse>), StatusCode> {
@@ -107,8 +111,9 @@ pub async fn create_ticket(
     }
 }
 
-/// Update a ticket
+/// Update a ticket (requires club_owner JWT)
 pub async fn update_ticket(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateTicketRequest>,
@@ -122,8 +127,9 @@ pub async fn update_ticket(
     }
 }
 
-/// Delete a ticket
+/// Delete a ticket (requires club_owner JWT)
 pub async fn delete_ticket(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {

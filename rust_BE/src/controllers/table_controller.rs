@@ -13,8 +13,10 @@ use crate::models::{
     TableSummary, PaymentStatus, PaymentCaptureMethod, EventSummary,
 };
 use crate::persistences::{table_persistence, user_persistence};
+use crate::middleware::auth::ClubOwnerUser;
+use crate::models::PaginationParams;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -107,8 +109,9 @@ pub async fn get_table(
     }
 }
 
-/// Create a new table
+/// Create a new table (requires club_owner JWT)
 pub async fn create_table(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateTableRequest>,
 ) -> Result<Json<TableResponse>, StatusCode> {
@@ -133,8 +136,9 @@ pub async fn create_table(
     }
 }
 
-/// Update a table
+/// Update a table (requires club_owner JWT)
 pub async fn update_table(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(req): Json<UpdateTableRequest>,
@@ -167,8 +171,9 @@ pub async fn update_table(
     }
 }
 
-/// Delete a table
+/// Delete a table (requires club_owner JWT)
 pub async fn delete_table(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
@@ -187,9 +192,11 @@ pub async fn delete_table(
 
 /// Get all reservations (admin)
 pub async fn get_all_reservations(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<TableReservationsResponse>, StatusCode> {
-    match table_persistence::get_all_reservations(&state.db_pool).await {
+    match table_persistence::get_all_reservations(&state.db_pool, pagination.limit, pagination.offset).await {
         Ok(reservations) => {
             let reservation_responses: Vec<TableReservationResponse> = reservations
                 .into_iter()
@@ -555,14 +562,14 @@ pub async fn create_payment_intent(
     let stripe_customer = Customer::create(&state.stripe_client, customer_params)
         .await
         .map_err(|e| {
-            eprintln!("Stripe Customer create error: {:?}", e);
+            tracing::error!(error = ?e, "Stripe Customer create error");
             (StatusCode::BAD_GATEWAY, "Errore creazione cliente".to_string())
         })?;
 
     // Create Stripe PaymentIntent for owner's share with manual capture + saved payment method
     let amount_in_cents = owner_share.to_f64()
         .ok_or_else(|| {
-            eprintln!("Invalid amount: {}", owner_share);
+            tracing::error!(owner_share = %owner_share, "Invalid owner_share amount");
             (StatusCode::INTERNAL_SERVER_ERROR, "Importo non valido".to_string())
         })? * 100.0;
 
@@ -600,7 +607,7 @@ pub async fn create_payment_intent(
     let payment_intent = PaymentIntent::create(&state.stripe_client, params)
         .await
         .map_err(|e| {
-            eprintln!("Stripe API error: {:?}", e);
+            tracing::error!(error = ?e, "Stripe API error creating PaymentIntent");
             (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
         })?;
 
@@ -609,7 +616,7 @@ pub async fn create_payment_intent(
 
     let client_secret = payment_intent.client_secret
         .ok_or_else(|| {
-            eprintln!("No client_secret in PaymentIntent response");
+            tracing::error!("No client_secret in PaymentIntent response");
             (StatusCode::INTERNAL_SERVER_ERROR, "Risposta di pagamento non valida".to_string())
         })?;
 
@@ -660,14 +667,14 @@ pub async fn create_reservation_with_payment(
     let payment_intent = PaymentIntent::retrieve(&state.stripe_client, &pi_id, &[])
         .await
         .map_err(|e| {
-            eprintln!("Failed to retrieve PaymentIntent from Stripe: {:?}", e);
+            tracing::error!(error = ?e, "Failed to retrieve PaymentIntent from Stripe");
             (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
         })?;
 
     match payment_intent.status {
         PaymentIntentStatus::Succeeded | PaymentIntentStatus::RequiresCapture => {}
         ref other => {
-            eprintln!("PaymentIntent {} has invalid status: {:?}", pi_id, other);
+            tracing::error!(pi_id = %pi_id, status = ?other, "PaymentIntent has invalid status");
             return Err((StatusCode::BAD_REQUEST, "Pagamento non completato".to_string()));
         }
     }
@@ -675,7 +682,7 @@ pub async fn create_reservation_with_payment(
     // Verify amount matches owner's share in cents
     let expected_cents = (owner_share.to_f64().unwrap_or(0.0) * 100.0) as i64;
     if payment_intent.amount != expected_cents {
-        eprintln!("PaymentIntent amount mismatch: expected {} cents, got {}", expected_cents, payment_intent.amount);
+        tracing::error!(expected_cents = %expected_cents, actual = %payment_intent.amount, "PaymentIntent amount mismatch");
         return Err((StatusCode::BAD_REQUEST, "Importo del pagamento non corrispondente".to_string()));
     }
 
@@ -699,7 +706,7 @@ pub async fn create_reservation_with_payment(
 
     // Begin transaction
     let mut tx = state.db_pool.begin().await.map_err(|e| {
-        eprintln!("Failed to begin transaction: {}", e);
+        tracing::error!(error = %e, "Failed to begin transaction");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
     })?;
 
@@ -726,7 +733,7 @@ pub async fn create_reservation_with_payment(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create payment: {}", e);
+        tracing::error!(error = %e, "Failed to create payment");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore creazione pagamento".to_string())
     })?;
 
@@ -756,7 +763,7 @@ pub async fn create_reservation_with_payment(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create reservation: {}", e);
+        tracing::error!(error = %e, "Failed to create reservation");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore creazione prenotazione".to_string())
     })?;
 
@@ -769,7 +776,7 @@ pub async fn create_reservation_with_payment(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to link payment: {}", e);
+        tracing::error!(error = %e, "Failed to link payment to reservation");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
     })?;
 
@@ -793,7 +800,7 @@ pub async fn create_reservation_with_payment(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create owner payment share: {}", e);
+        tracing::error!(error = %e, "Failed to create owner payment share");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
     })?;
 
@@ -817,7 +824,7 @@ pub async fn create_reservation_with_payment(
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to create guest payment share: {}", e);
+            tracing::error!(error = %e, "Failed to create guest payment share");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
         all_shares.push(share);
@@ -842,7 +849,7 @@ pub async fn create_reservation_with_payment(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create owner ticket: {}", e);
+        tracing::error!(error = %e, "Failed to create owner ticket");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
     })?;
 
@@ -855,7 +862,7 @@ pub async fn create_reservation_with_payment(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to link ticket: {}", e);
+        tracing::error!(error = %e, "Failed to link ticket to reservation");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
     })?;
 
@@ -887,7 +894,7 @@ pub async fn create_reservation_with_payment(
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("Failed to create free guest ticket: {}", e);
+                tracing::error!(error = %e, "Failed to create free guest ticket");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
             })?;
 
@@ -906,7 +913,7 @@ pub async fn create_reservation_with_payment(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("Failed to add free guest: {}", e);
+                tracing::error!(error = %e, "Failed to add free guest");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
             })?;
 
@@ -919,7 +926,7 @@ pub async fn create_reservation_with_payment(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("Failed to link free guest ticket: {}", e);
+                tracing::error!(error = %e, "Failed to link free guest ticket");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
             })?;
 
@@ -933,7 +940,7 @@ pub async fn create_reservation_with_payment(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| {
-                    eprintln!("Failed to add guest user id: {}", e);
+                    tracing::error!(error = %e, "Failed to add guest user id");
                     (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
                 })?;
             }
@@ -942,7 +949,7 @@ pub async fn create_reservation_with_payment(
 
     // Commit transaction
     tx.commit().await.map_err(|e| {
-        eprintln!("Failed to commit transaction: {}", e);
+        tracing::error!(error = %e, "Failed to commit transaction");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
     })?;
 
@@ -970,7 +977,7 @@ pub async fn create_reservation_with_payment(
     let final_reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_id)
         .await
         .map_err(|e| {
-            eprintln!("Failed to fetch reservation: {}", e);
+            tracing::error!(error = %e, "Failed to fetch reservation");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
@@ -1091,14 +1098,14 @@ pub async fn verify_payment_link(
     let reservation = table_persistence::get_reservation_by_id(&state.db_pool, share.reservation_id)
         .await
         .map_err(|e| {
-            eprintln!("Failed to get reservation: {}", e);
+            tracing::error!(error = %e, "Failed to get reservation");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
     let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
         .await
         .map_err(|e| {
-            eprintln!("Failed to get table: {}", e);
+            tracing::error!(error = %e, "Failed to get table");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
@@ -1107,7 +1114,7 @@ pub async fn verify_payment_link(
         .fetch_one(&state.db_pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to get event: {}", e);
+            tracing::error!(error = %e, "Failed to get event");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
@@ -1124,7 +1131,7 @@ pub async fn verify_payment_link(
         &EncodingKey::from_secret(state.jwt_secret.as_bytes()),
     )
     .map_err(|e| {
-        eprintln!("Failed to create JWT: {}", e);
+        tracing::error!(error = %e, "Failed to create JWT");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
     })?;
 
@@ -1174,7 +1181,7 @@ pub async fn create_payment_link_checkout(
     let reservation = table_persistence::get_reservation_by_id(&state.db_pool, share.reservation_id)
         .await
         .map_err(|e| {
-            eprintln!("Failed to get reservation: {}", e);
+            tracing::error!(error = %e, "Failed to get reservation");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
@@ -1183,7 +1190,7 @@ pub async fn create_payment_link_checkout(
         .fetch_one(&state.db_pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to get event: {}", e);
+            tracing::error!(error = %e, "Failed to get event");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
@@ -1209,9 +1216,11 @@ pub async fn create_payment_link_checkout(
         }
     ]);
 
-    // TODO: Configure success_url and cancel_url based on frontend deployment
-    checkout_params.success_url = Some("https://app.example.com/payment/success?session_id={CHECKOUT_SESSION_ID}");
-    checkout_params.cancel_url = Some("https://app.example.com/payment/cancel");
+    let app_base_url = std::env::var("APP_BASE_URL").unwrap_or_else(|_| "https://pierre-two-backend.fly.dev".to_string());
+    let success_url = format!("{}/payment/success?session_id={{CHECKOUT_SESSION_ID}}", app_base_url);
+    let cancel_url = format!("{}/payment/cancel/{}", app_base_url, token);
+    checkout_params.success_url = Some(&success_url);
+    checkout_params.cancel_url = Some(&cancel_url);
 
     if let Some(ref email) = req.email {
         checkout_params.customer_email = Some(email);
@@ -1230,7 +1239,7 @@ pub async fn create_payment_link_checkout(
     let session = stripe::CheckoutSession::create(&state.stripe_client, checkout_params)
         .await
         .map_err(|e| {
-            eprintln!("Stripe Checkout error: {:?}", e);
+            tracing::error!(error = ?e, "Stripe Checkout session creation error");
             (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
         })?;
 
@@ -1244,7 +1253,7 @@ pub async fn create_payment_link_checkout(
     )
     .await
     .map_err(|e| {
-        eprintln!("Failed to update share: {}", e);
+        tracing::error!(error = %e, "Failed to update payment share");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
     })?;
 
@@ -1281,7 +1290,7 @@ pub async fn add_free_guest_to_reservation(
     let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
         .await
         .map_err(|e| {
-            eprintln!("Failed to get table: {}", e);
+            tracing::error!(error = %e, "Failed to get table");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
@@ -1289,7 +1298,7 @@ pub async fn add_free_guest_to_reservation(
     let current_count = table_persistence::get_total_people_count(&state.db_pool, reservation_uuid)
         .await
         .map_err(|e| {
-            eprintln!("Failed to count people: {}", e);
+            tracing::error!(error = %e, "Failed to count people in reservation");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
@@ -1322,7 +1331,7 @@ pub async fn add_free_guest_to_reservation(
     .fetch_one(&state.db_pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create ticket: {}", e);
+        tracing::error!(error = %e, "Failed to create ticket");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore creazione biglietto".to_string())
     })?;
 
@@ -1339,7 +1348,7 @@ pub async fn add_free_guest_to_reservation(
     )
     .await
     .map_err(|e| {
-        eprintln!("Failed to add guest: {}", e);
+        tracing::error!(error = %e, "Failed to add guest to reservation");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore aggiunta ospite".to_string())
     })?;
 
@@ -1348,14 +1357,14 @@ pub async fn add_free_guest_to_reservation(
     table_persistence::update_reservation_num_people(&state.db_pool, reservation_uuid, new_count)
         .await
         .map_err(|e| {
-            eprintln!("Failed to update num_people: {}", e);
+            tracing::error!(error = %e, "Failed to update num_people");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
     table_persistence::add_ticket_to_reservation(&state.db_pool, reservation_uuid, ticket_id)
         .await
         .map_err(|e| {
-            eprintln!("Failed to link ticket: {}", e);
+            tracing::error!(error = %e, "Failed to link ticket to reservation");
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
@@ -1364,7 +1373,7 @@ pub async fn add_free_guest_to_reservation(
         table_persistence::add_guest_to_reservation(&state.db_pool, reservation_uuid, uid)
             .await
             .map_err(|e| {
-                eprintln!("Failed to add guest user id: {}", e);
+                tracing::error!(error = %e, "Failed to add guest user id");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
             })?;
     }
@@ -1401,4 +1410,316 @@ pub async fn get_reservation_payment_status(
         payment_shares: shares.into_iter().map(|s| s.into()).collect(),
         free_guests: free_guests.into_iter().map(|g| g.into()).collect(),
     }))
+}
+
+// ============================================================================
+// Guest payment web pages
+// ============================================================================
+
+/// Serves the guest payment landing page.
+/// - If the Pierre app is installed, the deep link opens it automatically.
+/// - Otherwise the page falls back to a full web payment flow.
+pub async fn guest_payment_page(
+    Path(token): Path<String>,
+) -> axum::response::Response {
+    let base_url = std::env::var("APP_BASE_URL")
+        .unwrap_or_else(|_| "https://pierre-two-backend.fly.dev".to_string());
+    let api_base = base_url.clone();
+
+    let html = format!(r#"<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pierre — Pagamento</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{background:#0f0f0f;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
+    .card{{background:#1a1a1a;border-radius:16px;padding:32px;max-width:400px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.5)}}
+    h1{{font-size:22px;font-weight:700;margin-bottom:4px}}
+    .sub{{color:#9ca3af;font-size:14px;margin-bottom:24px}}
+    .detail{{background:#262626;border-radius:10px;padding:16px;margin-bottom:20px}}
+    .detail-row{{display:flex;justify-content:space-between;align-items:center;padding:6px 0}}
+    .detail-row:not(:last-child){{border-bottom:1px solid #333}}
+    .label{{color:#9ca3af;font-size:13px}}
+    .value{{font-weight:600;font-size:15px}}
+    .amount{{color:#ec4899;font-size:20px;font-weight:700}}
+    label{{display:block;font-size:13px;color:#9ca3af;margin-bottom:6px}}
+    input{{width:100%;background:#262626;border:1px solid #333;border-radius:8px;padding:12px;color:#fff;font-size:15px;margin-bottom:12px;outline:none}}
+    input:focus{{border-color:#ec4899}}
+    button{{width:100%;background:#ec4899;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:600;cursor:pointer;margin-top:4px}}
+    button:disabled{{opacity:.5;cursor:not-allowed}}
+    .error{{color:#f87171;font-size:13px;margin-top:8px;display:none}}
+    .success-icon{{font-size:48px;text-align:center;margin-bottom:16px}}
+    #loading{{text-align:center;color:#9ca3af}}
+    .spinner{{width:32px;height:32px;border:3px solid #333;border-top-color:#ec4899;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px}}
+    @keyframes spin{{to{{transform:rotate(360deg)}}}}
+    #app-redirect{{text-align:center;display:none}}
+    .app-btn{{display:inline-block;background:#ec4899;color:#fff;border-radius:10px;padding:12px 24px;text-decoration:none;font-weight:600;margin-top:12px}}
+    .divider{{color:#555;font-size:12px;text-align:center;margin:16px 0;position:relative}}
+    .divider::before,.divider::after{{content:'';position:absolute;top:50%;width:42%;height:1px;background:#333}}
+    .divider::before{{left:0}}.divider::after{{right:0}}
+  </style>
+</head>
+<body>
+<div class="card">
+  <!-- Loading state -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Caricamento...</p>
+  </div>
+
+  <!-- App redirect banner (shown if app is installed) -->
+  <div id="app-redirect">
+    <div class="success-icon">📱</div>
+    <h1>Apri l'app Pierre</h1>
+    <p class="sub">Completa il pagamento direttamente nell'app.</p>
+    <a href="pierretwo://pay/{token}" class="app-btn">Apri app Pierre</a>
+    <div class="divider">o paga qui sotto</div>
+  </div>
+
+  <!-- Preview (hidden until loaded) -->
+  <div id="preview" style="display:none">
+    <h1>Pagamento tavolo</h1>
+    <p class="sub" id="event-sub"></p>
+    <div class="detail">
+      <div class="detail-row"><span class="label">Evento</span><span class="value" id="ev-name"></span></div>
+      <div class="detail-row"><span class="label">Tavolo</span><span class="value" id="tbl-name"></span></div>
+      <div class="detail-row"><span class="label">La tua quota</span><span class="amount" id="amount"></span></div>
+    </div>
+
+    <!-- Already paid -->
+    <div id="paid-msg" style="display:none;text-align:center">
+      <div class="success-icon">✅</div>
+      <p style="color:#4ade80;font-weight:600">Pagamento già completato!</p>
+      <p class="sub" style="margin-top:8px">Puoi chiudere questa pagina.</p>
+    </div>
+
+    <!-- Verify form -->
+    <div id="verify-form">
+      <label>Inserisci il tuo numero di telefono o email per verificare la tua identità</label>
+      <input id="phone-input" type="tel" placeholder="+39 333 123 4567"/>
+      <input id="email-input" type="email" placeholder="oppure la tua email"/>
+      <button id="verify-btn" onclick="doVerify()">Verifica identità</button>
+      <div class="error" id="verify-error"></div>
+    </div>
+
+    <!-- Checkout form (hidden until verified) -->
+    <div id="checkout-form" style="display:none">
+      <p style="color:#4ade80;font-size:13px;margin-bottom:16px">✓ Identità verificata</p>
+      <label>Nome (opzionale)</label>
+      <input id="name-input" type="text" placeholder="Il tuo nome"/>
+      <label>Email per ricevuta (opzionale)</label>
+      <input id="checkout-email" type="email" placeholder="La tua email"/>
+      <button id="pay-btn" onclick="doPay()">Paga ora</button>
+      <div class="error" id="pay-error"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const TOKEN = "{token}";
+  const API = "{api_base}";
+  let jwt = null;
+
+  // 1. Try deep link immediately
+  const deepLink = "pierretwo://pay/" + TOKEN;
+  const appAttemptTime = Date.now();
+  window.location.href = deepLink;
+
+  // 2. After 1.5s if still here, app not installed — show web UI
+  setTimeout(function() {{
+    if (Date.now() - appAttemptTime < 3000) {{
+      // User is still on the page — show web fallback
+      fetchPreview();
+    }}
+  }}, 1500);
+
+  // Also fetch preview immediately so it's ready
+  fetchPreview();
+
+  async function fetchPreview() {{
+    if (document.getElementById('preview').style.display === 'block') return;
+    try {{
+      const res = await fetch(API + "/payment-links/" + TOKEN);
+      if (!res.ok) {{ showError("Link non valido o scaduto."); return; }}
+      const data = await res.json();
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('preview').style.display = 'block';
+      document.getElementById('ev-name').textContent = data.eventName || data.event_name || '';
+      document.getElementById('tbl-name').textContent = data.tableName || data.table_name || '';
+      document.getElementById('amount').textContent = data.amount || '';
+      document.getElementById('event-sub').textContent = (data.tableName || data.table_name || '') + ' · ' + (data.amount || '');
+
+      if ((data.status || '') === 'paid') {{
+        document.getElementById('paid-msg').style.display = 'block';
+        document.getElementById('verify-form').style.display = 'none';
+      }}
+    }} catch(e) {{
+      showError("Errore di rete. Riprova.");
+    }}
+  }}
+
+  async function doVerify() {{
+    const phone = document.getElementById('phone-input').value.trim();
+    const email = document.getElementById('email-input').value.trim();
+    if (!phone && !email) {{
+      showVerifyError("Inserisci telefono o email.");
+      return;
+    }}
+    const btn = document.getElementById('verify-btn');
+    btn.disabled = true; btn.textContent = "Verifica in corso...";
+    try {{
+      const res = await fetch(API + "/payment-links/" + TOKEN + "/verify", {{
+        method: "POST",
+        headers: {{"Content-Type": "application/json"}},
+        body: JSON.stringify({{
+          phone_number: phone || null,
+          email: email || null
+        }})
+      }});
+      if (!res.ok) {{
+        const msg = await res.text();
+        showVerifyError("Verifica fallita. Controlla i dati inseriti.");
+        btn.disabled = false; btn.textContent = "Verifica identità";
+        return;
+      }}
+      const data = await res.json();
+      jwt = data.token;
+      document.getElementById('verify-form').style.display = 'none';
+      document.getElementById('checkout-form').style.display = 'block';
+    }} catch(e) {{
+      showVerifyError("Errore di rete. Riprova.");
+      btn.disabled = false; btn.textContent = "Verifica identità";
+    }}
+  }}
+
+  async function doPay() {{
+    const name = document.getElementById('name-input').value.trim();
+    const email = document.getElementById('checkout-email').value.trim();
+    const btn = document.getElementById('pay-btn');
+    btn.disabled = true; btn.textContent = "Reindirizzamento a Stripe...";
+    try {{
+      const res = await fetch(API + "/payment-links/" + TOKEN + "/checkout", {{
+        method: "POST",
+        headers: {{
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + jwt
+        }},
+        body: JSON.stringify({{
+          name: name || null,
+          email: email || null
+        }})
+      }});
+      if (!res.ok) {{
+        const msg = await res.text();
+        showPayError("Impossibile avviare il pagamento. Riprova.");
+        btn.disabled = false; btn.textContent = "Paga ora";
+        return;
+      }}
+      const data = await res.json();
+      const url = data.checkoutUrl || data.checkout_url;
+      if (url) {{ window.location.href = url; }}
+      else {{ showPayError("URL di pagamento non ricevuto."); btn.disabled = false; btn.textContent = "Paga ora"; }}
+    }} catch(e) {{
+      showPayError("Errore di rete. Riprova.");
+      btn.disabled = false; btn.textContent = "Paga ora";
+    }}
+  }}
+
+  function showError(msg) {{
+    document.getElementById('loading').innerHTML = '<p style="color:#f87171">' + msg + '</p>';
+  }}
+  function showVerifyError(msg) {{
+    const el = document.getElementById('verify-error');
+    el.textContent = msg; el.style.display = 'block';
+  }}
+  function showPayError(msg) {{
+    const el = document.getElementById('pay-error');
+    el.textContent = msg; el.style.display = 'block';
+  }}
+</script>
+</body>
+</html>"#, token = token, api_base = api_base);
+
+    axum::response::Response::builder()
+        .status(200)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .body(axum::body::Body::from(html))
+        .unwrap()
+}
+
+/// Simple success page shown after Stripe Checkout completes.
+pub async fn payment_success_page() -> axum::response::Response {
+    let html = r#"<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pagamento completato</title>
+  <style>
+    body{background:#0f0f0f;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}
+    .card{background:#1a1a1a;border-radius:16px;padding:40px 32px;max-width:360px;width:100%}
+    .icon{font-size:56px;margin-bottom:20px}
+    h1{font-size:22px;font-weight:700;color:#4ade80;margin-bottom:8px}
+    p{color:#9ca3af;font-size:15px;line-height:1.5}
+    a{display:inline-block;margin-top:24px;background:#ec4899;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✅</div>
+    <h1>Pagamento completato!</h1>
+    <p>Il tuo pagamento è stato ricevuto. Riceverai una conferma a breve.<br/><br/>Puoi chiudere questa pagina.</p>
+    <a href="pierretwo://">Apri l'app Pierre</a>
+  </div>
+</body>
+</html>"#;
+
+    axum::response::Response::builder()
+        .status(200)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .body(axum::body::Body::from(html))
+        .unwrap()
+}
+
+/// Simple cancel page shown if the guest exits Stripe Checkout without paying.
+pub async fn payment_cancel_page(
+    Path(token): Path<String>,
+) -> axum::response::Response {
+    let base_url = std::env::var("APP_BASE_URL")
+        .unwrap_or_else(|_| "https://pierre-two-backend.fly.dev".to_string());
+    let pay_url = format!("{}/pay/{}", base_url, token);
+
+    let html = format!(r#"<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pagamento annullato</title>
+  <style>
+    body{{background:#0f0f0f;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}}
+    .card{{background:#1a1a1a;border-radius:16px;padding:40px 32px;max-width:360px;width:100%}}
+    .icon{{font-size:56px;margin-bottom:20px}}
+    h1{{font-size:22px;font-weight:700;margin-bottom:8px}}
+    p{{color:#9ca3af;font-size:15px;line-height:1.5}}
+    a{{display:inline-block;margin-top:24px;background:#ec4899;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">↩️</div>
+    <h1>Pagamento annullato</h1>
+    <p>Non è stato addebitato nulla. Il link rimane valido, puoi riprovare quando vuoi.</p>
+    <a href="{pay_url}">Riprova</a>
+  </div>
+</body>
+</html>"#, pay_url = pay_url);
+
+    axum::response::Response::builder()
+        .status(200)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .body(axum::body::Body::from(html))
+        .unwrap()
 }

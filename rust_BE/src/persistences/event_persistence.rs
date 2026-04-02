@@ -2,16 +2,19 @@ use crate::models::{Event, CreateEventRequest, UpdateEventRequest};
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
-/// Get all events
-pub async fn get_all_events(pool: &PgPool) -> Result<Vec<Event>> {
+/// Get all events with pagination (limit/offset)
+pub async fn get_all_events(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<Event>> {
     let events = sqlx::query_as::<_, Event>(
         r#"
         SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
                matterport_id, tour_provider, tour_id, marzipano_config, event_date, created_at, updated_at
         FROM events
         ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
         "#,
     )
+    .bind(limit)
+    .bind(offset)
     .fetch_all(pool)
     .await?;
 

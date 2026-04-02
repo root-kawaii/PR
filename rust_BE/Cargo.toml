@@ -51,3 +51,6 @@ hex = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "time", "fmt"] }
 tracing-appender = "0.2"
+
+# Rate limiting for auth endpoints (per-IP, in-memory token bucket)
+tower_governor = { version = "0.4", features = ["axum"] }
