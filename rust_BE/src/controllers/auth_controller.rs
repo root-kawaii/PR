@@ -22,28 +22,45 @@ fn is_valid_email(email: &str) -> bool {
 pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<RegisterRequest>,
-) -> Result<(StatusCode, Json<AuthResponse>), StatusCode> {
+) -> Result<(StatusCode, Json<AuthResponse>), (StatusCode, axum::Json<crate::models::ApiError>)> {
     info!(email = %payload.email, "Registration attempt");
 
     if !is_valid_email(&payload.email) {
         warn!(email = %payload.email, "Registration rejected: invalid email format");
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(crate::models::ApiError::new(StatusCode::BAD_REQUEST, "Formato email non valido"));
     }
 
     if payload.password.len() < 8 {
         warn!(email = %payload.email, "Registration rejected: password too short");
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(crate::models::ApiError::new(StatusCode::BAD_REQUEST, "La password deve essere di almeno 8 caratteri"));
     }
 
     match user_persistence::find_user_by_email(&state.db_pool, &payload.email).await {
         Ok(Some(_)) => {
             warn!(email = %payload.email, "Registration rejected: email already exists");
-            return Err(StatusCode::CONFLICT);
+            return Err(crate::models::ApiError::new(StatusCode::CONFLICT, "Esiste già un account con questa email"));
         }
         Ok(None) => {}
         Err(e) => {
             error!(error = %e, email = %payload.email, "DB error checking existing user");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+        }
+    }
+
+    // Check phone uniqueness if provided
+    if let Some(ref phone) = payload.phone_number {
+        if !phone.is_empty() {
+            match user_persistence::find_user_by_phone(&state.db_pool, phone).await {
+                Ok(Some(_)) => {
+                    warn!(phone = %phone, "Registration rejected: phone already in use");
+                    return Err(crate::models::ApiError::new(StatusCode::CONFLICT, "Esiste già un account con questo numero di telefono"));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!(error = %e, "DB error checking phone uniqueness");
+                    return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+                }
+            }
         }
     }
 
@@ -51,7 +68,7 @@ pub async fn register(
         Ok(hash) => hash,
         Err(e) => {
             error!(error = %e, "Failed to hash password");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
         }
     };
 
@@ -68,7 +85,7 @@ pub async fn register(
         Ok(user) => user,
         Err(e) => {
             error!(error = %e, email = %payload.email, "Failed to create user");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
         }
     };
 
@@ -76,7 +93,7 @@ pub async fn register(
         Ok(token) => token,
         Err(e) => {
             error!(error = %e, user_id = %user.id, "Failed to generate JWT after registration");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
         }
     };
 
