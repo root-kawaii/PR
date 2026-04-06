@@ -29,15 +29,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="tickets"
         options={{
-          title: 'Tickets',
+          title: 'Acquisti',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="ticket.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="reservations"
         options={{
-          title: 'Reservations',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="calendar" color={color} />,
+          href: null, // Merged into tickets screen
         }}
       />
       <Tabs.Screen
