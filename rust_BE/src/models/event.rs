@@ -18,9 +18,7 @@ pub struct Event {
     pub price: Option<String>,
     pub description: Option<String>,
     pub club_id: Option<Uuid>,
-    pub matterport_id: Option<String>, // DEPRECATED - kept for backward compatibility
-    pub tour_provider: Option<String>, // 'marzipano', 'kuula', 'matterport', 'cloudpano'
-    pub tour_id: Option<String>, // DEPRECATED for marzipano
+    pub tour_provider: Option<String>, // 'marzipano', 'kuula', 'cloudpano'
     pub marzipano_config: Option<JsonValue>, // JSON array of MarzipanoScene objects
     pub event_date: Option<chrono::NaiveDate>, // Machine-readable date for scheduler
     pub created_at: DateTime<Utc>,
@@ -41,9 +39,7 @@ pub struct CreateEventRequest {
     pub price: Option<String>,
     pub description: Option<String>,
     pub club_id: Option<Uuid>,
-    pub matterport_id: Option<String>,
     pub tour_provider: Option<String>,
-    pub tour_id: Option<String>,
     pub marzipano_config: Option<JsonValue>,
 }
 
@@ -61,9 +57,7 @@ pub struct UpdateEventRequest {
     pub price: Option<String>,
     pub description: Option<String>,
     pub club_id: Option<Uuid>,
-    pub matterport_id: Option<String>,
     pub tour_provider: Option<String>,
-    pub tour_id: Option<String>,
     pub marzipano_config: Option<JsonValue>,
 }
 
@@ -88,15 +82,9 @@ pub struct EventResponse {
     pub price: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(rename = "matterportId")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub matterport_id: Option<String>,
     #[serde(rename = "tourProvider")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tour_provider: Option<String>,
-    #[serde(rename = "tourId")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tour_id: Option<String>,
     #[serde(rename = "marzipanoScenes")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub marzipano_scenes: Option<JsonValue>,
@@ -116,9 +104,7 @@ impl From<Event> for EventResponse {
             end_time: event.end_time,
             price: event.price,
             description: event.description,
-            matterport_id: event.matterport_id,
             tour_provider: event.tour_provider,
-            tour_id: event.tour_id,
             marzipano_scenes: event.marzipano_config,
         }
     }
