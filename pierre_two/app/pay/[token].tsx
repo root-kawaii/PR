@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
+import { LinearGradient } from 'expo-linear-gradient';
 import { API_URL } from '../../config/api';
 import { useTheme } from '../../context/ThemeContext';
 import { IconSymbol } from '../../components/ui/icon-symbol';
@@ -141,7 +142,7 @@ export default function GuestPaymentScreen() {
             <IconSymbol name="checkmark.circle.fill" size={36} color={theme.success} />
           </View>
           <Text style={[s.stateTitle, { color: theme.text }]}>Pagamento completato</Text>
-          <Text style={[s.stateBody, { color: theme.textTertiary }]}>Questo pagamento è già stato effettuato.</Text>
+          <Text style={[s.stateBody, { color: theme.textTertiary }]}>Questa quota risulta gia pagata e non richiede altre azioni.</Text>
         </View>
       </SafeAreaView>
     );
@@ -155,7 +156,7 @@ export default function GuestPaymentScreen() {
             <IconSymbol name="xmark.circle.fill" size={36} color={theme.warning} />
           </View>
           <Text style={[s.stateTitle, { color: theme.text }]}>Tavolo al completo</Text>
-          <Text style={[s.stateBody, { color: theme.textTertiary }]}>Tutti i posti sono stati occupati.</Text>
+          <Text style={[s.stateBody, { color: theme.textTertiary }]}>Tutti i posti disponibili per questo tavolo sono gia stati occupati.</Text>
         </View>
       </SafeAreaView>
     );
@@ -168,84 +169,128 @@ export default function GuestPaymentScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          {/* Brand */}
-          <View style={s.brandRow}>
-            <Text style={[s.wordmark, { color: theme.primary }]}>PIERRE</Text>
-            <View style={[s.wordmarkDot, { backgroundColor: theme.primary }]} />
-          </View>
+          <View
+            style={[
+              s.heroCard,
+              { backgroundColor: theme.backgroundElevated, borderColor: theme.border },
+            ]}
+          >
+            <LinearGradient
+              colors={[`${theme.primary}30`, 'rgba(0,0,0,0)', `${theme.secondary}18`] as [string, string, string]}
+              style={s.heroGlow}
+            />
 
-          {/* Event info */}
-          <View style={s.header}>
+            <View style={s.brandRow}>
+              <Text style={[s.wordmark, { color: theme.primary }]}>PIERRE</Text>
+              <View style={[s.wordmarkDot, { backgroundColor: theme.primary }]} />
+            </View>
+
             {preview && (
               <>
+                <View style={[s.kickerPill, { backgroundColor: `${theme.primary}16`, borderColor: `${theme.primary}33` }]}>
+                  <IconSymbol name="wineglass.fill" size={12} color={theme.primary} />
+                  <Text style={[s.kickerText, { color: theme.primary }]}>Quota tavolo condivisa</Text>
+                </View>
+
                 <Text style={[s.eventName, { color: theme.text }]}>{preview.event_name}</Text>
-                <Text style={[s.tableName, { color: theme.textTertiary }]}>{preview.table_name}</Text>
-                <Text style={[s.amount, { color: theme.primary }]}>{preview.amount}</Text>
-                <View style={[s.slotsBadge, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
-                  <IconSymbol name="person.2.fill" size={13} color={theme.textTertiary} />
-                  <Text style={[s.slotsText, { color: theme.textTertiary }]}>
-                    {' '}{preview.slots_filled}/{preview.slots_total} posti occupati
-                  </Text>
+                <Text style={[s.tableName, { color: theme.textSecondary }]}>{preview.table_name}</Text>
+
+                <View style={s.heroStats}>
+                  <View style={[s.amountCard, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                    <Text style={[s.amountLabel, { color: theme.textTertiary }]}>Da pagare</Text>
+                    <Text style={[s.amount, { color: theme.primary }]}>{preview.amount}</Text>
+                  </View>
+
+                  <View style={[s.slotsCard, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                    <View style={[s.slotsBadge, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                      <IconSymbol name="person.2.fill" size={13} color={theme.textTertiary} />
+                      <Text style={[s.slotsText, { color: theme.textSecondary }]}>
+                        {' '}{preview.slots_filled}/{preview.slots_total}
+                      </Text>
+                    </View>
+                    <Text style={[s.slotsCaption, { color: theme.textTertiary }]}>posti gia confermati</Text>
+                  </View>
                 </View>
               </>
             )}
           </View>
 
-          {/* Checkout form */}
-          <View style={[s.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-            <Text style={[s.cardTitle, { color: theme.text }]}>Paga la tua quota</Text>
-            <Text style={[s.cardSubtitle, { color: theme.textTertiary }]}>
-              Inserisci i tuoi dati e verrai reindirizzato a Stripe per completare il pagamento in modo sicuro.
-            </Text>
+          <View style={[s.formCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+            <View style={s.cardHeader}>
+              <Text style={[s.cardTitle, { color: theme.text }]}>Completa il pagamento</Text>
+              <Text style={[s.cardSubtitle, { color: theme.textTertiary }]}>
+                Inserisci i tuoi dati. Ti reindirizzeremo a Stripe per il checkout sicuro.
+              </Text>
+            </View>
 
-            <Text style={[s.label, { color: theme.textSecondary }]}>Nome <Text style={{ color: theme.primary }}>*</Text></Text>
-            <TextInput
-              style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
-              placeholder="Il tuo nome"
-              placeholderTextColor={theme.textTertiary}
-              value={guestName}
-              onChangeText={setGuestName}
-              editable={!payLoading}
-            />
+            <View style={s.fieldBlock}>
+              <Text style={[s.label, { color: theme.textSecondary }]}>Nome <Text style={{ color: theme.primary }}>*</Text></Text>
+              <TextInput
+                style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
+                placeholder="Il tuo nome"
+                placeholderTextColor={theme.textTertiary}
+                value={guestName}
+                onChangeText={setGuestName}
+                editable={!payLoading}
+              />
+            </View>
 
-            <Text style={[s.label, { color: theme.textSecondary }]}>Telefono <Text style={{ color: theme.primary }}>*</Text></Text>
-            <TextInput
-              style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
-              placeholder="+39 333 1234567"
-              placeholderTextColor={theme.textTertiary}
-              value={guestPhone}
-              onChangeText={setGuestPhone}
-              keyboardType="phone-pad"
-              editable={!payLoading}
-            />
+            <View style={s.fieldBlock}>
+              <Text style={[s.label, { color: theme.textSecondary }]}>Telefono <Text style={{ color: theme.primary }}>*</Text></Text>
+              <TextInput
+                style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
+                placeholder="+39 333 1234567"
+                placeholderTextColor={theme.textTertiary}
+                value={guestPhone}
+                onChangeText={setGuestPhone}
+                keyboardType="phone-pad"
+                editable={!payLoading}
+              />
+            </View>
 
-            <Text style={[s.label, { color: theme.textSecondary }]}>Email <Text style={[s.optionalTag, { color: theme.textTertiary }]}>(per ricevuta)</Text></Text>
-            <TextInput
-              style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
-              placeholder="email@esempio.it"
-              placeholderTextColor={theme.textTertiary}
-              value={guestEmail}
-              onChangeText={setGuestEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!payLoading}
-            />
+            <View style={s.fieldBlock}>
+              <Text style={[s.label, { color: theme.textSecondary }]}>Email <Text style={[s.optionalTag, { color: theme.textTertiary }]}>(opzionale)</Text></Text>
+              <TextInput
+                style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
+                placeholder="email@esempio.it"
+                placeholderTextColor={theme.textTertiary}
+                value={guestEmail}
+                onChangeText={setGuestEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!payLoading}
+              />
+            </View>
+
+            <View style={[s.reassuranceRow, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+              <View style={[s.reassuranceIcon, { backgroundColor: `${theme.success}18` }]}>
+                <IconSymbol name="lock" size={14} color={theme.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.reassuranceTitle, { color: theme.text }]}>Checkout protetto</Text>
+                <Text style={[s.reassuranceText, { color: theme.textTertiary }]}>Pagamento sicuro gestito da Stripe.</Text>
+              </View>
+            </View>
 
             <TouchableOpacity
               style={[s.button, { backgroundColor: theme.primary }, payLoading && s.buttonDisabled]}
               onPress={handlePay}
               disabled={payLoading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              {payLoading
-                ? <ActivityIndicator color={theme.textInverse} />
-                : <Text style={[s.buttonText, { color: theme.textInverse }]}>Paga {preview?.amount || ''}</Text>
-              }
+              {payLoading ? (
+                <ActivityIndicator color={theme.textInverse} />
+              ) : (
+                <>
+                  <Text style={[s.buttonEyebrow, { color: theme.textInverse }]}>Conferma quota</Text>
+                  <Text style={[s.buttonText, { color: theme.textInverse }]}>Paga {preview?.amount || ''}</Text>
+                </>
+              )}
             </TouchableOpacity>
 
             <View style={[s.stripeBadge, { borderTopColor: theme.border }]}>
-              <IconSymbol name="lock" size={12} color={theme.textTertiary} />
-              <Text style={[s.stripeBadgeText, { color: theme.textTertiary }]}> Pagamento sicuro via Stripe</Text>
+              <IconSymbol name="arrow.right.square.fill" size={12} color={theme.textTertiary} />
+              <Text style={[s.stripeBadgeText, { color: theme.textTertiary }]}> Si apre il checkout Stripe in una pagina esterna</Text>
             </View>
           </View>
         </ScrollView>
@@ -256,7 +301,7 @@ export default function GuestPaymentScreen() {
 
 const s = StyleSheet.create({
   screen: { flex: 1 },
-  scroll: { flexGrow: 1, padding: 24, paddingBottom: 40 },
+  scroll: { flexGrow: 1, padding: 20, paddingBottom: 40 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   loadingText: { marginTop: 12, fontSize: 15 },
 
@@ -271,18 +316,28 @@ const s = StyleSheet.create({
   stateTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
   stateBody: { fontSize: 15, textAlign: 'center', lineHeight: 22 },
 
+  heroCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 28,
+    padding: 22,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  heroGlow: {
+    ...StyleSheet.absoluteFillObject,
+  },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-    paddingBottom: 24,
+    marginBottom: 18,
   },
   wordmark: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    letterSpacing: 10,
-    paddingLeft: 10,
+    letterSpacing: 8,
+    paddingLeft: 8,
   },
   wordmarkDot: {
     width: 5,
@@ -290,47 +345,103 @@ const s = StyleSheet.create({
     borderRadius: 3,
     opacity: 0.7,
   },
-
-  header: { alignItems: 'center', paddingBottom: 28 },
-  eventName: { fontSize: 22, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  tableName: { fontSize: 14, marginBottom: 12 },
-  amount: { fontSize: 42, fontWeight: '800', marginBottom: 12 },
+  kickerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  kickerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  eventName: { fontSize: 28, fontWeight: '800', marginBottom: 6, lineHeight: 34 },
+  tableName: { fontSize: 15, marginBottom: 18 },
+  heroStats: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  amountCard: {
+    flex: 1.2,
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+  },
+  amountLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+  amount: { fontSize: 36, fontWeight: '800' },
+  slotsCard: {
+    flex: 1,
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    justifyContent: 'space-between',
+  },
   slotsBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
   },
-  slotsText: { fontSize: 13 },
+  slotsText: { fontSize: 13, fontWeight: '700' },
+  slotsCaption: { fontSize: 12, lineHeight: 18, marginTop: 12 },
 
-  card: {
-    borderRadius: 16,
-    padding: 24,
+  formCard: {
+    borderRadius: 28,
+    padding: 22,
     borderWidth: 1,
-    marginBottom: 16,
   },
+  cardHeader: { marginBottom: 8 },
   cardTitle: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
-  cardSubtitle: { fontSize: 13, lineHeight: 19, marginBottom: 20 },
+  cardSubtitle: { fontSize: 13, lineHeight: 19 },
 
-  label: { fontSize: 13, fontWeight: '500', marginBottom: 6 },
+  fieldBlock: { marginTop: 16 },
+  label: { fontSize: 13, fontWeight: '500', marginBottom: 8 },
   optionalTag: { fontWeight: '400' },
   input: {
-    borderRadius: 10,
-    padding: 14,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     fontSize: 16,
     borderWidth: 1,
-    marginBottom: 16,
   },
-  button: {
-    borderRadius: 12,
-    padding: 16,
+  reassuranceRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    gap: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    marginTop: 18,
+  },
+  reassuranceIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reassuranceTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  reassuranceText: { fontSize: 12, lineHeight: 17 },
+  button: {
+    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    marginTop: 18,
   },
   buttonDisabled: { opacity: 0.55 },
-  buttonText: { fontSize: 16, fontWeight: '700' },
+  buttonEyebrow: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', opacity: 0.8, marginBottom: 2 },
+  buttonText: { fontSize: 18, fontWeight: '800' },
 
   stripeBadge: {
     flexDirection: 'row',
@@ -340,5 +451,5 @@ const s = StyleSheet.create({
     paddingTop: 16,
     borderTopWidth: 1,
   },
-  stripeBadgeText: { fontSize: 12 },
+  stripeBadgeText: { fontSize: 12, textAlign: 'center' },
 });

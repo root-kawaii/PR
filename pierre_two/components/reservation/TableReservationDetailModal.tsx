@@ -9,6 +9,7 @@ import {
   Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTheme } from "@/context/ThemeContext";
@@ -124,8 +125,17 @@ export const TableReservationDetailModal = ({
             {reservation.event && (
               <View style={styles.eventSection}>
                 <Image source={{ uri: reservation.event.image }} style={styles.eventImage} />
-                <View style={styles.eventOverlay} />
+                <LinearGradient
+                  colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.3)", "rgba(8,8,8,0.96)"]}
+                  style={styles.eventOverlay}
+                />
                 <View style={styles.eventInfo}>
+                  <View style={[styles.heroPill, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}40` }]}>
+                    <IconSymbol name="wineglass.fill" size={12} color={theme.primary} />
+                    <ThemedText style={[styles.heroPillText, { color: theme.primary }]}>
+                      Prenotazione tavolo
+                    </ThemedText>
+                  </View>
                   <ThemedText style={[styles.eventTitle, { color: theme.text }]}>
                     {reservation.event.title}
                   </ThemedText>
@@ -143,19 +153,40 @@ export const TableReservationDetailModal = ({
 
             {/* Reservation Code & Status */}
             <View style={styles.section}>
-              <View style={styles.codeStatusRow}>
-                <View style={styles.codeContainer}>
-                  <ThemedText style={[styles.label, { color: theme.textTertiary }]}>
-                    Codice Prenotazione
-                  </ThemedText>
-                  <ThemedText style={[styles.reservationCode, { color: theme.text }]}>
-                    {reservation.reservationCode}
-                  </ThemedText>
+              <View style={[styles.heroSummaryCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                <LinearGradient
+                  colors={[`${theme.primary}14`, "rgba(0,0,0,0)", `${theme.secondary}10`] as [string, string, string]}
+                  style={styles.heroSummaryGlow}
+                />
+                <View style={styles.codeStatusRow}>
+                  <View style={styles.codeContainer}>
+                    <ThemedText style={[styles.label, { color: theme.textTertiary }]}>
+                      Codice Prenotazione
+                    </ThemedText>
+                    <ThemedText style={[styles.reservationCode, { color: theme.text }]}>
+                      {reservation.reservationCode}
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(reservation.status) }]}>
+                    <ThemedText style={[styles.statusText, { color: theme.textInverse }]}>
+                      {getStatusText(reservation.status)}
+                    </ThemedText>
+                  </View>
                 </View>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(reservation.status) }]}>
-                  <ThemedText style={[styles.statusText, { color: theme.textInverse }]}>
-                    {getStatusText(reservation.status)}
-                  </ThemedText>
+
+                <View style={styles.summaryGrid}>
+                  <View style={[styles.summaryTile, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                    <ThemedText style={[styles.summaryTileLabel, { color: theme.textTertiary }]}>Posti confermati</ThemedText>
+                    <ThemedText style={[styles.summaryTileValue, { color: theme.text }]}>
+                      {reservation.numPeople}/{reservation.table?.capacity || 0}
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.summaryTile, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                    <ThemedText style={[styles.summaryTileLabel, { color: theme.textTertiary }]}>Rimanente</ThemedText>
+                    <ThemedText style={[styles.summaryTileValue, { color: theme.primary }]}>
+                      {reservation.amountRemaining}
+                    </ThemedText>
+                  </View>
                 </View>
               </View>
             </View>
@@ -168,7 +199,9 @@ export const TableReservationDetailModal = ({
                   onPress={handleShareTableLink}
                 >
                   <View style={styles.shareLinkLeft}>
-                    <IconSymbol name="arrow.right.square.fill" size={22} color={theme.primary} />
+                    <View style={[styles.shareLinkIconWrap, { backgroundColor: `${theme.primary}16` }]}>
+                      <IconSymbol name="arrow.right.square.fill" size={18} color={theme.primary} />
+                    </View>
                     <View>
                       <ThemedText style={[styles.shareLinkTitle, { color: theme.text }]}>
                         Condividi Link Tavolo
@@ -363,26 +396,48 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 60,
+    paddingTop: 18,
+    paddingBottom: 18,
     borderBottomWidth: 1,
     borderBottomColor: "#1f2937",
   },
   backButton: { padding: 8, marginLeft: -8 },
   headerTitle: { fontSize: 20, fontWeight: "700", color: "#fff" },
   scrollView: { flex: 1 },
-  eventSection: { position: "relative", height: 250 },
+  eventSection: { position: "relative", height: 280 },
   eventImage: { width: "100%", height: "100%" },
   eventOverlay: {
     position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
   },
   eventInfo: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 20 },
+  heroPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  heroPillText: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
   eventTitle: { fontSize: 24, fontWeight: "700", color: "#fff", marginBottom: 4 },
   eventMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   eventVenue: { fontSize: 14, color: "rgba(255, 255, 255, 0.9)" },
   eventDate: { fontSize: 14, color: "rgba(255, 255, 255, 0.9)" },
-  section: { paddingHorizontal: 16, paddingVertical: 16 },
+  section: { paddingHorizontal: 16, paddingTop: 16 },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#fff", marginBottom: 12 },
+  heroSummaryCard: {
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+  },
+  heroSummaryGlow: {
+    ...StyleSheet.absoluteFillObject,
+  },
   codeStatusRow: {
     flexDirection: "row", justifyContent: "space-between",
     alignItems: "flex-start", gap: 12,
@@ -392,6 +447,10 @@ const styles = StyleSheet.create({
   reservationCode: { fontSize: 20, fontWeight: "700", color: "#fff", letterSpacing: 1 },
   statusBadge: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 20 },
   statusText: { fontSize: 12, fontWeight: "700", color: "#fff", textTransform: "uppercase" },
+  summaryGrid: { flexDirection: "row", gap: 12, marginTop: 16 },
+  summaryTile: { flex: 1, borderRadius: 16, borderWidth: 1, padding: 14 },
+  summaryTileLabel: { fontSize: 12, fontWeight: "600", marginBottom: 6 },
+  summaryTileValue: { fontSize: 18, fontWeight: "800" },
   shareLinkCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -401,6 +460,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   shareLinkLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  shareLinkIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   shareLinkTitle: { fontSize: 15, fontWeight: "700" },
   shareLinkSub: { fontSize: 12, marginTop: 2 },
   card: {
