@@ -73,7 +73,7 @@ Backend URL: `https://pierre-two-backend.fly.dev`
 | `APP_BASE_URL` | Used for Stripe Checkout redirect URLs |
 | `PAYMENT_SHARE_TTL_HOURS` | How long a guest has to pay (default 48h) |
 
-## Local Command Docs
+## Codex Command Docs
 
 | Command | What it does |
 |---------|-------------|
