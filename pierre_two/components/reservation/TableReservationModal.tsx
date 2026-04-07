@@ -178,7 +178,10 @@ export const TableReservationModal = ({
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
               <IconSymbol name="chevron.left" size={28} color="#fff" />
             </TouchableOpacity>
-            <ThemedText style={styles.headerTitle}>Paga la Tua Quota</ThemedText>
+            <View style={styles.headerTitleWrap}>
+              <ThemedText style={styles.headerEyebrow}>Prenotazione Tavolo</ThemedText>
+              <ThemedText style={styles.headerTitle}>Paga la Tua Quota</ThemedText>
+            </View>
             <View style={styles.backButtonPlaceholder} />
           </View>
 
@@ -188,6 +191,10 @@ export const TableReservationModal = ({
           >
             {/* Table Info Card */}
             <View style={styles.tableInfoCard}>
+              <View style={styles.tableBadge}>
+                <IconSymbol name="wineglass.fill" size={12} color="#fff" />
+                <ThemedText style={styles.tableBadgeText}>Esperienza VIP</ThemedText>
+              </View>
               <View style={styles.locationRow}>
                 <IconSymbol name="location.fill" size={16} color="#fff" />
                 <ThemedText style={styles.tableName}>
@@ -301,7 +308,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     paddingHorizontal: 16,
     paddingVertical: 20,
     paddingTop: 32,
@@ -315,6 +322,8 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   backButtonPlaceholder: { width: 44, height: 44 },
+  headerTitleWrap: { alignItems: "center", gap: 2 },
+  headerEyebrow: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.72)", textTransform: "uppercase", letterSpacing: 1.2 },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: "#fff" },
   scrollView: { flex: 1 },
   tableInfoCard: {
@@ -323,6 +332,18 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.3)",
     borderRadius: 16,
   },
+  tableBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    marginBottom: 14,
+  },
+  tableBadgeText: { fontSize: 11, fontWeight: "700", color: "#fff", textTransform: "uppercase", letterSpacing: 0.8 },
   locationRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
   tableName: { fontSize: 18, fontWeight: "bold", color: "#fff" },
   eventInfo: {

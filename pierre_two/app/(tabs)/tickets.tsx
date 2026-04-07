@@ -140,6 +140,8 @@ export default function BookingsScreen() {
 
   const totalCount = tickets.length + reservations.length;
   const loading = ticketsLoading || reservationsLoading;
+  const hasReservations = filteredReservations.length > 0;
+  const hasTickets = filteredTickets.length > 0;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
@@ -203,9 +205,18 @@ export default function BookingsScreen() {
             </View>
           ) : (
             <>
-              {/* Table Reservations */}
+              {hasReservations ? (
+                <View style={s.sectionHeader}>
+                  <Text style={[s.sectionTitle, { color: theme.text }]}>Prenotazioni tavolo</Text>
+                  <Text style={[s.sectionCount, { color: theme.textTertiary }]}>{filteredReservations.length}</Text>
+                </View>
+              ) : null}
+
               {filteredReservations.map(reservation => {
                 const statusColor = getReservationStatusColor(reservation.status);
+                const paidAmount = reservation.amountPaid ? parseFloat(reservation.amountPaid.replace(/[^0-9.]/g, '')) : 0;
+                const totalAmount = reservation.totalAmount ? parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, '')) : 0;
+                const progress = totalAmount > 0 ? Math.min(100, (paidAmount / totalAmount) * 100) : 0;
                 return (
                   <TouchableOpacity
                     key={`res-${reservation.id}`}
@@ -224,9 +235,16 @@ export default function BookingsScreen() {
                         <Text style={[s.cardTitle, { color: theme.text }]} numberOfLines={1}>
                           {reservation.event?.title || 'Evento'}
                         </Text>
-                        <Text style={[s.cardSub, { color: theme.primary }]}>
-                          {reservation.table?.name || 'Tavolo'}
-                        </Text>
+                        <View style={s.tableRow}>
+                          <Text style={[s.cardSub, { color: theme.primary }]}>
+                            {reservation.table?.name || 'Tavolo'}
+                          </Text>
+                          {reservation.table?.zone ? (
+                            <View style={[s.zonePill, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                              <Text style={[s.zoneText, { color: theme.textSecondary }]}>{reservation.table.zone}</Text>
+                            </View>
+                          ) : null}
+                        </View>
                       </View>
                       <View style={[s.statusBadge, { backgroundColor: `${statusColor}33` }]}>
                         <Text style={[s.statusText, { color: statusColor }]}>{reservation.status}</Text>
@@ -243,11 +261,15 @@ export default function BookingsScreen() {
                     </View>
 
                     {reservation.amountPaid && reservation.totalAmount && (
-                      <View style={[s.progressWrap, { backgroundColor: `${theme.border}44` }]}>
-                        <View style={s.progressBar}>
+                      <View style={[s.progressWrap, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                        <View style={s.progressHeader}>
+                          <Text style={[s.progressLabel, { color: theme.text }]}>Stato pagamento</Text>
+                          <Text style={[s.progressPercent, { color: theme.success }]}>{Math.round(progress)}%</Text>
+                        </View>
+                        <View style={[s.progressBar, { backgroundColor: `${theme.border}66` }]}>
                           <View style={[s.progressFill, {
                             backgroundColor: theme.success,
-                            width: `${Math.min(100, (parseFloat(reservation.amountPaid.replace(/[^0-9.]/g, '')) / parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, ''))) * 100)}%` as any,
+                            width: `${progress}%` as any,
                           }]} />
                         </View>
                         <Text style={[s.progressText, { color: theme.textTertiary }]}>
@@ -273,7 +295,13 @@ export default function BookingsScreen() {
                 );
               })}
 
-              {/* Tickets */}
+              {hasTickets ? (
+                <View style={[s.sectionHeader, { marginTop: hasReservations ? 10 : 0 }]}>
+                  <Text style={[s.sectionTitle, { color: theme.text }]}>Biglietti</Text>
+                  <Text style={[s.sectionCount, { color: theme.textTertiary }]}>{filteredTickets.length}</Text>
+                </View>
+              ) : null}
+
               {filteredTickets.map(ticket => {
                 const isExpanded = expandedTicket === ticket.id;
                 const statusColor = getTicketStatusColor(ticket.status);
@@ -392,20 +420,29 @@ const s = StyleSheet.create({
   scrollCentered: { flexGrow: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, minHeight: 200 },
   emptyTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center', marginTop: 12 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 2 },
+  sectionTitle: { fontSize: 18, fontWeight: '800' },
+  sectionCount: { fontSize: 13, fontWeight: '700' },
 
   // Reservation card
   card: { borderRadius: 14, padding: 16, marginBottom: 14, borderWidth: 1 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
   cardTitle: { fontSize: 17, fontWeight: '600', marginBottom: 3 },
   cardSub: { fontSize: 13 },
+  tableRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  zonePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
+  zoneText: { fontSize: 11, fontWeight: '600' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' },
   metaText: { fontSize: 13, marginRight: 6 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   statusText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, color: '#fff' },
   typeTag: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, marginBottom: 8, alignSelf: 'flex-start' },
   typeTagText: { fontSize: 11, fontWeight: '600' },
-  progressWrap: { marginTop: 4, padding: 8, borderRadius: 8, marginBottom: 8 },
-  progressBar: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', marginBottom: 5 },
+  progressWrap: { marginTop: 6, padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1 },
+  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  progressLabel: { fontSize: 12, fontWeight: '700' },
+  progressPercent: { fontSize: 12, fontWeight: '800' },
+  progressBar: { height: 6, borderRadius: 999, overflow: 'hidden', marginBottom: 7 },
   progressFill: { height: '100%', borderRadius: 2 },
   progressText: { fontSize: 11, textAlign: 'center' },
   codeBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1 },
