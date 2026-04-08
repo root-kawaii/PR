@@ -4,7 +4,6 @@ import {
   View,
   StyleSheet,
   RefreshControl,
-  Platform,
   Alert,
   Text,
   Modal,
@@ -18,8 +17,6 @@ import { Calendar } from "react-native-calendars";
 import { EventCard } from "@/components/home/EventCard";
 import { EventDetailModal } from "@/components/event/EventDetailModal";
 import { TableReservationModal } from "@/components/reservation/TableReservationModal";
-import { FloatingActionButton } from "@/components/common/FloatingActionButton";
-import { ReservationCodeModal } from "@/components/reservation/ReservationCodeModal";
 import { TableReservationDetailModal } from "@/components/reservation/TableReservationDetailModal";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useEvents } from "@/hooks/useEvents";
@@ -27,7 +24,6 @@ import { useModal } from "@/hooks/useModal";
 import { useTheme } from "@/context/ThemeContext";
 import { Event, Table, TableReservation } from "@/types";
 import { useLocalSearchParams, useFocusEffect, useRouter } from "expo-router";
-import { API_URL } from "@/config/api";
 
 type QuickFilterKey = "tonight" | "week" | "dates" | "venues" | "new";
 
@@ -41,10 +37,15 @@ export default function HomeScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
   const [activeFilter, setActiveFilter] = useState<QuickFilterKey | null>(null);
-  const { events, refetch: refetchEvents, loadMore, loadingMore, hasMore } = useEvents();
+  const {
+    events,
+    refetch: refetchEvents,
+    loadMore,
+    loadingMore,
+    hasMore,
+  } = useEvents();
   const eventModal = useModal();
   const reservationModal = useModal();
-  const codeInputModal = useModal();
   const reservationDetailModal = useModal();
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -53,11 +54,11 @@ export default function HomeScreen() {
     label: string;
     icon: "clock.fill" | "calendar" | "mappin" | "ticket.fill";
   }> = [
-    { key: "tonight", label: "Tonight", icon: "clock.fill" as const },
-    { key: "week", label: "This week", icon: "clock.fill" as const },
-    { key: "dates", label: "Pick dates", icon: "calendar" as const },
-    { key: "venues", label: "Venues", icon: "mappin" as const },
-    { key: "new", label: "New shows", icon: "ticket.fill" as const },
+    { key: "tonight", label: "Stasera", icon: "clock.fill" as const },
+    { key: "week", label: "Settimana", icon: "clock.fill" as const },
+    { key: "dates", label: "Date", icon: "calendar" as const },
+    { key: "venues", label: "Locali", icon: "mappin" as const },
+    { key: "new", label: "Novita", icon: "ticket.fill" as const },
   ];
 
   // Silently refetch events whenever this tab comes into focus
@@ -133,7 +134,7 @@ export default function HomeScreen() {
       if (dateStr.match(/^\d{1,2}\s+[A-Z]{3}/)) {
         console.warn(
           "Skipping event with legacy Italian date format:",
-          dateStr
+          dateStr,
         );
         return null;
       }
@@ -246,12 +247,9 @@ export default function HomeScreen() {
 
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-    const nearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 300;
+    const nearBottom =
+      layoutMeasurement.height + contentOffset.y >= contentSize.height - 300;
     if (nearBottom && hasMore && !loadingMore) loadMore();
-  };
-
-  const handleFABPress = () => {
-    codeInputModal.open();
   };
 
   const handleQuickFilterPress = (filterKey: QuickFilterKey) => {
@@ -269,31 +267,11 @@ export default function HomeScreen() {
     setActiveFilter((prev) => (prev === filterKey ? null : filterKey));
   };
 
-  const handleReservationCodeSubmit = async (code: string) => {
-    try {
-      const response = await fetch(`${API_URL}/reservations/code/${code}`);
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error("Prenotazione non trovata");
-        }
-        throw new Error("Errore durante il recupero della prenotazione");
-      }
-
-      const data = await response.json();
-      setSelectedReservation(data);
-      codeInputModal.close();
-      reservationDetailModal.open();
-    } catch (error: any) {
-      throw error;
-    }
-  };
-
   const handlePaymentSubmit = async (numPeople: number) => {
     if (!selectedReservation) return;
 
     const minSpendPerPerson = parseFloat(
-      selectedReservation.table?.minSpend?.replace(" €", "") || "0"
+      selectedReservation.table?.minSpend?.replace(" €", "") || "0",
     );
     const amount = minSpendPerPerson * numPeople;
 
@@ -310,12 +288,15 @@ export default function HomeScreen() {
             setSelectedReservation(null);
           },
         },
-      ]
+      ],
     );
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      edges={["top"]}
+    >
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <ScrollView
           style={styles.mainScroll}
@@ -332,131 +313,178 @@ export default function HomeScreen() {
           }
         >
           <View style={styles.contentWrap}>
-          <View style={styles.topIntro}>
-            <View style={styles.topIntroRow}>
-              <View style={styles.topIntroCopy}>
-                <Text style={[styles.topTitle, { color: theme.text }]}>Trova il tuo evento</Text>
-                <Text style={[styles.topSubtitle, { color: theme.textTertiary }]}>
-                  Scopri gli eventi e prenota la tua prossima serata.
-                </Text>
-              </View>
-              <View style={styles.topActions}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={[styles.topActionButton, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}
-                  onPress={handleCalendarPress}
-                >
-                  <IconSymbol name="calendar" size={18} color={theme.text} />
-                </TouchableOpacity>
+            <View style={styles.topIntro}>
+              <View style={styles.topIntroRow}>
+                <View style={styles.topIntroCopy}>
+                  <Text style={[styles.topTitle, { color: theme.text }]}>
+                    Trova il tuo evento
+                  </Text>
+                  <Text
+                    style={[styles.topSubtitle, { color: theme.textTertiary }]}
+                  >
+                    Scopri gli eventi e prenota la tua prossima serata.
+                  </Text>
+                </View>
+                <View style={styles.topActions}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={[
+                      styles.topActionButton,
+                      {
+                        backgroundColor: theme.backgroundElevated,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    onPress={handleCalendarPress}
+                  >
+                    <IconSymbol name="calendar" size={18} color={theme.text} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.quickFilterRow}
-            style={styles.quickFilterScroll}
-          >
-            {quickFilters.map((filter) => (
-              <View key={filter.key} style={styles.quickFilterItem}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={[
-                    styles.quickFilterButton,
-                    {
-                      backgroundColor:
-                        activeFilter === filter.key ? `${theme.primary}26` : theme.backgroundElevated,
-                      borderColor: activeFilter === filter.key ? `${theme.primary}66` : theme.border,
-                    },
-                  ]}
-                  onPress={() => handleQuickFilterPress(filter.key)}
-                >
-                  <IconSymbol
-                    name={filter.icon}
-                    size={30}
-                    color={activeFilter === filter.key ? theme.primary : theme.primaryLight}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.quickFilterRow}
+              style={styles.quickFilterScroll}
+            >
+              {quickFilters.map((filter) => (
+                <View key={filter.key} style={styles.quickFilterItem}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={[
+                      styles.quickFilterButton,
+                      {
+                        backgroundColor:
+                          activeFilter === filter.key
+                            ? `${theme.primary}1E`
+                            : "rgba(255,255,255,0.05)",
+                        borderColor:
+                          activeFilter === filter.key
+                            ? `${theme.primary}55`
+                            : "rgba(255,255,255,0.12)",
+                      },
+                    ]}
+                    onPress={() => handleQuickFilterPress(filter.key)}
+                  >
+                    <IconSymbol
+                      name={filter.icon}
+                      size={30}
+                      color={
+                        activeFilter === filter.key
+                          ? theme.primary
+                          : theme.primaryLight
+                      }
+                    />
+                  </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.quickFilterLabel,
+                      {
+                        color:
+                          activeFilter === filter.key
+                            ? theme.text
+                            : theme.textSecondary,
+                      },
+                    ]}
+                  >
+                    {filter.label}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            {groupedEvents.length > 0 ? (
+              groupedEvents.map((group) => (
+                <View key={group.date} style={styles.dateSection}>
+                  {/* Date Header */}
+                  <View
+                    style={[
+                      styles.dateAccent,
+                      { backgroundColor: theme.primary },
+                    ]}
                   />
-                </TouchableOpacity>
-                <Text
-                  style={[
-                    styles.quickFilterLabel,
-                    { color: activeFilter === filter.key ? theme.text : theme.textSecondary },
-                  ]}
-                >
-                  {filter.label}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          {groupedEvents.length > 0 ? (
-            groupedEvents.map((group) => (
-              <View
-                key={group.date}
-                style={styles.dateSection}
-              >
-                {/* Date Header */}
-                <View style={[styles.dateAccent, { backgroundColor: theme.primary }]} />
-                <View style={styles.dateHeader}>
-                  <View style={styles.dateHeaderCopy}>
-                    <Text style={[styles.dateHeaderText, { color: theme.text }]}>
-                      {formatDateHeader(group.date)}
-                    </Text>
-                    <Text style={[styles.dateHeaderSubtext, { color: theme.textTertiary }]}>
-                      {group.events.length} {group.events.length === 1 ? "evento disponibile" : "eventi disponibili"}
-                    </Text>
-                  </View>
-                  <View style={styles.dateHeaderRight}>
-                    <View
-                      style={[
-                        styles.dateCountBadge,
-                        {
-                          backgroundColor: theme.backgroundElevated,
-                          borderColor: theme.border,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.eventCount, { color: theme.primary }]}>
-                        {group.events.length}
+                  <View style={styles.dateHeader}>
+                    <View style={styles.dateHeaderCopy}>
+                      <Text
+                        style={[styles.dateHeaderText, { color: theme.text }]}
+                      >
+                        {formatDateHeader(group.date)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.dateHeaderSubtext,
+                          { color: theme.textTertiary },
+                        ]}
+                      >
+                        {group.events.length}{" "}
+                        {group.events.length === 1
+                          ? "evento disponibile"
+                          : "eventi disponibili"}
                       </Text>
                     </View>
-                  </View>
-                </View>
-
-                {/* Horizontal Scroll of Events for this Date */}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.eventsRow}
-                  contentContainerStyle={styles.eventsRowContent}
-                >
-                  {group.events.map((event) => (
-                    <View key={event.id} style={styles.eventCardWrapper}>
-                      <EventCard
-                        event={event}
-                        onPress={() => handleEventPress(event)}
-                      />
+                    <View style={styles.dateHeaderRight}>
+                      <View
+                        style={[
+                          styles.dateCountBadge,
+                          {
+                            backgroundColor: theme.backgroundElevated,
+                            borderColor: theme.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.eventCount, { color: theme.primary }]}
+                        >
+                          {group.events.length}
+                        </Text>
+                      </View>
                     </View>
-                  ))}
-                </ScrollView>
+                  </View>
+
+                  {/* Horizontal Scroll of Events for this Date */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.eventsRow}
+                    contentContainerStyle={styles.eventsRowContent}
+                  >
+                    {group.events.map((event) => (
+                      <View key={event.id} style={styles.eventCardWrapper}>
+                        <EventCard
+                          event={event}
+                          onPress={() => handleEventPress(event)}
+                        />
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateEmoji}>🎉</Text>
+                <Text style={[styles.emptyStateText, { color: theme.text }]}>
+                  Nessun evento in programma
+                </Text>
+                <Text
+                  style={[
+                    styles.emptyStateSubtext,
+                    { color: theme.textTertiary },
+                  ]}
+                >
+                  Controlla altre date dal calendario
+                </Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateEmoji}>🎉</Text>
-              <Text style={[styles.emptyStateText, { color: theme.text }]}>
-                Nessun evento in programma
-              </Text>
-              <Text style={[styles.emptyStateSubtext, { color: theme.textTertiary }]}>
-                Controlla altre date dal calendario
-              </Text>
-            </View>
-          )}
+            )}
           </View>
 
           {loadingMore && (
-            <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
+            <ActivityIndicator
+              size="small"
+              color={theme.primary}
+              style={{ marginVertical: 16 }}
+            />
           )}
         </ScrollView>
       </View>
@@ -468,10 +496,27 @@ export default function HomeScreen() {
         transparent={true}
         onRequestClose={() => setShowCalendar(false)}
       >
-        <View style={[styles.calendarModalOverlay, { backgroundColor: theme.overlay }]}>
-          <View style={[styles.calendarModal, { backgroundColor: theme.backgroundSurface }]}>
-            <View style={[styles.calendarHeader, { borderBottomColor: theme.border }]}>
-              <Text style={[styles.calendarTitle, { color: theme.text }]}>Seleziona una data</Text>
+        <View
+          style={[
+            styles.calendarModalOverlay,
+            { backgroundColor: theme.overlay },
+          ]}
+        >
+          <View
+            style={[
+              styles.calendarModal,
+              { backgroundColor: theme.backgroundSurface },
+            ]}
+          >
+            <View
+              style={[
+                styles.calendarHeader,
+                { borderBottomColor: theme.border },
+              ]}
+            >
+              <Text style={[styles.calendarTitle, { color: theme.text }]}>
+                Seleziona una data
+              </Text>
             </View>
             <Calendar
               onDayPress={handleDateSelect}
@@ -512,14 +557,6 @@ export default function HomeScreen() {
         onClose={reservationModal.close}
       />
 
-      <FloatingActionButton onPress={handleFABPress} icon="qrcode" />
-
-      <ReservationCodeModal
-        visible={codeInputModal.isVisible}
-        onClose={codeInputModal.close}
-        onSubmit={handleReservationCodeSubmit}
-      />
-
       <TableReservationDetailModal
         visible={reservationDetailModal.isVisible}
         reservation={selectedReservation}
@@ -538,7 +575,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentWrap: {
-    paddingTop: 12,
+    paddingTop: 14,
     paddingBottom: 8,
   },
   topIntro: {
@@ -555,7 +592,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: "700",
     marginBottom: 2,
   },
@@ -650,8 +687,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
   },
-  eventsRow: {
-  },
+  eventsRow: {},
   eventsRowContent: {
     paddingLeft: 16,
     paddingRight: 28,
