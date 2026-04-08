@@ -22,13 +22,14 @@ import { useApiFetch } from '@/config/apiFetch';
 import { TableReservation } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { TableReservationDetailModal } from '@/components/reservation/TableReservationDetailModal';
+import { ReservationCodeModal } from '@/components/reservation/ReservationCodeModal';
 import * as Clipboard from 'expo-clipboard';
 import { Alert } from 'react-native';
 
 type BookingFilter = 'upcoming' | 'past';
 
 export default function BookingsScreen() {
-  const { tickets, loading: ticketsLoading, loadingMore, error: ticketsError, hasMore, refetch: refetchTickets, loadMore } = useTickets();
+  const { tickets, loading: ticketsLoading, loadingMore, hasMore, refetch: refetchTickets, loadMore } = useTickets();
   const { theme } = useTheme();
   const { user } = useAuth();
   const apiFetch = useApiFetch();
@@ -42,6 +43,7 @@ export default function BookingsScreen() {
   const [reservationsLoading, setReservationsLoading] = useState(true);
   const [selectedReservation, setSelectedReservation] = useState<TableReservation | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showReservationCodeModal, setShowReservationCodeModal] = useState(false);
 
   const fetchReservations = async (silent = false) => {
     if (!user?.id) return;
@@ -143,6 +145,26 @@ export default function BookingsScreen() {
   const hasTickets = filteredTickets.length > 0;
   const upcomingCount = tickets.filter(t => isEventInFuture(t.event.date)).length + reservations.filter(r => isReservationUpcoming(r)).length;
 
+  const handleReservationCodeSubmit = async (code: string) => {
+    try {
+      const response = await apiFetch(`${API_URL}/reservations/code/${code}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Prenotazione non trovata');
+        }
+        throw new Error('Errore durante il recupero della prenotazione');
+      }
+
+      const data = await response.json();
+      setSelectedReservation(data);
+      setShowReservationCodeModal(false);
+      setShowDetailModal(true);
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
       <View style={[s.container, { backgroundColor: theme.background }]}>
@@ -152,14 +174,17 @@ export default function BookingsScreen() {
           <View style={s.headerTextWrap}>
             <Text style={[s.header, { color: theme.text }]}>I miei acquisti</Text>
             <Text style={[s.headerSubtext, { color: theme.textTertiary }]}>
-              {upcomingCount} in arrivo su {totalCount}
+              {upcomingCount} futuri su {totalCount}
             </Text>
           </View>
           <View style={s.headerActions}>
-            <View style={[s.summaryPill, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
-              <Text style={[s.summaryPillLabel, { color: theme.textTertiary }]}>In arrivo</Text>
-              <Text style={[s.summaryPillValue, { color: theme.text }]}>{upcomingCount}</Text>
-            </View>
+            <TouchableOpacity
+              style={[s.addButton, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}
+              onPress={() => setShowReservationCodeModal(true)}
+              activeOpacity={0.85}
+            >
+              <IconSymbol name="plus" size={18} color={theme.primary} />
+            </TouchableOpacity>
             <View style={[s.countBadge, { backgroundColor: theme.primary }]}>
               <IconSymbol name="ticket.fill" size={14} color={theme.textInverse} />
               <Text style={[s.countText, { color: theme.textInverse }]}>{totalCount}</Text>
@@ -420,6 +445,12 @@ export default function BookingsScreen() {
         onClose={() => { setShowDetailModal(false); setSelectedReservation(null); fetchReservations(true); }}
         onPaymentSubmit={async () => {}}
       />
+
+      <ReservationCodeModal
+        visible={showReservationCodeModal}
+        onClose={() => setShowReservationCodeModal(false)}
+        onSubmit={handleReservationCodeSubmit}
+      />
     </SafeAreaView>
   );
 }
@@ -439,18 +470,16 @@ const s = StyleSheet.create({
   },
   headerTextWrap: { flex: 1 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  addButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   header: { fontSize: 28, fontWeight: '700' },
   headerSubtext: { fontSize: 13, lineHeight: 18, marginTop: 4 },
-  summaryPill: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'center',
-    minWidth: 82,
-  },
-  summaryPillLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginBottom: 2 },
-  summaryPillValue: { fontSize: 16, fontWeight: '800' },
   countBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, gap: 6 },
   countText: { fontSize: 14, fontWeight: '700' },
   filterRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginBottom: 16 },

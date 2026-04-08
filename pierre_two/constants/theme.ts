@@ -73,7 +73,7 @@ export interface ThemePalette {
 
 export type ThemeName = 'nightclub' | 'ocean' | 'sunset' | 'midnight' | 'daylight';
 
-export const DEFAULT_THEME: ThemeName = 'nightclub';
+export const DEFAULT_THEME: ThemeName = 'midnight';
 
 export const THEME_DISPLAY_NAMES: Record<ThemeName, string> = {
   nightclub: 'Champagne',
