@@ -21,7 +21,7 @@ export const FloatingActionButton = ({ onPress, icon = 'qrcode' }: FloatingActio
 
   const tabBarHeight = Platform.OS === 'android' ? TAB_BAR_HEIGHT_ANDROID : TAB_BAR_HEIGHT;
   // Position FAB above the tab bar, accounting for safe area
-  const bottomOffset = tabBarHeight + insets.bottom + 16;
+  const bottomOffset = tabBarHeight + insets.bottom - 8;
 
   return (
     <TouchableOpacity

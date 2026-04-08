@@ -2,6 +2,8 @@ import { TouchableOpacity, View, Image, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/context/ThemeContext';
 import { Event } from '@/types';
+import { LinearGradient } from 'expo-linear-gradient';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 type EventCardProps = {
   event: Event;
@@ -30,21 +32,70 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
 
   return (
     <TouchableOpacity style={styles.eventCard} onPress={onPress} activeOpacity={0.9}>
-      <View style={[styles.eventImageContainer, { backgroundColor: theme.backgroundElevated }]}>
+      <View style={[styles.eventImageContainer, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
         <Image source={{ uri: event.image }} style={styles.eventImage} />
+        <LinearGradient
+          colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.22)', 'rgba(8,8,8,0.97)']}
+          style={styles.imageOverlay}
+        />
+        <LinearGradient
+          colors={['rgba(201,168,76,0.15)', 'rgba(0,0,0,0)']}
+          style={styles.topGlow}
+        />
+        <View style={[styles.topBar, { borderColor: theme.border }]}>
+          <View style={[styles.iconChip, { backgroundColor: `${theme.background}d9`, borderColor: theme.border }]}>
+            <IconSymbol name="ticket.fill" size={12} color={theme.primary} />
+          </View>
+          <View style={styles.timeBadge}>
+            <IconSymbol name="clock.fill" size={12} color={theme.primary} />
+            <ThemedText style={[styles.timeBadgeText, { color: theme.text }]}>{formatEventTime(event)}</ThemedText>
+          </View>
+        </View>
         {event.status && (
           <View style={[styles.statusBadge, { backgroundColor: theme.error }]}>
             <ThemedText style={styles.statusText}>{event.status}</ThemedText>
           </View>
         )}
-        <View style={styles.eventInfo}>
-          <ThemedText style={[styles.eventTitle, { color: theme.text }]} numberOfLines={2}>
-            {event.title}
-          </ThemedText>
-          <ThemedText style={[styles.eventDate, { color: theme.textSecondary }]}>{formatEventTime(event)}</ThemedText>
-          <ThemedText style={[styles.eventVenue, { color: theme.textTertiary }]} numberOfLines={1}>
-            {event.venue}
-          </ThemedText>
+
+        <View style={[styles.infoPanel, { backgroundColor: 'rgba(10,10,10,0.74)', borderColor: theme.border }]}>
+          <View style={styles.kickerRow}>
+            <ThemedText style={[styles.kickerText, { color: theme.primary }]}>
+              Evento in evidenza
+            </ThemedText>
+            <ThemedText style={[styles.kickerDivider, { color: theme.textTertiary }]}>
+              •
+            </ThemedText>
+            <ThemedText style={[styles.kickerText, { color: theme.textTertiary }]}>
+              {event.status || 'Disponibile'}
+            </ThemedText>
+          </View>
+          <View style={styles.titleRow}>
+            <ThemedText style={[styles.eventTitle, { color: theme.text }]} numberOfLines={2}>
+              {event.title}
+            </ThemedText>
+          </View>
+
+          <View style={styles.metaRow}>
+            <IconSymbol name="mappin" size={12} color={theme.textSecondary} />
+            <ThemedText style={[styles.metaText, { color: theme.textSecondary }]} numberOfLines={1}>
+              {event.venue}
+            </ThemedText>
+          </View>
+
+          <View style={styles.metaRow}>
+            <IconSymbol name="calendar" size={12} color={theme.textTertiary} />
+            <ThemedText style={[styles.metaText, { color: theme.textTertiary }]} numberOfLines={1}>
+              {event.date}
+            </ThemedText>
+          </View>
+
+          <View style={styles.footerRow}>
+            <View style={[styles.ctaPill, { backgroundColor: theme.primary }]}>
+              <ThemedText style={[styles.ctaText, { color: theme.textInverse }]}>
+                Apri evento
+              </ThemedText>
+            </View>
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -53,28 +104,67 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
 
 const styles = StyleSheet.create({
   eventCard: {
-    width: 280,
-    marginRight: 16,
+    width: 320,
+    marginRight: 18,
   },
   eventImageContainer: {
-    width: 280,
-    height: 380,
-    borderRadius: 16,
+    width: 320,
+    height: 430,
+    borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
   },
   eventImage: {
     width: '100%',
     height: '100%',
   },
+  imageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 140,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    right: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  iconChip: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   statusBadge: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 14,
+    right: 14,
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
     zIndex: 2,
+  },
+  timeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    zIndex: 2,
+  },
+  timeBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   statusText: {
     color: '#fff',
@@ -85,25 +175,64 @@ const styles = StyleSheet.create({
   },
   eventInfo: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    backgroundColor: 'linear-gradient(transparent, rgba(0,0,0,0.9))',
+  },
+  infoPanel: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 14,
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+  },
+  kickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  kickerText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  kickerDivider: {
+    fontSize: 10,
+  },
+  titleRow: {
+    marginBottom: 10,
   },
   eventTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    marginBottom: 6,
-    lineHeight: 24,
+    lineHeight: 25,
   },
-  eventDate: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginBottom: 4,
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
   },
-  eventVenue: {
+  metaText: {
+    flex: 1,
     fontSize: 12,
-    fontWeight: '400',
+    fontWeight: '500',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  ctaPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
+  ctaText: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
 });

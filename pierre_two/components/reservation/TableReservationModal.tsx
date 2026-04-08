@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Modal,
   ScrollView,
@@ -36,9 +36,13 @@ export const TableReservationModal = ({
   const { theme } = useTheme();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [loading, setLoading] = useState(false);
+  const paymentFlowInProgressRef = useRef(false);
 
   useEffect(() => {
-    if (visible) setLoading(false);
+    if (visible) {
+      setLoading(false);
+      paymentFlowInProgressRef.current = false;
+    }
   }, [visible]);
 
   if (!table || !event) return null;
@@ -54,6 +58,11 @@ export const TableReservationModal = ({
       return;
     }
 
+    if (loading || paymentFlowInProgressRef.current) {
+      return;
+    }
+
+    paymentFlowInProgressRef.current = true;
     setLoading(true);
 
     try {
@@ -158,6 +167,7 @@ export const TableReservationModal = ({
       );
     } finally {
       setLoading(false);
+      paymentFlowInProgressRef.current = false;
     }
   };
 

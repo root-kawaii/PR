@@ -17,7 +17,6 @@ import { useTheme } from '@/context/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useState, useCallback, useEffect } from 'react';
-import QRCode from 'react-native-qrcode-svg';
 import { API_URL } from '@/config/api';
 import { useApiFetch } from '@/config/apiFetch';
 import { TableReservation } from '@/types';
@@ -142,17 +141,29 @@ export default function BookingsScreen() {
   const loading = ticketsLoading || reservationsLoading;
   const hasReservations = filteredReservations.length > 0;
   const hasTickets = filteredTickets.length > 0;
+  const upcomingCount = tickets.filter(t => isEventInFuture(t.event.date)).length + reservations.filter(r => isReservationUpcoming(r)).length;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
       <View style={[s.container, { backgroundColor: theme.background }]}>
 
         {/* Header */}
-        <View style={s.headerRow}>
-          <Text style={[s.header, { color: theme.text }]}>I Miei Acquisti</Text>
-          <View style={[s.countBadge, { backgroundColor: theme.primary }]}>
-            <IconSymbol name="ticket.fill" size={14} color={theme.textInverse} />
-            <Text style={[s.countText, { color: theme.textInverse }]}>{totalCount}</Text>
+        <View style={[s.headerBar, { borderBottomColor: theme.border }]}>
+          <View style={s.headerTextWrap}>
+            <Text style={[s.header, { color: theme.text }]}>I miei acquisti</Text>
+            <Text style={[s.headerSubtext, { color: theme.textTertiary }]}>
+              {upcomingCount} in arrivo su {totalCount}
+            </Text>
+          </View>
+          <View style={s.headerActions}>
+            <View style={[s.summaryPill, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+              <Text style={[s.summaryPillLabel, { color: theme.textTertiary }]}>In arrivo</Text>
+              <Text style={[s.summaryPillValue, { color: theme.text }]}>{upcomingCount}</Text>
+            </View>
+            <View style={[s.countBadge, { backgroundColor: theme.primary }]}>
+              <IconSymbol name="ticket.fill" size={14} color={theme.textInverse} />
+              <Text style={[s.countText, { color: theme.textInverse }]}>{totalCount}</Text>
+            </View>
           </View>
         </View>
 
@@ -305,13 +316,13 @@ export default function BookingsScreen() {
               {filteredTickets.map(ticket => {
                 const isExpanded = expandedTicket === ticket.id;
                 const statusColor = getTicketStatusColor(ticket.status);
+                const qrValue = ticket.qrCode || ticket.ticketCode;
+                const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrValue)}`;
                 return (
-                  <TouchableOpacity
+                  <View
                     key={`tkt-${ticket.id}`}
-                    activeOpacity={0.9}
-                    onPress={() => setExpandedTicket(isExpanded ? null : ticket.id)}
+                    style={[s.ticketCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
                   >
-                    <View style={[s.ticketCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                       {/* Image */}
                       <View style={s.imgWrap}>
                         <Image source={{ uri: ticket.event.image }} style={s.img} resizeMode="cover" />
@@ -327,7 +338,14 @@ export default function BookingsScreen() {
                       </View>
 
                       <View style={s.ticketBody}>
-                        <Text style={[s.cardTitle, { color: theme.text }]} numberOfLines={1}>{ticket.event.title}</Text>
+                        <View style={s.ticketHeader}>
+                          <Text style={[s.cardTitle, { color: theme.text, flex: 1 }]} numberOfLines={1}>{ticket.event.title}</Text>
+                          <View style={[s.ticketStatusPill, { backgroundColor: `${statusColor}22`, borderColor: `${statusColor}44` }]}>
+                            <Text style={[s.ticketStatusText, { color: statusColor }]}>
+                              {ticket.status === 'active' ? 'Attivo' : ticket.status}
+                            </Text>
+                          </View>
+                        </View>
                         <View style={s.metaRow}>
                           <IconSymbol name="location.fill" size={13} color={theme.textTertiary} />
                           <Text style={[s.metaText, { color: theme.textSecondary }]} numberOfLines={1}>{ticket.event.venue}</Text>
@@ -353,18 +371,18 @@ export default function BookingsScreen() {
                           <Text style={[s.codeValue, { color: theme.text }]}>{ticket.ticketCode}</Text>
                         </View>
 
-                        {isExpanded && ticket.qrCode && (
+                        {isExpanded && (
                           <View style={s.qrSection}>
                             <View style={[s.qrDivider, { backgroundColor: theme.border }]} />
                             <Text style={[s.qrLabel, { color: theme.textTertiary }]}>SCANSIONA ALL'INGRESSO</Text>
                             <View style={[s.qrWrap, { backgroundColor: '#ffffff' }]}>
-                              <QRCode
-                                value={ticket.qrCode}
-                                size={180}
-                                color="#000000"
-                                backgroundColor="#ffffff"
-                              />
+                              <Image source={{ uri: qrImageUrl }} style={s.qrImage} resizeMode="contain" />
                             </View>
+                            {!ticket.qrCode ? (
+                              <Text style={[s.qrFallbackHint, { color: theme.textTertiary }]}>
+                                QR generato dal codice biglietto
+                              </Text>
+                            ) : null}
                             <Text style={[s.qrCode, { color: theme.textTertiary }]}>{ticket.ticketCode}</Text>
                             <Text style={[s.purchaseDate, { color: theme.textTertiary }]}>
                               Acquistato: {new Date(ticket.purchaseDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -385,8 +403,7 @@ export default function BookingsScreen() {
                         <View style={[s.notchL, { backgroundColor: theme.background }]} />
                         <View style={[s.notchR, { backgroundColor: theme.background }]} />
                       </View>
-                    </View>
-                  </TouchableOpacity>
+                  </View>
                 );
               })}
 
@@ -409,9 +426,32 @@ export default function BookingsScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 16 },
+  headerBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+  },
+  headerTextWrap: { flex: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   header: { fontSize: 28, fontWeight: '700' },
-  countBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, gap: 6 },
+  headerSubtext: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  summaryPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    minWidth: 82,
+  },
+  summaryPillLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginBottom: 2 },
+  summaryPillValue: { fontSize: 16, fontWeight: '800' },
+  countBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, gap: 6 },
   countText: { fontSize: 14, fontWeight: '700' },
   filterRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginBottom: 16 },
   filterBtn: { flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 2, alignItems: 'center' },
@@ -458,6 +498,9 @@ const s = StyleSheet.create({
   imgTypeTag: { position: 'absolute', top: 12, left: 12, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   imgTypeTagText: { fontSize: 10, fontWeight: '700', color: '#fff' },
   ticketBody: { padding: 16 },
+  ticketHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 },
+  ticketStatusPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
+  ticketStatusText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   ticketMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   pricePill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1 },
   priceText: { fontSize: 15, fontWeight: '700' },
@@ -468,6 +511,8 @@ const s = StyleSheet.create({
   qrDivider: { height: 1, width: '100%', marginBottom: 14 },
   qrLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 1.5, marginBottom: 14 },
   qrWrap: { padding: 16, borderRadius: 12, marginBottom: 12 },
+  qrImage: { width: 180, height: 180 },
+  qrFallbackHint: { fontSize: 11, marginBottom: 8, textAlign: 'center' },
   qrCode: { fontSize: 12, fontFamily: 'monospace', letterSpacing: 1, marginBottom: 4 },
   purchaseDate: { fontSize: 12 },
   expandBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 6 },

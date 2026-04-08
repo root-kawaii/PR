@@ -33,10 +33,19 @@ export const TableReservationDetailModal = ({
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [slotsFilled, setSlotsFilled] = useState(0);
   const [slotsTotal, setSlotsTotal] = useState(0);
+  const [showReservationDetails, setShowReservationDetails] = useState(false);
+  const [showPaymentSummary, setShowPaymentSummary] = useState(false);
 
   useEffect(() => {
     if (visible && reservation?.id) {
       fetchPaymentStatus();
+    }
+  }, [visible, reservation?.id]);
+
+  useEffect(() => {
+    if (visible) {
+      setShowReservationDetails(false);
+      setShowPaymentSummary(false);
     }
   }, [visible, reservation?.id]);
 
@@ -314,71 +323,106 @@ export const TableReservationDetailModal = ({
 
             {/* Reservation Details */}
             <View style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
-                Dettagli Prenotazione
-              </ThemedText>
-              <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-                <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
-                  <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Nome contatto</ThemedText>
-                  <ThemedText style={[styles.infoValue, { color: theme.text }]}>{reservation.contactName}</ThemedText>
+              <TouchableOpacity
+                style={[styles.accordionHeader, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}
+                onPress={() => setShowReservationDetails((prev) => !prev)}
+                activeOpacity={0.85}
+              >
+                <View>
+                  <ThemedText style={[styles.accordionTitle, { color: theme.text }]}>
+                    Dettagli Prenotazione
+                  </ThemedText>
+                  <ThemedText style={[styles.accordionSubtitle, { color: theme.textTertiary }]}>
+                    Contatto e richieste speciali
+                  </ThemedText>
                 </View>
-                <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
-                  <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Email</ThemedText>
-                  <ThemedText style={[styles.infoValueSmall, { color: theme.text }]}>{reservation.contactEmail}</ThemedText>
-                </View>
-                <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
-                  <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Telefono</ThemedText>
-                  <ThemedText style={[styles.infoValue, { color: theme.text }]}>{reservation.contactPhone}</ThemedText>
-                </View>
-                {reservation.specialRequests && (
-                  <View style={[styles.specialRequestsContainer, { borderTopColor: theme.border }]}>
-                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Richieste speciali</ThemedText>
-                    <ThemedText style={[styles.specialRequestsText, { color: theme.textSecondary }]}>
-                      {reservation.specialRequests}
-                    </ThemedText>
+                <IconSymbol
+                  name={showReservationDetails ? "chevron.up" : "chevron.down"}
+                  size={18}
+                  color={theme.textTertiary}
+                />
+              </TouchableOpacity>
+              {showReservationDetails && (
+                <View style={[styles.card, styles.accordionCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Nome contatto</ThemedText>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>{reservation.contactName}</ThemedText>
                   </View>
-                )}
-              </View>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Email</ThemedText>
+                    <ThemedText style={[styles.infoValueSmall, { color: theme.text }]}>{reservation.contactEmail}</ThemedText>
+                  </View>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Telefono</ThemedText>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>{reservation.contactPhone}</ThemedText>
+                  </View>
+                  {reservation.specialRequests && (
+                    <View style={[styles.specialRequestsContainer, { borderTopColor: theme.border }]}>
+                      <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Richieste speciali</ThemedText>
+                      <ThemedText style={[styles.specialRequestsText, { color: theme.textSecondary }]}>
+                        {reservation.specialRequests}
+                      </ThemedText>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* Payment Summary */}
             <View style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
-                Riepilogo Pagamento
-              </ThemedText>
-              <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-                <View style={styles.paymentRow}>
-                  <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Importo totale</ThemedText>
-                  <ThemedText style={[styles.paymentValue, { color: theme.text }]}>{reservation.totalAmount}</ThemedText>
-                </View>
-                <View style={styles.paymentRow}>
-                  <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Già pagato</ThemedText>
-                  <ThemedText style={[styles.paymentValue, { color: theme.success }]}>{reservation.amountPaid}</ThemedText>
-                </View>
-                <View style={[styles.divider, { backgroundColor: theme.border }]} />
-                <View style={styles.paymentRow}>
-                  <ThemedText style={[styles.paymentLabelTotal, { color: theme.text }]}>Rimanente</ThemedText>
-                  <ThemedText style={[styles.paymentValueTotal, { color: theme.primary }]}>{reservation.amountRemaining}</ThemedText>
-                </View>
-
-                {/* Progress Bar */}
-                <View style={styles.progressContainer}>
-                  <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        {
-                          width: `${totalAmount > 0 ? Math.min((amountPaid / totalAmount) * 100, 100) : 0}%`,
-                          backgroundColor: theme.success,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <ThemedText style={[styles.progressText, { color: theme.textTertiary }]}>
-                    {totalAmount > 0 ? Math.round((amountPaid / totalAmount) * 100) : 0}% pagato
+              <TouchableOpacity
+                style={[styles.accordionHeader, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}
+                onPress={() => setShowPaymentSummary((prev) => !prev)}
+                activeOpacity={0.85}
+              >
+                <View>
+                  <ThemedText style={[styles.accordionTitle, { color: theme.text }]}>
+                    Riepilogo Pagamento
+                  </ThemedText>
+                  <ThemedText style={[styles.accordionSubtitle, { color: theme.textTertiary }]}>
+                    Totale, pagato e importo rimanente
                   </ThemedText>
                 </View>
-              </View>
+                <IconSymbol
+                  name={showPaymentSummary ? "chevron.up" : "chevron.down"}
+                  size={18}
+                  color={theme.textTertiary}
+                />
+              </TouchableOpacity>
+              {showPaymentSummary && (
+                <View style={[styles.card, styles.accordionCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  <View style={styles.paymentRow}>
+                    <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Importo totale</ThemedText>
+                    <ThemedText style={[styles.paymentValue, { color: theme.text }]}>{reservation.totalAmount}</ThemedText>
+                  </View>
+                  <View style={styles.paymentRow}>
+                    <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Già pagato</ThemedText>
+                    <ThemedText style={[styles.paymentValue, { color: theme.success }]}>{reservation.amountPaid}</ThemedText>
+                  </View>
+                  <View style={[styles.divider, { backgroundColor: theme.border }]} />
+                  <View style={styles.paymentRow}>
+                    <ThemedText style={[styles.paymentLabelTotal, { color: theme.text }]}>Rimanente</ThemedText>
+                    <ThemedText style={[styles.paymentValueTotal, { color: theme.primary }]}>{reservation.amountRemaining}</ThemedText>
+                  </View>
+
+                  <View style={styles.progressContainer}>
+                    <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${totalAmount > 0 ? Math.min((amountPaid / totalAmount) * 100, 100) : 0}%`,
+                            backgroundColor: theme.success,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <ThemedText style={[styles.progressText, { color: theme.textTertiary }]}>
+                      {totalAmount > 0 ? Math.round((amountPaid / totalAmount) * 100) : 0}% pagato
+                    </ThemedText>
+                  </View>
+                </View>
+              )}
             </View>
 
             <View style={{ height: 30 }} />
@@ -396,7 +440,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingTop: 28,
     paddingBottom: 18,
     borderBottomWidth: 1,
     borderBottomColor: "#1f2937",
@@ -428,6 +472,19 @@ const styles = StyleSheet.create({
   eventDate: { fontSize: 14, color: "rgba(255, 255, 255, 0.9)" },
   section: { paddingHorizontal: 16, paddingTop: 16 },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#fff", marginBottom: 12 },
+  accordionHeader: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  accordionTitle: { fontSize: 17, fontWeight: "700" },
+  accordionSubtitle: { fontSize: 12, marginTop: 3 },
+  accordionCard: { marginTop: 10 },
   heroSummaryCard: {
     position: "relative",
     overflow: "hidden",
