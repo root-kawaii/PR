@@ -4,10 +4,26 @@ import { ArrowLeft, Plus, X, Search, User, Phone, Mail, FileText, ChevronDown } 
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
-import type { TableReservation, TableResponse } from '../types';
+import type { TableResponse } from '../types';
 
-interface ReservationsData {
-  reservations: TableReservation[];
+// Matches the flat TableReservationResponse from the backend
+interface OwnerReservation {
+  id: string;
+  reservationCode: string;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  numPeople: number;
+  totalAmount: string;
+  amountPaid: string;
+  amountRemaining: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  specialRequests?: string;
+  tableId: string;
+  eventId: string;
+  isManual: boolean;
+  manualNotes?: string;
+  createdAt: string;
 }
 
 interface TablesData {
@@ -32,7 +48,7 @@ export default function EventReservationsPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { token } = useAuth();
 
-  const { data, loading, refetch } = useFetch<ReservationsData>(`/owner/events/${eventId}/reservations`);
+  const { data: reservationsData, loading, refetch } = useFetch<OwnerReservation[]>(`/owner/events/${eventId}/reservations`);
   const { data: tablesData } = useFetch<TablesData>(`/owner/events/${eventId}/tables`);
 
   const [search, setSearch] = useState('');
@@ -51,15 +67,18 @@ export default function EventReservationsPage() {
   // Status change
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const reservations = data?.reservations ?? [];
+  const reservations = reservationsData ?? [];
   const tables = tablesData?.tables ?? [];
 
+  const getTable = (tableId: string) => tables.find(t => t.id === tableId);
+
   const filtered = reservations.filter((r) => {
+    const table = getTable(r.tableId);
     const matchesSearch =
       search === '' ||
       r.contactName.toLowerCase().includes(search.toLowerCase()) ||
       r.reservationCode.toLowerCase().includes(search.toLowerCase()) ||
-      r.table.name.toLowerCase().includes(search.toLowerCase());
+      (table?.name ?? '').toLowerCase().includes(search.toLowerCase());
     const matchesStatus = filterStatus === 'all' || r.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -191,6 +210,7 @@ export default function EventReservationsPage() {
         </p>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -225,8 +245,8 @@ export default function EventReservationsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-sm">
-                    {r.table.name}
-                    {r.table.zone && <span className="text-gray-400"> · {r.table.zone}</span>}
+                    {getTable(r.tableId)?.name ?? r.tableId}
+                    {getTable(r.tableId)?.zone && <span className="text-gray-400"> · {getTable(r.tableId)?.zone}</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-sm">{r.numPeople}</td>
                   <td className="px-4 py-3 text-gray-600 text-sm">
@@ -262,6 +282,7 @@ export default function EventReservationsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

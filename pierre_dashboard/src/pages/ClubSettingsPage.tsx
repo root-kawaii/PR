@@ -5,14 +5,10 @@ import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type { Club, ClubImage } from '../types';
 
-interface ClubImagesData {
-  images: ClubImage[];
-}
-
 export default function ClubSettingsPage() {
   const { token } = useAuth();
   const { data: club, loading: clubLoading, refetch: refetchClub } = useFetch<Club>('/owner/club');
-  const { data: imagesData, loading: imagesLoading, refetch: refetchImages } = useFetch<ClubImagesData>('/owner/club/images');
+  const { data: images, loading: imagesLoading, refetch: refetchImages } = useFetch<ClubImage[]>('/owner/club/images');
 
   const [name, setName] = useState('');
   const [subtitle, setSubtitle] = useState('');
@@ -80,7 +76,7 @@ export default function ClubSettingsPage() {
         body: JSON.stringify({
           url: newImageUrl,
           alt_text: newImageAlt || undefined,
-          display_order: (imagesData?.images.length ?? 0),
+          display_order: (images ?? []).length,
         }),
       });
       if (!res.ok) throw new Error('Errore nel caricamento');
@@ -241,22 +237,22 @@ export default function ClubSettingsPage() {
 
         {imagesLoading ? (
           <p className="text-gray-500 text-sm">Caricamento...</p>
-        ) : !imagesData?.images.length ? (
+        ) : !(images ?? []).length ? (
           <p className="text-gray-500 text-sm">Nessuna immagine. Aggiungi la prima immagine del locale.</p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {imagesData.images.map((img) => (
+            {(images ?? []).map((img) => (
               <div key={img.id} className="relative group rounded-lg overflow-hidden aspect-video bg-gray-100">
-                <img src={img.url} alt={img.altText ?? ''} className="w-full h-full object-cover" />
+                <img src={img.url} alt={img.alt_text ?? ''} className="w-full h-full object-cover" />
                 <button
                   onClick={() => handleDeleteImage(img.id)}
                   className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <Trash2 size={14} />
                 </button>
-                {img.altText && (
+                {img.alt_text && (
                   <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-2 py-1 truncate">
-                    {img.altText}
+                    {img.alt_text}
                   </div>
                 )}
               </div>

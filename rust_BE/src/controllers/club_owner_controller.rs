@@ -1,7 +1,7 @@
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{
     AppState, ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest,
-    EventResponse, TableResponse, TablesResponse, UpdateClubRequest,
+    EventResponse, TableResponse, TablesResponse, UpdateClubRequest, UpdateEventRequest,
 };
 use crate::models::club_owner::{
     AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
@@ -436,16 +436,21 @@ pub async fn add_table_image_handler(
     Ok((StatusCode::CREATED, Json(image)))
 }
 
-/// Delete a table image
+/// Delete a table image (ownership check: image must belong to owner's club)
 pub async fn delete_table_image_handler(
     State(state): State<Arc<AppState>>,
     ClubOwnerUser(claims): ClubOwnerUser,
     Path(image_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
     let image_uuid = Uuid::parse_str(&image_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let deleted = club_owner_persistence::delete_table_image(&state.db_pool, image_uuid)
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let deleted = club_owner_persistence::delete_table_image_for_club(&state.db_pool, image_uuid, club.id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -606,6 +611,71 @@ pub async fn checkin_handler(
             code,
         })),
     }
+}
+
+/// Update an event owned by the club owner (with ownership check)
+pub async fn update_club_event(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<String>,
+    Json(mut payload): Json<UpdateEventRequest>,
+) -> Result<Json<EventResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Prevent changing the event's club association
+    payload.club_id = None;
+
+    let updated = event_persistence::update_event(&state.db_pool, event_uuid, payload)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(EventResponse::from(updated)))
+}
+
+/// Delete an event owned by the club owner (with ownership check)
+pub async fn delete_club_event(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let deleted = event_persistence::delete_event(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if deleted { Ok(StatusCode::NO_CONTENT) } else { Err(StatusCode::NOT_FOUND) }
 }
 
 /// Get aggregated stats for the authenticated club owner

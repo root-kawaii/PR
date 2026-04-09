@@ -171,6 +171,26 @@ pub async fn delete_table_image(pool: &PgPool, image_id: Uuid) -> Result<bool> {
     Ok(result.rows_affected() > 0)
 }
 
+/// Delete a table image only if it belongs to a table whose event belongs to `club_id`.
+pub async fn delete_table_image_for_club(pool: &PgPool, image_id: Uuid, club_id: Uuid) -> Result<bool> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM table_images
+        WHERE id = $1
+          AND table_id IN (
+              SELECT t.id FROM tables t
+              JOIN events e ON e.id = t.event_id
+              WHERE e.club_id = $2
+          )
+        "#,
+    )
+    .bind(image_id)
+    .bind(club_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 // ============================================================================
 // Event reservations
 // ============================================================================

@@ -20,18 +20,18 @@ export interface Club {
 
 export interface ClubImage {
   id: string;
-  clubId: string;
+  club_id: string;
   url: string;
-  displayOrder: number;
-  altText?: string;
+  display_order: number;
+  alt_text?: string;
 }
 
 export interface TableImage {
   id: string;
-  tableId: string;
+  table_id: string;
   url: string;
-  displayOrder: number;
-  altText?: string;
+  display_order: number;
+  alt_text?: string;
 }
 
 export interface TableReservation {
@@ -56,12 +56,26 @@ export interface TableReservation {
 export interface ScanResult {
   valid: boolean;
   alreadyUsed: boolean;
-  type: 'ticket' | 'reservation';
+  scanType: 'ticket' | 'reservation' | 'unknown';
   guestName?: string;
   numPeople?: number;
   eventTitle?: string;
   tableName?: string;
   code: string;
+}
+
+export interface EventStatRow {
+  eventId: string;
+  title: string;
+  date: string;
+  reservedTables: number;
+  totalTables: number;
+}
+
+export interface OwnerStats {
+  activeReservations: number;
+  totalRevenue: string;
+  events: EventStatRow[];
 }
 
 export interface EventResponse {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, CheckCircle, XCircle, AlertCircle, UserCheck, X } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type { ScanResult } from '../types';
@@ -15,8 +16,8 @@ export default function QRScannerPage() {
   const [checkinDone, setCheckinDone] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
+  const [showCameraModal, setShowCameraModal] = useState(false);
 
-  const scannerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const html5QrRef = useRef<any>(null);
 
@@ -32,7 +33,7 @@ export default function QRScannerPage() {
       });
       const data: ScanResult = await res.json();
       setResult(data);
-      if (!data.valid) {
+      if (!data.valid || data.scanType === 'unknown') {
         setScanStatus('invalid');
       } else if (data.alreadyUsed) {
         setScanStatus('used');
@@ -41,7 +42,7 @@ export default function QRScannerPage() {
       }
     } catch {
       setScanStatus('invalid');
-      setResult({ valid: false, alreadyUsed: false, type: 'ticket', code: trimmed });
+      setResult({ valid: false, alreadyUsed: false, scanType: 'unknown', code: trimmed });
     }
   };
 
@@ -71,29 +72,37 @@ export default function QRScannerPage() {
   };
 
   const startCamera = async () => {
-    try {
-      // Dynamically import html5-qrcode to avoid SSR issues
-      const { Html5Qrcode } = await import('html5-qrcode');
-      if (!scannerRef.current) return;
+    const isMobile = window.matchMedia('(max-width: 767px)').matches;
+    const elementId = isMobile ? 'qr-reader-modal' : 'qr-reader-inline';
 
-      const scanner = new Html5Qrcode('qr-reader');
+    if (isMobile) setShowCameraModal(true);
+    setCameraActive(true);
+    setCameraError(null);
+
+    // Wait one frame so the target div is rendered before html5-qrcode mounts into it
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+    try {
+      const scanner = new Html5Qrcode(elementId);
       html5QrRef.current = scanner;
-      setCameraActive(true);
-      setCameraError(null);
 
       await scanner.start(
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
           scanner.stop().catch(() => {});
+          html5QrRef.current = null;
           setCameraActive(false);
+          setShowCameraModal(false);
           handleScan(decodedText);
         },
         undefined,
       );
     } catch (err) {
-      setCameraError('Impossibile accedere alla fotocamera. Usa l\'input manuale.');
+      const msg = err instanceof Error ? err.message : String(err);
+      setCameraError(`Impossibile accedere alla fotocamera: ${msg}`);
       setCameraActive(false);
+      setShowCameraModal(false);
     }
   };
 
@@ -107,13 +116,13 @@ export default function QRScannerPage() {
       html5QrRef.current = null;
     }
     setCameraActive(false);
+    setShowCameraModal(false);
   };
 
   useEffect(() => {
     return () => {
       stopCamera();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -128,7 +137,14 @@ export default function QRScannerPage() {
           <p className="text-sm text-red-600 mb-3">{cameraError}</p>
         )}
 
-        <div id="qr-reader" ref={scannerRef} className={cameraActive ? 'mb-4 rounded-lg overflow-hidden' : 'hidden'} />
+        {/* Inline viewer — desktop only */}
+        <div
+          id="qr-reader-inline"
+          className="relative rounded-lg overflow-hidden"
+          style={cameraActive && !showCameraModal
+            ? { minHeight: '300px', marginBottom: '1rem' }
+            : { width: '1px', height: '1px', overflow: 'hidden', opacity: 0, position: 'absolute' }}
+        />
 
         {!cameraActive ? (
           <button
@@ -138,7 +154,7 @@ export default function QRScannerPage() {
             <Search size={20} />
             <span>Avvia fotocamera</span>
           </button>
-        ) : (
+        ) : !showCameraModal ? (
           <button
             onClick={stopCamera}
             className="w-full flex items-center justify-center gap-2 text-sm text-gray-500 hover:text-gray-700"
@@ -146,7 +162,7 @@ export default function QRScannerPage() {
             <X size={16} />
             Ferma fotocamera
           </button>
-        )}
+        ) : null}
       </div>
 
       {/* Manual input */}
@@ -240,6 +256,24 @@ export default function QRScannerPage() {
           </button>
         </div>
       )}
+
+      {/* Mobile fullscreen camera modal */}
+      {showCameraModal && (
+        <div className="fixed inset-0 bg-black z-50 flex flex-col">
+          <div className="flex items-center justify-between p-4 shrink-0">
+            <span className="text-white font-semibold">Scansione QR</span>
+            <button onClick={stopCamera} className="text-white p-1">
+              <X size={24} />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center overflow-hidden">
+            <div id="qr-reader-modal" className="w-full max-w-sm" />
+          </div>
+          {cameraError && (
+            <p className="text-red-400 text-sm text-center p-4 shrink-0">{cameraError}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -274,7 +308,7 @@ function ScanResultDetails({ result }: { result: ScanResult }) {
       <div className="flex gap-2">
         <span className="text-gray-500 w-28 shrink-0">Tipo</span>
         <span className="font-medium text-gray-900">
-          {result.type === 'ticket' ? 'Biglietto' : 'Prenotazione tavolo'}
+          {result.scanType === 'ticket' ? 'Biglietto' : result.scanType === 'reservation' ? 'Prenotazione tavolo' : 'Sconosciuto'}
         </span>
       </div>
       <div className="flex gap-2">

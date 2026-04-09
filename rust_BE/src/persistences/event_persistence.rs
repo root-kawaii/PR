@@ -1,4 +1,4 @@
-use crate::models::{Event, CreateEventRequest, UpdateEventRequest};
+use crate::models::{CreateEventRequest, Event, UpdateEventRequest};
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
@@ -39,10 +39,7 @@ pub async fn get_event_by_id(pool: &PgPool, event_id: Uuid) -> Result<Option<Eve
 }
 
 /// Create a new event
-pub async fn create_event(
-    pool: &PgPool,
-    request: CreateEventRequest,
-) -> Result<Event> {
+pub async fn create_event(pool: &PgPool, request: CreateEventRequest) -> Result<Event> {
     let event = sqlx::query_as::<_, Event>(
         r#"
         INSERT INTO events (id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
