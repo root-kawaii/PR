@@ -10,9 +10,7 @@ export type Event = {
   endTime?: string;
   price?: string;
   description?: string;
-  matterportId?: string; // Legacy support - DEPRECATED
-  tourProvider?: 'marzipano' | 'kuula' | 'matterport' | 'cloudpano';
-  tourId?: string; // DEPRECATED for Marzipano (uses marzipanoScenes instead)
+  tourProvider?: 'marzipano' | 'kuula' | 'cloudpano';
   marzipanoScenes?: MarzipanoScene[]; // NEW: Marzipano 360° viewer configuration
   tables?: Table[];
 };
@@ -35,20 +33,10 @@ export type PaymentShare = {
   id: string;
   phoneNumber?: string;
   amount: string;
-  status: string; // 'pending' | 'paid' | 'expired' | 'cancelled'
-  paymentLinkToken?: string;
+  status: string; // 'checkout_pending' | 'paid' | 'expired' | 'cancelled'
   isOwner: boolean;
   guestName?: string;
   guestEmail?: string;
-};
-
-export type FreeGuest = {
-  id: string;
-  phoneNumber: string;
-  email?: string;
-  name?: string;
-  ticketId?: string;
-  createdAt: string;
 };
 
 export type ReservationPaymentStatus = {
@@ -57,7 +45,9 @@ export type ReservationPaymentStatus = {
   amountPaid: string;
   amountRemaining: string;
   paymentShares: PaymentShare[];
-  freeGuests: FreeGuest[];
+  shareLink?: string;
+  slotsFilled: number;
+  slotsTotal: number;
 };
 
 export type TableReservation = {
@@ -80,7 +70,9 @@ export type TableReservation = {
     amountPaid: string;
   }>;
   paymentShares?: PaymentShare[];
-  freeGuests?: FreeGuest[];
+  shareLink?: string;
+  slotsFilled?: number;
+  slotsTotal?: number;
   table?: {
     id: string;
     name: string;

@@ -5,6 +5,7 @@ use axum::{
 };
 use uuid::Uuid;
 use std::sync::Arc;
+use tracing::{info, error};
 
 use crate::persistences::payment_persistence::{
     load_all_payments_service,
@@ -16,8 +17,10 @@ use crate::persistences::payment_persistence::{
     erase_payment_service,
 };
 use crate::models::{PaymentEntity, PaymentRequest, PaymentFilter, AppState, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentRequest, CancelPaymentResponse};
+use crate::middleware::auth::ClubOwnerUser;
 
 pub async fn get_all_payments(
+    _: ClubOwnerUser,
     State(app_state): State<Arc<AppState>>,
     Query(filters): Query<PaymentFilter>
 ) -> Result<Json<Vec<PaymentEntity>>, StatusCode> {
@@ -34,14 +37,18 @@ pub async fn get_payment(
 }
 
 pub async fn post_payment(
+    _: ClubOwnerUser,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<PaymentRequest>
 ) -> Result<(StatusCode, Json<PaymentEntity>), StatusCode> {
+    info!(amount = ?payload.amount, "Creating payment");
     let payment = create_payment_service(payload, &app_state).await?;
+    info!(payment_id = %payment.id, status = ?payment.status, "Payment created");
     Ok((StatusCode::CREATED, Json(payment)))
 }
 
 pub async fn delete_payment(
+    _: ClubOwnerUser,
     Path(id): Path<Uuid>,
     State(app_state): State<Arc<AppState>>
 ) -> StatusCode {
@@ -52,8 +59,9 @@ pub async fn delete_payment(
     }
 }
 
-// Create payment with authorization (manual capture)
+// Create payment with authorization (manual capture) — requires club_owner JWT
 pub async fn post_authorized_payment(
+    _: ClubOwnerUser,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<PaymentRequest>
 ) -> Result<(StatusCode, Json<PaymentEntity>), StatusCode> {
@@ -61,14 +69,18 @@ pub async fn post_authorized_payment(
     Ok((StatusCode::CREATED, Json(payment)))
 }
 
-// Capture an authorized payment
+// Capture an authorized payment — requires club_owner JWT
 pub async fn capture_payment(
+    _: ClubOwnerUser,
     Path(id): Path<Uuid>,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CapturePaymentRequest>
 ) -> Result<Json<CapturePaymentResponse>, StatusCode> {
-    let payment = capture_payment_service(id, payload.amount, payload.idempotency_key, &app_state).await?;
+    info!(payment_id = %id, amount = ?payload.amount, "Capturing payment");
+    let payment = capture_payment_service(id, payload.amount, payload.idempotency_key, &app_state).await
+        .map_err(|e| { error!(payment_id = %id, status = ?e, "Payment capture failed"); e })?;
 
+    info!(payment_id = %payment.id, captured_amount = ?payment.captured_amount, "Payment captured successfully");
     let response = CapturePaymentResponse {
         id: payment.id,
         status: payment.status,
@@ -80,14 +92,18 @@ pub async fn capture_payment(
     Ok(Json(response))
 }
 
-// Cancel an authorized payment
+// Cancel an authorized payment — requires club_owner JWT
 pub async fn cancel_payment(
+    _: ClubOwnerUser,
     Path(id): Path<Uuid>,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CancelPaymentRequest>,
 ) -> Result<Json<CancelPaymentResponse>, StatusCode> {
-    let payment = cancel_payment_authorization_service(id, payload.idempotency_key, &app_state).await?;
+    info!(payment_id = %id, "Cancelling payment authorization");
+    let payment = cancel_payment_authorization_service(id, payload.idempotency_key, &app_state).await
+        .map_err(|e| { error!(payment_id = %id, status = ?e, "Payment cancellation failed"); e })?;
 
+    info!(payment_id = %payment.id, "Payment authorization cancelled");
     let response = CancelPaymentResponse {
         id: payment.id,
         status: payment.status,

@@ -35,6 +35,10 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
+        <View style={styles.brandContainer}>
+          <Text style={[styles.wordmark, { color: theme.primary }]}>PIERRE</Text>
+          <View style={[styles.wordmarkLine, { backgroundColor: theme.primary }]} />
+        </View>
         <Text style={[styles.title, { color: theme.text }]}>Welcome Back</Text>
         <Text style={[styles.subtitle, { color: theme.textTertiary }]}>Log in to continue</Text>
 
@@ -91,13 +95,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
+  brandContainer: {
+    alignItems: 'center',
+    marginBottom: 48,
+  },
+  wordmark: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: 12,
+    paddingLeft: 12,
+  },
+  wordmarkLine: {
+    width: 28,
+    height: 1,
+    marginTop: 10,
+    opacity: 0.5,
+  },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     marginBottom: 32,
   },
   form: {

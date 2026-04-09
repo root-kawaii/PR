@@ -1,14 +1,18 @@
 // src/main.rs
 use axum::{
+    extract::State,
+    http::{header, HeaderValue, Method},
     middleware::from_fn,
     routing::{get, post},
-    Router,
+    Json, Router,
 };
 use dotenv::dotenv;
 use sqlx::PgPool;
-use std::env;
-use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
+use std::{env, sync::Arc};
+use tower_governor::{
+    governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
+};
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 // Declare your modules
@@ -50,13 +54,14 @@ use crate::controllers::payment_controller::{
     post_authorized_payment, post_payment,
 };
 use crate::controllers::table_controller::{
-    add_free_guest_to_reservation, add_payment_to_reservation, create_payment_intent,
-    create_payment_link_checkout, create_reservation, create_reservation_with_payment,
-    create_table, delete_reservation, delete_table, get_all_reservations, get_all_tables,
-    get_available_tables_by_event, get_payment_link_preview, get_reservation,
-    get_reservation_by_code, get_reservation_payment_status, get_reservations_by_table, get_table,
-    get_tables_by_event, get_tickets_for_reservation, get_user_reservations_with_details,
-    link_ticket_to_reservation, update_reservation, update_table, verify_payment_link,
+    add_payment_to_reservation, create_payment_intent, create_payment_link_checkout,
+    create_reservation, create_reservation_with_payment, create_table, delete_reservation,
+    delete_table, get_all_reservations, get_all_tables, get_available_tables_by_event,
+    get_payment_link_preview, get_reservation, get_reservation_by_code,
+    get_reservation_payment_status, get_reservations_by_table, get_table, get_tables_by_event,
+    get_tickets_for_reservation, get_user_reservations_with_details, guest_payment_page,
+    link_ticket_to_reservation, payment_cancel_page, payment_success_page, update_reservation,
+    update_table,
 };
 use crate::controllers::ticket_controller::{
     create_ticket, delete_ticket, get_all_tickets, get_ticket, get_ticket_by_code,
@@ -66,45 +71,88 @@ use crate::controllers::webhook_controller::handle_stripe_webhook;
 use crate::idempotency::{IdempotencyConfig, IdempotencyService};
 use crate::models::AppState;
 
+async fn health_check(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
+    sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&state.db_pool)
+        .await
+        .map_err(|_| axum::http::StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
 pub fn create_router(app_state: Arc<AppState>) -> Router {
-    // Configure CORS to allow requests from React Native
+    // Configure CORS — restrict to known origins only.
+    // React Native apps do not send Origin headers so this does not affect mobile clients.
+    let app_base_url = env::var("APP_BASE_URL").unwrap_or_default();
+    let mut allowed_origins: Vec<HeaderValue> = vec![
+        "http://localhost:3000".parse().unwrap(),
+        "http://localhost:8081".parse().unwrap(),
+        "https://pierre-two-backend.fly.dev".parse().unwrap(),
+    ];
+    if let Ok(origin) = app_base_url.parse::<HeaderValue>() {
+        allowed_origins.push(origin);
+    }
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(allowed_origins)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
     // Configure request ID middleware
     let (set_request_id, propagate_request_id) = crate::middleware::request_id::request_id_layer();
 
-    Router::new()
-        // Auth routes
+    // Rate limiter for auth endpoints: 10 requests per minute per IP
+    let auth_governor_conf = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
+            .per_second(6) // replenish 1 token every 6s = 10 req/min
+            .burst_size(10)
+            .finish()
+            .unwrap(),
+    );
+
+    let auth_routes = Router::new()
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
         .route("/auth/send-sms-verification", post(send_sms_verification))
         .route("/auth/verify-sms-code", post(verify_sms_code))
         .route("/auth/push-token", post(register_push_token))
-        // Club owner auth routes
         .route("/auth/club-owner/register", post(register_club_owner))
         .route("/auth/club-owner/login", post(login_club_owner))
-        // Event routes (new schema)
+        .layer(GovernorLayer {
+            config: auth_governor_conf,
+        });
+
+    Router::new()
+        // Health check (unauthenticated, for load balancer probes)
+        .route("/health", get(health_check))
+        // Auth routes with rate limiting
+        .merge(auth_routes)
+        // Event routes — reads are public, writes require club owner JWT
         .route("/events", get(get_all_events).post(create_event))
         .route(
             "/events/:id",
             get(get_event).put(update_event).delete(delete_event),
         )
-        // Genre routes
+        // Genre routes — reads are public, writes require club owner JWT
         .route("/genres", get(get_all_genres).post(create_genre))
         .route(
             "/genres/:id",
             get(get_genre).put(update_genre).delete(delete_genre),
         )
-        // Club routes
+        // Club routes — reads are public, writes require club owner JWT
         .route("/clubs", get(get_all_clubs).post(create_club))
         .route(
             "/clubs/:id",
             get(get_club).put(update_club).delete(delete_club),
         )
-        // Ticket routes
+        // Ticket routes — reads are public, writes require club owner JWT
         .route("/tickets", get(get_all_tickets).post(create_ticket))
         .route(
             "/tickets/:id",
@@ -112,7 +160,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         )
         .route("/tickets/code/:code", get(get_ticket_by_code))
         .route("/tickets/user/:user_id", get(get_user_tickets_with_events))
-        // Table routes
+        // Table routes — reads are public, writes require club owner JWT
         .route("/tables", get(get_all_tables).post(create_table))
         .route(
             "/tables/:id",
@@ -123,7 +171,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
             "/tables/event/:event_id/available",
             get(get_available_tables_by_event),
         )
-        // Table reservation routes
+        // Table reservation routes — require authenticated user JWT
         .route("/reservations", get(get_all_reservations))
         .route(
             "/reservations/:id",
@@ -157,21 +205,20 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
             post(create_reservation_with_payment),
         )
         .route(
-            "/reservations/:reservation_id/add-guest",
-            post(add_free_guest_to_reservation),
-        )
-        .route(
             "/reservations/:reservation_id/payment-status",
             get(get_reservation_payment_status),
         )
-        // Payment link routes (for split payment guests - no auth, token-based)
+        // Guest payment web pages (no auth — public, served as HTML)
+        .route("/pay/:token", get(guest_payment_page))
+        .route("/payment/success", get(payment_success_page))
+        .route("/payment/cancel/:token", get(payment_cancel_page))
+        // Payment link routes (for split payment guests — no auth, token-based)
         .route("/payment-links/:token", get(get_payment_link_preview))
-        .route("/payment-links/:token/verify", post(verify_payment_link))
         .route(
             "/payment-links/:token/checkout",
             post(create_payment_link_checkout),
         )
-        // Club owner scoped routes (JWT protected)
+        // Club owner scoped routes (JWT protected, role = club_owner)
         .route("/owner/club", get(get_my_club).put(update_my_club))
         .route(
             "/owner/club/images",
@@ -216,7 +263,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/owner/scan/:code", get(scan_code_handler))
         .route("/owner/checkin/:code", post(checkin_handler))
         .route("/owner/stats", get(get_owner_stats_handler))
-        // Payment routes
+        // Payment routes (require JWT)
         .route("/payments", get(get_all_payments).post(post_payment))
         .route("/payments/authorize", post(post_authorized_payment))
         .route("/payments/:id", get(get_payment).delete(delete_payment))
@@ -233,7 +280,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
             "/owner/tables/:table_id/area",
             axum::routing::patch(assign_table_area),
         )
-        // Stripe webhook (no JWT auth — Stripe verifies via signature)
+        // Stripe webhook (no JWT auth — Stripe verifies via HMAC signature)
         .route("/stripe/webhooks", post(handle_stripe_webhook))
         .with_state(app_state)
         .layer(from_fn(crate::middleware::request_id::trace_request))
@@ -267,16 +314,27 @@ async fn main() {
     let stripe_client = stripe::Client::new(stripe_api_key);
     info!("Stripe API Key loaded");
 
-    // Load JWT secret
-    let jwt_secret = env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "your-secret-key-change-this-in-production".to_string());
+    // Load JWT secret — must be set and at least 32 chars
+    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET env var must be set");
+    if jwt_secret.len() < 32 {
+        panic!("JWT_SECRET must be at least 32 characters long");
+    }
     info!("JWT Secret loaded");
 
-    // Load Stripe webhook secret
-    let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_else(|_| {
-        tracing::warn!("STRIPE_WEBHOOK_SECRET not set — webhook signature verification disabled");
-        String::new()
-    });
+    // Load Stripe webhook secret — required, no fallback
+    let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET")
+        .expect("STRIPE_WEBHOOK_SECRET env var must be set — webhook signature verification cannot be disabled");
+    if stripe_webhook_secret.is_empty() {
+        panic!("STRIPE_WEBHOOK_SECRET must not be empty");
+    }
+
+    // Validate APP_BASE_URL is set (required for payment link redirects)
+    let app_base_url = env::var("APP_BASE_URL")
+        .expect("APP_BASE_URL env var must be set (used for Stripe Checkout redirect URLs)");
+    if app_base_url.is_empty() {
+        panic!("APP_BASE_URL must not be empty");
+    }
+    info!(app_base_url = %app_base_url, "APP_BASE_URL configured");
 
     // Create database pool
     let db_pool = create_pool().await;

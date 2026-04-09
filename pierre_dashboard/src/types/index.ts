@@ -91,7 +91,6 @@ export interface EventResponse {
   price?: string;
   description?: string;
   tourProvider?: string;
-  tourId?: string;
   marzipanoScenes?: unknown;
 }
 

@@ -1,5 +1,6 @@
 use crate::models::{AppState, CreateGenreRequest, UpdateGenreRequest, GenreResponse};
 use crate::persistences::genre_persistence;
+use crate::middleware::auth::ClubOwnerUser;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -35,8 +36,9 @@ pub async fn get_genre(
     }
 }
 
-/// Create a new genre
+/// Create a new genre (requires club_owner JWT)
 pub async fn create_genre(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateGenreRequest>,
 ) -> Result<(StatusCode, Json<GenreResponse>), StatusCode> {
@@ -51,8 +53,9 @@ pub async fn create_genre(
     }
 }
 
-/// Update a genre
+/// Update a genre (requires club_owner JWT)
 pub async fn update_genre(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateGenreRequest>,
@@ -73,8 +76,9 @@ pub async fn update_genre(
     }
 }
 
-/// Delete a genre
+/// Delete a genre (requires club_owner JWT)
 pub async fn delete_genre(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {

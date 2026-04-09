@@ -13,6 +13,9 @@ pub async fn load_all_payments_service(
     app_state: &AppState,
     filters: PaymentFilter,
 ) -> Result<Vec<PaymentEntity>, StatusCode> {
+    let limit = filters.limit.unwrap_or(50).min(200);
+    let offset = filters.offset.unwrap_or(0);
+
     let mut query = QueryBuilder::<Postgres>::new(
         "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id FROM payments WHERE 1=1"
     );
@@ -29,6 +32,9 @@ pub async fn load_all_payments_service(
     if let Some(amount) = filters.amount {
         query.push(" AND amount = ").push_bind(amount);
     }
+
+    query.push(" ORDER BY insert_date DESC LIMIT ").push_bind(limit);
+    query.push(" OFFSET ").push_bind(offset);
 
     query
         .build_query_as::<PaymentEntity>()

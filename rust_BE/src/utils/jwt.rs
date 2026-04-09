@@ -3,7 +3,7 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-const TOKEN_EXPIRATION_HOURS: u64 = 24 * 7; // 7 days
+const TOKEN_EXPIRATION_HOURS: u64 = 24; // 24 hours
 
 /// Generate a JWT token for a user or club owner
 pub fn generate_token(user_id: Uuid, email: String, role: String, secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
