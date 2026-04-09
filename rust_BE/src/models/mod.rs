@@ -26,13 +26,12 @@ pub use table::{
     TableReservationResponse, TableReservationWithDetailsResponse, TableReservationsResponse, TableReservationsWithDetailsResponse,
     TableSummary,
     AddPaymentToReservationRequest, LinkTicketToReservationRequest,
-    CreateReservationWithPaymentRequest, CreatePaymentIntentRequest, CreatePaymentIntentResponse,
+    CreatePaymentIntentResponse,
     ReservationPaymentShare, ReservationGuest,
     CreateSplitPaymentIntentRequest, CreateSplitReservationRequest, CreateSplitReservationResponse,
     PaymentShareResponse, PaymentLinkPreviewResponse,
-    VerifyPaymentLinkRequest, VerifyPaymentLinkResponse,
     CreateCheckoutRequest, CreateCheckoutResponse,
-    AddFreeGuestRequest, FreeGuestResponse, ReservationPaymentStatusResponse
+    ReservationPaymentStatusResponse
 };
 
 pub mod area;

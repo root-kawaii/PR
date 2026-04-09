@@ -285,14 +285,13 @@ async fn handle_checkout_session_completed(
     }
     info!(payment_id = %payment_id, "Created payment record for guest");
 
-    // 2. Mark payment share as paid and clear the payment_link_token (prevents replay)
+    // 2. Mark payment share as paid
     let stripe_pi_opt = if stripe_pi_id.is_empty() { None } else { Some(stripe_pi_id.clone()) };
     if let Err(e) = sqlx::query(
         r#"UPDATE reservation_payment_shares
            SET status = 'paid',
                payment_id = $1,
                stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
-               payment_link_token = NULL,
                updated_at = NOW()
            WHERE id = $3"#
     )
@@ -306,22 +305,22 @@ async fn handle_checkout_session_completed(
         let _ = tx.rollback().await;
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
-    info!(share_id = %share.id, "Payment share marked as paid, token invalidated");
+    info!(share_id = %share.id, "Payment share marked as paid");
 
-    // 3. Increment reservation amount_paid
+    // 3. Increment reservation amount_paid and num_people (one new guest paid)
     if let Err(e) = sqlx::query(
-        "UPDATE table_reservations SET amount_paid = amount_paid + $1, updated_at = NOW() WHERE id = $2"
+        "UPDATE table_reservations SET amount_paid = amount_paid + $1, num_people = num_people + 1, updated_at = NOW() WHERE id = $2"
     )
     .bind(share.amount)
     .bind(share.reservation_id)
     .execute(&mut *tx)
     .await
     {
-        error!(error = %e, "Failed to update reservation amount_paid");
+        error!(error = %e, "Failed to update reservation amount_paid and num_people");
         let _ = tx.rollback().await;
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
-    info!(reservation_id = %share.reservation_id, amount = %share.amount, "Reservation amount_paid updated");
+    info!(reservation_id = %share.reservation_id, amount = %share.amount, "Reservation amount_paid and num_people updated");
 
     // 4. Add payment ID to reservation's payment_ids array
     let _ = sqlx::query(
@@ -366,15 +365,12 @@ async fn handle_checkout_session_completed(
         }
     }
 
-    // 6. Check if all shares are paid → auto-confirm the reservation
+    // 6. Auto-confirm the reservation once amount_paid >= total_amount
     if let Err(e) = sqlx::query(
         r#"UPDATE table_reservations SET status = 'confirmed', updated_at = NOW()
            WHERE id = $1
              AND status != 'confirmed'
-             AND NOT EXISTS (
-               SELECT 1 FROM reservation_payment_shares
-               WHERE reservation_id = $1 AND status != 'paid'
-             )"#
+             AND amount_paid >= total_amount"#
     )
     .bind(share.reservation_id)
     .execute(&mut *tx)

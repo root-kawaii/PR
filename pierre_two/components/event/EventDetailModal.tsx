@@ -48,7 +48,7 @@ export const EventDetailModal = ({
 
   const handleBuyTicket = () => {
     if (!user) {
-      Alert.alert("Login Required", "Please login to reserve a table", [
+      Alert.alert("Accesso richiesto", "Effettua il login per prenotare un tavolo.", [
         { text: "OK" },
       ]);
       return;
@@ -78,31 +78,38 @@ export const EventDetailModal = ({
                 style={styles.modalImage}
                 resizeMode="cover"
               />
-            </View>
-
-            <View style={[styles.modalTitleSection, { backgroundColor: theme.background }]}>
-              <ThemedText style={[styles.modalTitle, { color: theme.text }]}>{event.title}</ThemedText>
-              <View style={styles.modalDateRow}>
-                <IconSymbol name="calendar" size={16} color={theme.textSecondary} />
-                <ThemedText style={[styles.modalDate, { color: theme.textTertiary }]}>{event.date}</ThemedText>
-              </View>
-              <View style={styles.modalDateRow}>
-                <IconSymbol name="mappin" size={16} color={theme.textSecondary} />
-                <ThemedText style={[styles.modalDate, { color: theme.textTertiary }]}>{event.venue}</ThemedText>
+              <LinearGradient
+                colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.25)", "rgba(8,8,8,0.95)"]}
+                style={styles.modalImageOverlay}
+              />
+              <View style={styles.imageContent}>
+                <View style={[styles.eventTag, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}35` }]}>
+                  <IconSymbol name="wineglass.fill" size={12} color={theme.primary} />
+                  <ThemedText style={[styles.eventTagText, { color: theme.primary }]}>Esperienza serale</ThemedText>
+                </View>
+                <ThemedText style={[styles.modalTitle, { color: theme.text }]}>{event.title}</ThemedText>
+                <View style={styles.modalDateRow}>
+                  <IconSymbol name="calendar" size={16} color={theme.textSecondary} />
+                  <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>{event.date}</ThemedText>
+                </View>
+                <View style={styles.modalDateRow}>
+                  <IconSymbol name="mappin" size={16} color={theme.textSecondary} />
+                  <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>{event.venue}</ThemedText>
+                </View>
               </View>
             </View>
 
             <View style={[styles.detailsContainer, { backgroundColor: theme.backgroundElevated }]}>
               <View style={styles.detailRow}>
-                <DetailItem value={event.time || "23:00"} label="Start Time" theme={theme} />
-                <DetailItem value={event.ageLimit || "18+"} label="Age Limit" theme={theme} />
-                <DetailItem value={event.endTime || "04:00"} label="End Time" theme={theme} />
+                <DetailItem value={event.time || "23:00"} label="Inizio" theme={theme} />
+                <DetailItem value={event.ageLimit || "18+"} label="Eta minima" theme={theme} />
+                <DetailItem value={event.endTime || "04:00"} label="Fine" theme={theme} />
               </View>
             </View>
 
             <View style={styles.ctaSection}>
               <View style={[styles.priceBox, { backgroundColor: theme.backgroundElevated }]}>
-                <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>Entry Fee</ThemedText>
+                <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>Ingresso</ThemedText>
                 <ThemedText style={[styles.priceValue, { color: theme.text }]}>
                   {event.price || "32 €"}
                 </ThemedText>
@@ -117,7 +124,7 @@ export const EventDetailModal = ({
                 >
                   <IconSymbol name="calendar" size={20} color={theme.textInverse} />
                   <ThemedText style={[styles.buyButtonText, { color: theme.textInverse }]}>
-                    Reserve Table
+                    Prenota Tavolo
                   </ThemedText>
                 </LinearGradient>
               </TouchableOpacity>
@@ -126,7 +133,7 @@ export const EventDetailModal = ({
             {event.description && (
               <View style={[styles.descriptionSection, { backgroundColor: theme.backgroundElevated }]}>
                 <ThemedText style={[styles.descriptionTitle, { color: theme.text }]}>
-                  About Event
+                  Dettagli Evento
                 </ThemedText>
                 <ThemedText style={[styles.descriptionText, { color: theme.textTertiary }]}>
                   {event.description}
@@ -183,17 +190,40 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 400,
     backgroundColor: "#1f2937",
+    position: "relative",
   },
   modalImage: { width: "100%", height: "100%" },
-  modalTitleSection: { padding: 36, backgroundColor: "#000", gap: 8 },
-  modalTitle: { fontSize: 26, fontWeight: "bold", marginBottom: 8 },
+  modalImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  imageContent: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 24,
+    gap: 8,
+  },
+  eventTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  eventTagText: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
+  modalTitle: { fontSize: 30, fontWeight: "bold", marginBottom: 4, lineHeight: 34 },
   modalDateRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   modalDate: { fontSize: 14, color: "#9ca3af" },
   detailsContainer: {
     backgroundColor: "#111",
     padding: 20,
     marginHorizontal: 16,
-    marginTop: 16,
+    marginTop: 18,
     borderRadius: 16,
   },
   detailRow: { flexDirection: "row", justifyContent: "space-between" },
