@@ -13,14 +13,16 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy manifests
+# Cache dependencies separately from source code.
+# This layer is only invalidated when Cargo.toml or Cargo.lock change.
 COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs && \
+    cargo build --release && \
+    rm -rf src
 
-# Copy source code
+# Now copy the real source and do an incremental build
 COPY src ./src
-
-# Build application
-RUN cargo build --release
+RUN touch src/main.rs && cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
