@@ -25,3 +25,6 @@ rust_BE/server.log
 
 
 .claude/
+
+# Local Netlify folder
+.netlify
