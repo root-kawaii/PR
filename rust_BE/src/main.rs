@@ -89,6 +89,7 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         "http://localhost:3000".parse().unwrap(),
         "http://localhost:8081".parse().unwrap(),
         "https://pierre-two-backend.fly.dev".parse().unwrap(),
+        "https://pierre-dashboard.netlify.app".parse().unwrap(),
     ];
     if let Ok(origin) = app_base_url.parse::<HeaderValue>() {
         allowed_origins.push(origin);
