@@ -10,30 +10,34 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  SafeAreaView,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
+import { LinearGradient } from 'expo-linear-gradient';
 import { API_URL } from '../../config/api';
+import { useTheme } from '../../context/ThemeContext';
+import { IconSymbol } from '../../components/ui/icon-symbol';
 
-type Step = 'loading' | 'preview' | 'verify' | 'checkout' | 'paid' | 'error';
+type Step = 'loading' | 'checkout' | 'paid' | 'full' | 'error';
 
 interface SharePreview {
-  amount: number;
+  amount: string;
   event_name: string;
   table_name: string;
   status: string;
-  guest_name?: string;
+  slots_filled: number;
+  slots_total: number;
 }
 
 export default function GuestPaymentScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
+  const { theme } = useTheme();
 
   const [step, setStep] = useState<Step>('loading');
   const [preview, setPreview] = useState<SharePreview | null>(null);
-  const [phone, setPhone] = useState('');
-  const [verifyLoading, setVerifyLoading] = useState(false);
-  const [verifyToken, setVerifyToken] = useState('');
   const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [payLoading, setPayLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -54,10 +58,10 @@ export default function GuestPaymentScreen() {
       }
       const data = await res.json();
       setPreview(data);
-      if (data.status === 'paid') {
-        setStep('paid');
+      if (data.status === 'full') {
+        setStep('full');
       } else {
-        setStep('preview');
+        setStep('checkout');
       }
     } catch {
       setErrorMsg('Impossibile caricare i dettagli del pagamento.');
@@ -65,53 +69,39 @@ export default function GuestPaymentScreen() {
     }
   };
 
-  const handleVerify = async () => {
-    if (!phone.trim()) {
-      Alert.alert('Errore', 'Inserisci il numero di telefono.');
+  const handlePay = async () => {
+    if (!guestName.trim()) {
+      Alert.alert('Errore', 'Inserisci il tuo nome.');
       return;
     }
-    setVerifyLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/payment-links/${token}/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phone.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        Alert.alert('Errore', data.error || 'Verifica fallita. Assicurati che il numero sia corretto.');
-        return;
-      }
-      setVerifyToken(data.token);
-      if (data.guest_name) setGuestName(data.guest_name);
-      setStep('checkout');
-    } catch {
-      Alert.alert('Errore', 'Impossibile connettersi al server. Riprova.');
-    } finally {
-      setVerifyLoading(false);
+    if (!guestPhone.trim()) {
+      Alert.alert('Errore', 'Inserisci il tuo numero di telefono.');
+      return;
     }
-  };
-
-  const handlePay = async () => {
     setPayLoading(true);
     try {
       const res = await fetch(`${API_URL}/payment-links/${token}/checkout`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${verifyToken}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: guestName.trim() || undefined,
-          email: guestEmail.trim() || undefined,
+          name: guestName.trim(),
+          phone: guestPhone.trim(),
+          email: guestEmail.trim() || null,
         }),
       });
+      if (res.status === 409) {
+        setStep('full');
+        return;
+      }
       const data = await res.json();
       if (!res.ok) {
         Alert.alert('Errore', data.error || 'Impossibile avviare il pagamento.');
         return;
       }
-      await Linking.openURL(data.checkout_url);
+      const checkoutUrl = data.checkoutUrl || data.checkout_url;
+      if (checkoutUrl) {
+        await Linking.openURL(checkoutUrl);
+      }
     } catch {
       Alert.alert('Errore', 'Impossibile avviare il pagamento. Riprova.');
     } finally {
@@ -121,254 +111,345 @@ export default function GuestPaymentScreen() {
 
   if (step === 'loading') {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#ec4899" />
-        <Text style={styles.loadingText}>Caricamento...</Text>
-      </View>
+      <SafeAreaView style={[s.screen, { backgroundColor: theme.background }]}>
+        <View style={s.center}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[s.loadingText, { color: theme.textTertiary }]}>Caricamento...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (step === 'error') {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorIcon}>⚠️</Text>
-        <Text style={styles.errorTitle}>Link non valido</Text>
-        <Text style={styles.errorBody}>{errorMsg}</Text>
-      </View>
+      <SafeAreaView style={[s.screen, { backgroundColor: theme.background }]}>
+        <View style={s.center}>
+          <View style={[s.stateIconWrap, { backgroundColor: theme.errorLight }]}>
+            <IconSymbol name="exclamationmark.triangle.fill" size={36} color={theme.error} />
+          </View>
+          <Text style={[s.stateTitle, { color: theme.text }]}>Link non valido</Text>
+          <Text style={[s.stateBody, { color: theme.textTertiary }]}>{errorMsg}</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (step === 'paid') {
     return (
-      <View style={styles.center}>
-        <Text style={styles.successIcon}>✅</Text>
-        <Text style={styles.successTitle}>Pagamento completato</Text>
-        <Text style={styles.body}>Questo pagamento è già stato effettuato.</Text>
-      </View>
+      <SafeAreaView style={[s.screen, { backgroundColor: theme.background }]}>
+        <View style={s.center}>
+          <View style={[s.stateIconWrap, { backgroundColor: theme.successLight }]}>
+            <IconSymbol name="checkmark.circle.fill" size={36} color={theme.success} />
+          </View>
+          <Text style={[s.stateTitle, { color: theme.text }]}>Pagamento completato</Text>
+          <Text style={[s.stateBody, { color: theme.textTertiary }]}>Questa quota risulta gia pagata e non richiede altre azioni.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (step === 'full') {
+    return (
+      <SafeAreaView style={[s.screen, { backgroundColor: theme.background }]}>
+        <View style={s.center}>
+          <View style={[s.stateIconWrap, { backgroundColor: theme.warningLight }]}>
+            <IconSymbol name="xmark.circle.fill" size={36} color={theme.warning} />
+          </View>
+          <Text style={[s.stateTitle, { color: theme.text }]}>Tavolo al completo</Text>
+          <Text style={[s.stateBody, { color: theme.textTertiary }]}>Tutti i posti disponibili per questo tavolo sono gia stati occupati.</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Pagamento Tavolo</Text>
-          {preview && (
-            <>
-              <Text style={styles.eventName}>{preview.event_name}</Text>
-              <Text style={styles.tableName}>{preview.table_name}</Text>
-              <Text style={styles.amount}>€{Number(preview.amount).toFixed(2)}</Text>
-            </>
-          )}
-        </View>
-
-        {/* Verify step */}
-        {step === 'preview' || step === 'verify' ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Verifica il tuo numero</Text>
-            <Text style={styles.cardSubtitle}>
-              Inserisci il numero di telefono con cui sei stato invitato.
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+39 333 123 4567"
-              placeholderTextColor="#6b7280"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              autoCorrect={false}
-              editable={!verifyLoading}
+    <SafeAreaView style={[s.screen, { backgroundColor: theme.background }]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+          <View
+            style={[
+              s.heroCard,
+              { backgroundColor: theme.backgroundElevated, borderColor: theme.border },
+            ]}
+          >
+            <LinearGradient
+              colors={[`${theme.primary}30`, 'rgba(0,0,0,0)', `${theme.secondary}18`] as [string, string, string]}
+              style={s.heroGlow}
             />
-            <TouchableOpacity
-              style={[styles.button, verifyLoading && styles.buttonDisabled]}
-              onPress={handleVerify}
-              disabled={verifyLoading}
-            >
-              {verifyLoading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.buttonText}>Verifica</Text>
-              }
-            </TouchableOpacity>
+
+            <View style={s.brandRow}>
+              <Text style={[s.wordmark, { color: theme.primary }]}>PIERRE</Text>
+              <View style={[s.wordmarkDot, { backgroundColor: theme.primary }]} />
+            </View>
+
+            {preview && (
+              <>
+                <View style={[s.kickerPill, { backgroundColor: `${theme.primary}16`, borderColor: `${theme.primary}33` }]}>
+                  <IconSymbol name="wineglass.fill" size={12} color={theme.primary} />
+                  <Text style={[s.kickerText, { color: theme.primary }]}>Quota tavolo condivisa</Text>
+                </View>
+
+                <Text style={[s.eventName, { color: theme.text }]}>{preview.event_name}</Text>
+                <Text style={[s.tableName, { color: theme.textSecondary }]}>{preview.table_name}</Text>
+
+                <View style={s.heroStats}>
+                  <View style={[s.amountCard, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                    <Text style={[s.amountLabel, { color: theme.textTertiary }]}>Da pagare</Text>
+                    <Text style={[s.amount, { color: theme.primary }]}>{preview.amount}</Text>
+                  </View>
+
+                  <View style={[s.slotsCard, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                    <View style={[s.slotsBadge, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                      <IconSymbol name="person.2.fill" size={13} color={theme.textTertiary} />
+                      <Text style={[s.slotsText, { color: theme.textSecondary }]}>
+                        {' '}{preview.slots_filled}/{preview.slots_total}
+                      </Text>
+                    </View>
+                    <Text style={[s.slotsCaption, { color: theme.textTertiary }]}>posti gia confermati</Text>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
-        ) : null}
 
-        {/* Checkout step */}
-        {step === 'checkout' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Paga la tua quota</Text>
-            <Text style={styles.cardSubtitle}>
-              Verrai reindirizzato a Stripe per completare il pagamento in modo sicuro.
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Nome (opzionale)"
-              placeholderTextColor="#6b7280"
-              value={guestName}
-              onChangeText={setGuestName}
-              editable={!payLoading}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Email per ricevuta (opzionale)"
-              placeholderTextColor="#6b7280"
-              value={guestEmail}
-              onChangeText={setGuestEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!payLoading}
-            />
+          <View style={[s.formCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+            <View style={s.cardHeader}>
+              <Text style={[s.cardTitle, { color: theme.text }]}>Completa il pagamento</Text>
+              <Text style={[s.cardSubtitle, { color: theme.textTertiary }]}>
+                Inserisci i tuoi dati. Ti reindirizzeremo a Stripe per il checkout sicuro.
+              </Text>
+            </View>
+
+            <View style={s.fieldBlock}>
+              <Text style={[s.label, { color: theme.textSecondary }]}>Nome <Text style={{ color: theme.primary }}>*</Text></Text>
+              <TextInput
+                style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
+                placeholder="Il tuo nome"
+                placeholderTextColor={theme.textTertiary}
+                value={guestName}
+                onChangeText={setGuestName}
+                editable={!payLoading}
+              />
+            </View>
+
+            <View style={s.fieldBlock}>
+              <Text style={[s.label, { color: theme.textSecondary }]}>Telefono <Text style={{ color: theme.primary }}>*</Text></Text>
+              <TextInput
+                style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
+                placeholder="+39 333 1234567"
+                placeholderTextColor={theme.textTertiary}
+                value={guestPhone}
+                onChangeText={setGuestPhone}
+                keyboardType="phone-pad"
+                editable={!payLoading}
+              />
+            </View>
+
+            <View style={s.fieldBlock}>
+              <Text style={[s.label, { color: theme.textSecondary }]}>Email <Text style={[s.optionalTag, { color: theme.textTertiary }]}>(opzionale)</Text></Text>
+              <TextInput
+                style={[s.input, { backgroundColor: theme.backgroundSurface, borderColor: theme.border, color: theme.text }]}
+                placeholder="email@esempio.it"
+                placeholderTextColor={theme.textTertiary}
+                value={guestEmail}
+                onChangeText={setGuestEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!payLoading}
+              />
+            </View>
+
+            <View style={[s.reassuranceRow, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+              <View style={[s.reassuranceIcon, { backgroundColor: `${theme.success}18` }]}>
+                <IconSymbol name="lock" size={14} color={theme.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.reassuranceTitle, { color: theme.text }]}>Checkout protetto</Text>
+                <Text style={[s.reassuranceText, { color: theme.textTertiary }]}>Pagamento sicuro gestito da Stripe.</Text>
+              </View>
+            </View>
+
             <TouchableOpacity
-              style={[styles.button, payLoading && styles.buttonDisabled]}
+              style={[s.button, { backgroundColor: theme.primary }, payLoading && s.buttonDisabled]}
               onPress={handlePay}
               disabled={payLoading}
+              activeOpacity={0.85}
             >
-              {payLoading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.buttonText}>Paga €{preview ? Number(preview.amount).toFixed(2) : ''}</Text>
-              }
+              {payLoading ? (
+                <ActivityIndicator color={theme.textInverse} />
+              ) : (
+                <>
+                  <Text style={[s.buttonEyebrow, { color: theme.textInverse }]}>Conferma quota</Text>
+                  <Text style={[s.buttonText, { color: theme.textInverse }]}>Paga {preview?.amount || ''}</Text>
+                </>
+              )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.backLink} onPress={() => setStep('preview')}>
-              <Text style={styles.backLinkText}>← Indietro</Text>
-            </TouchableOpacity>
+
+            <View style={[s.stripeBadge, { borderTopColor: theme.border }]}>
+              <IconSymbol name="arrow.right.square.fill" size={12} color={theme.textTertiary} />
+              <Text style={[s.stripeBadgeText, { color: theme.textTertiary }]}> Si apre il checkout Stripe in una pagina esterna</Text>
+            </View>
           </View>
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f0f0f',
-  },
-  scroll: {
-    flexGrow: 1,
-    padding: 24,
-  },
-  center: {
-    flex: 1,
-    backgroundColor: '#0f0f0f',
+const s = StyleSheet.create({
+  screen: { flex: 1 },
+  scroll: { flexGrow: 1, padding: 20, paddingBottom: 40 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  loadingText: { marginTop: 12, fontSize: 15 },
+
+  stateIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
-  },
-  loadingText: {
-    color: '#9ca3af',
-    marginTop: 12,
-    fontSize: 15,
-  },
-  errorIcon: {
-    fontSize: 56,
-    marginBottom: 16,
-  },
-  errorTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  errorBody: {
-    color: '#9ca3af',
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  successIcon: {
-    fontSize: 56,
-    marginBottom: 16,
-  },
-  successTitle: {
-    color: '#4ade80',
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  header: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  headerTitle: {
-    color: '#9ca3af',
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: 12,
-  },
-  eventName: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  tableName: {
-    color: '#9ca3af',
-    fontSize: 15,
-    marginBottom: 16,
-  },
-  amount: {
-    color: '#ec4899',
-    fontSize: 40,
-    fontWeight: '800',
-  },
-  card: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 16,
-  },
-  cardTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  cardSubtitle: {
-    color: '#9ca3af',
-    fontSize: 14,
-    lineHeight: 20,
     marginBottom: 20,
   },
-  input: {
-    backgroundColor: '#262626',
-    borderRadius: 10,
-    padding: 14,
-    color: '#fff',
-    fontSize: 16,
-    marginBottom: 12,
+  stateTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
+  stateBody: { fontSize: 15, textAlign: 'center', lineHeight: 22 },
+
+  heroCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 28,
+    padding: 22,
+    borderWidth: 1,
+    marginBottom: 16,
   },
-  button: {
-    backgroundColor: '#ec4899',
-    borderRadius: 10,
-    padding: 16,
+  heroGlow: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  brandRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    gap: 8,
+    marginBottom: 18,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
+  wordmark: {
     fontSize: 16,
     fontWeight: '700',
+    letterSpacing: 8,
+    paddingLeft: 8,
   },
-  backLink: {
+  wordmarkDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    opacity: 0.7,
+  },
+  kickerPill: {
+    flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  kickerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  eventName: { fontSize: 28, fontWeight: '800', marginBottom: 6, lineHeight: 34 },
+  tableName: { fontSize: 15, marginBottom: 18 },
+  heroStats: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  amountCard: {
+    flex: 1.2,
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+  },
+  amountLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+  amount: { fontSize: 36, fontWeight: '800' },
+  slotsCard: {
+    flex: 1,
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    justifyContent: 'space-between',
+  },
+  slotsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  slotsText: { fontSize: 13, fontWeight: '700' },
+  slotsCaption: { fontSize: 12, lineHeight: 18, marginTop: 12 },
+
+  formCard: {
+    borderRadius: 28,
+    padding: 22,
+    borderWidth: 1,
+  },
+  cardHeader: { marginBottom: 8 },
+  cardTitle: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
+  cardSubtitle: { fontSize: 13, lineHeight: 19 },
+
+  fieldBlock: { marginTop: 16 },
+  label: { fontSize: 13, fontWeight: '500', marginBottom: 8 },
+  optionalTag: { fontWeight: '400' },
+  input: {
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    fontSize: 16,
+    borderWidth: 1,
+  },
+  reassuranceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    marginTop: 18,
+  },
+  reassuranceIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reassuranceTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  reassuranceText: { fontSize: 12, lineHeight: 17 },
+  button: {
+    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  buttonDisabled: { opacity: 0.55 },
+  buttonEyebrow: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', opacity: 0.8, marginBottom: 2 },
+  buttonText: { fontSize: 18, fontWeight: '800' },
+
+  stripeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
   },
-  backLinkText: {
-    color: '#9ca3af',
-    fontSize: 14,
-  },
-  body: {
-    color: '#9ca3af',
-    fontSize: 15,
-    textAlign: 'center',
-  },
+  stripeBadgeText: { fontSize: 12, textAlign: 'center' },
 });

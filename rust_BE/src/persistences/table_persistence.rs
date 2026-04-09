@@ -620,6 +620,19 @@ pub async fn get_payment_share_by_token(
     .await
 }
 
+/// Get reservation by its shared payment_link_token (new single-link model)
+pub async fn get_reservation_by_payment_link_token(
+    pool: &PgPool,
+    token: &str,
+) -> Result<crate::models::TableReservation, sqlx::Error> {
+    sqlx::query_as::<_, crate::models::TableReservation>(
+        "SELECT * FROM table_reservations WHERE payment_link_token = $1"
+    )
+    .bind(token)
+    .fetch_one(pool)
+    .await
+}
+
 /// Get payment share by Stripe checkout session ID
 pub async fn get_payment_share_by_checkout_session(
     pool: &PgPool,

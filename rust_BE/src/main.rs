@@ -96,9 +96,7 @@ use crate::controllers::table_controller::{
     create_payment_intent,
     create_reservation_with_payment,
     get_payment_link_preview,
-    verify_payment_link,
     create_payment_link_checkout,
-    add_free_guest_to_reservation,
     get_reservation_payment_status,
     guest_payment_page,
     payment_success_page,
@@ -220,7 +218,6 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/reservations/:reservation_id/tickets", post(link_ticket_to_reservation).get(get_tickets_for_reservation))
         .route("/reservations/create-payment-intent", post(create_payment_intent))
         .route("/reservations/create-with-payment", post(create_reservation_with_payment))
-        .route("/reservations/:reservation_id/add-guest", post(add_free_guest_to_reservation))
         .route("/reservations/:reservation_id/payment-status", get(get_reservation_payment_status))
         // Guest payment web pages (no auth — public, served as HTML)
         .route("/pay/:token", get(guest_payment_page))
@@ -228,7 +225,6 @@ pub fn create_router(app_state: Arc<AppState>) -> Router {
         .route("/payment/cancel/:token", get(payment_cancel_page))
         // Payment link routes (for split payment guests — no auth, token-based)
         .route("/payment-links/:token", get(get_payment_link_preview))
-        .route("/payment-links/:token/verify", post(verify_payment_link))
         .route("/payment-links/:token/checkout", post(create_payment_link_checkout))
         // Club owner scoped routes (JWT protected, role = club_owner)
         .route("/owner/club", get(get_my_club).put(update_my_club))

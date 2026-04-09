@@ -186,6 +186,6 @@ matterportContainer: {
 ---
 
 **Date**: November 22, 2025
-**Developer**: Claude Code
+**Developer**: Codex
 **Time Spent**: ~2-3 hours
 **Status**: ✅ Complete and functional
