@@ -73,13 +73,13 @@ export interface ThemePalette {
 
 export type ThemeName = 'nightclub' | 'ocean' | 'sunset' | 'midnight' | 'daylight';
 
-export const DEFAULT_THEME: ThemeName = 'nightclub';
+export const DEFAULT_THEME: ThemeName = 'midnight';
 
 export const THEME_DISPLAY_NAMES: Record<ThemeName, string> = {
-  nightclub: 'Nightclub',
+  nightclub: 'Champagne',
   ocean: 'Ocean',
   sunset: 'Sunset',
-  midnight: 'Midnight',
+  midnight: 'Midnight Rose',
   daylight: 'Daylight',
 };
 
@@ -88,32 +88,32 @@ export const THEME_DISPLAY_NAMES: Record<ThemeName, string> = {
 // ============================================================================
 
 /**
- * Nightclub Theme (Default)
- * Hot pink primary with dark backgrounds - the current app style
+ * Champagne Noir Theme (Default)
+ * Warm gold on true black — French luxury, VIP table service.
  */
 export const nightclubTheme: ThemePalette = {
   // Brand
-  primary: '#ec4899',
-  primaryLight: '#f472b6',
-  primaryDark: '#db2777',
-  secondary: '#a855f7',
-  secondaryLight: '#c084fc',
+  primary: '#C9A84C',
+  primaryLight: '#E8C97F',
+  primaryDark: '#9A7A2C',
+  secondary: '#FF6B9D',
+  secondaryLight: '#FFB3D1',
 
   // Backgrounds
-  background: '#0a0a0a',
-  backgroundElevated: '#111827',
-  backgroundSurface: '#1f2937',
+  background: '#080808',
+  backgroundElevated: '#111110',
+  backgroundSurface: '#1C1A16',
 
   // Text
-  text: '#ffffff',
-  textSecondary: '#d1d5db',
-  textTertiary: '#9ca3af',
-  textInverse: '#0a0a0a',
+  text: '#F5F0E8',
+  textSecondary: '#D4CCBB',
+  textTertiary: '#9C9080',
+  textInverse: '#080808',
 
   // Borders
-  border: '#374151',
-  borderLight: '#4b5563',
-  borderFocus: '#ec4899',
+  border: '#2C2A25',
+  borderLight: '#3D3A32',
+  borderFocus: '#C9A84C',
 
   // Status
   success: '#10b981',
@@ -126,24 +126,24 @@ export const nightclubTheme: ThemePalette = {
   infoLight: 'rgba(59, 130, 246, 0.15)',
 
   // Interactive
-  overlay: 'rgba(0, 0, 0, 0.5)',
-  overlayLight: 'rgba(0, 0, 0, 0.3)',
-  ripple: 'rgba(236, 72, 153, 0.3)',
+  overlay: 'rgba(0, 0, 0, 0.6)',
+  overlayLight: 'rgba(0, 0, 0, 0.35)',
+  ripple: 'rgba(201, 168, 76, 0.25)',
 
   // Navigation
-  tabBackground: '#0a0a0a',
-  tabIconDefault: '#9ca3af',
-  tabIconSelected: '#ec4899',
+  tabBackground: '#080808',
+  tabIconDefault: '#9C9080',
+  tabIconSelected: '#C9A84C',
 
   // Gradients
-  gradientPrimary: ['#ec4899', '#db2777'],
-  gradientCard: ['#1f2937', '#111827'],
-  gradientOverlay: ['transparent', 'rgba(0, 0, 0, 0.8)'],
+  gradientPrimary: ['#C9A84C', '#9A7A2C'],
+  gradientCard: ['#1C1A16', '#111110'],
+  gradientOverlay: ['transparent', 'rgba(8, 8, 8, 0.88)'],
 
   // Special
-  inputBackground: '#1f2937',
-  cardBackground: '#111827',
-  modalBackground: '#111827',
+  inputBackground: '#1C1A16',
+  cardBackground: '#111110',
+  modalBackground: '#111110',
   statusBarStyle: 'light',
 };
 
@@ -268,32 +268,32 @@ export const sunsetTheme: ThemePalette = {
 };
 
 /**
- * Midnight Theme
- * Deep purple nights with violet accents
+ * Midnight Rose Theme
+ * Vivid rose-to-violet gradient on deep near-black — energetic, club-forward.
  */
 export const midnightTheme: ThemePalette = {
   // Brand
-  primary: '#8b5cf6',
-  primaryLight: '#a78bfa',
-  primaryDark: '#7c3aed',
-  secondary: '#c084fc',
-  secondaryLight: '#d8b4fe',
+  primary: '#F43F5E',
+  primaryLight: '#FB7185',
+  primaryDark: '#E11D48',
+  secondary: '#A855F7',
+  secondaryLight: '#C084FC',
 
   // Backgrounds
-  background: '#0f0a1a',
-  backgroundElevated: '#1a1230',
-  backgroundSurface: '#2a1f4a',
+  background: '#07060C',
+  backgroundElevated: '#120F1A',
+  backgroundSurface: '#1D1829',
 
   // Text
-  text: '#ffffff',
-  textSecondary: '#d4c8e8',
-  textTertiary: '#a89cc4',
-  textInverse: '#0f0a1a',
+  text: '#FFF1F5',
+  textSecondary: '#DDD0E4',
+  textTertiary: '#9A8AA8',
+  textInverse: '#07060C',
 
   // Borders
-  border: '#3d2d60',
-  borderLight: '#5a4380',
-  borderFocus: '#8b5cf6',
+  border: '#2D2438',
+  borderLight: '#42304F',
+  borderFocus: '#F43F5E',
 
   // Status
   success: '#10b981',
@@ -306,24 +306,24 @@ export const midnightTheme: ThemePalette = {
   infoLight: 'rgba(96, 165, 250, 0.15)',
 
   // Interactive
-  overlay: 'rgba(0, 0, 0, 0.5)',
-  overlayLight: 'rgba(0, 0, 0, 0.3)',
-  ripple: 'rgba(139, 92, 246, 0.3)',
+  overlay: 'rgba(0, 0, 0, 0.6)',
+  overlayLight: 'rgba(0, 0, 0, 0.35)',
+  ripple: 'rgba(244, 63, 94, 0.3)',
 
   // Navigation
-  tabBackground: '#0f0a1a',
-  tabIconDefault: '#a89cc4',
-  tabIconSelected: '#8b5cf6',
+  tabBackground: '#07060C',
+  tabIconDefault: '#9A8AA8',
+  tabIconSelected: '#F43F5E',
 
   // Gradients
-  gradientPrimary: ['#8b5cf6', '#7c3aed'],
-  gradientCard: ['#2a1f4a', '#1a1230'],
-  gradientOverlay: ['transparent', 'rgba(15, 10, 26, 0.9)'],
+  gradientPrimary: ['#F43F5E', '#A855F7'],
+  gradientCard: ['#1D1829', '#120F1A'],
+  gradientOverlay: ['transparent', 'rgba(7, 6, 12, 0.9)'],
 
   // Special
-  inputBackground: '#2a1f4a',
-  cardBackground: '#1a1230',
-  modalBackground: '#1a1230',
+  inputBackground: '#1D1829',
+  cardBackground: '#120F1A',
+  modalBackground: '#120F1A',
   statusBarStyle: 'light',
 };
 

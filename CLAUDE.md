@@ -11,19 +11,23 @@ Pierre Two is a nightclub/event booking mobile app. Users can browse events, res
 ```
 pierre_two/       — React Native mobile app (Expo Router, TypeScript)
 pierre_dashboard/ — Club owner web dashboard (React + Vite + Tailwind)
-rust_BE/          — Rust HTTP API (Axum + SQLx + Tokio)
-DB/               — PostgreSQL via Docker with numbered SQL migrations
+rust_BE/          — Rust HTTP API (Axum + SQLx + Tokio) — deployed to Fly.io
+DB/               — Numbered SQL migration files (run on Supabase)
 docs/             — Architecture and API reference documentation
 ```
 
 ## Commands
 
-### Database (start first)
+### Database
 ```bash
-cd DB && ./start.sh          # Start Postgres in Docker + run all migrations
-cd DB && ./start.sh --fresh  # Fresh DB (drops all data)
-docker exec -it postgres-dev-pierre psql -U postgres -d events  # Connect
+# Run a migration on Supabase
+/opt/homebrew/bin/psql $DATABASE_URL -f DB/migrations/<file>.sql
+
+# Next migration number
+ls DB/migrations/*.sql | sort | tail -1
 ```
+
+Migration file naming: `NNN_snake_case_description.sql` (zero-padded, e.g. `037_...`). Always add new migrations as the next numbered file — never edit existing ones.
 
 ### Backend
 ```bash
@@ -35,14 +39,21 @@ cargo clippy                 # Lint
 cargo fmt                    # Format
 cargo test                   # Run tests
 RUST_LOG=debug cargo run     # Verbose logging
+
+# Deploy to Fly.io
+fly deploy
 ```
+
+Backend URL (production): `https://pierre-two-backend.fly.dev`
 
 Required `rust_BE/.env`:
 ```
-DATABASE_URL=postgresql://postgres:password@localhost:5432/events
+DATABASE_URL=<Supabase Postgres connection string>
+JWT_SECRET=<minimum 32 chars>
 STRIPE_SECRET_KEY=sk_test_...
-JWT_SECRET=your-secret
-STRIPE_WEBHOOK_SECRET=whsec_...   # optional in dev
+STRIPE_WEBHOOK_SECRET=whsec_...
+APP_BASE_URL=<used for Stripe Checkout redirect URLs>
+PAYMENT_SHARE_TTL_HOURS=48   # how long a guest has to pay
 ```
 
 ### Mobile app (pierre_two)
@@ -74,7 +85,7 @@ VITE_API_URL=http://localhost:3000   # defaults to this if unset
 
 ### Backend (rust_BE/src/)
 
-Layered MVC — all routes are registered in `main.rs`, no magic routing:
+**Layer order:** `models/` → `persistences/` → `controllers/` — never skip layers. All routes are registered in `main.rs`, no magic routing.
 
 ```
 main.rs            — Router setup, AppState initialization, middleware wiring
@@ -90,7 +101,17 @@ utils/jwt.rs       — JWT encode/decode
 
 `AppState` (shared via `Arc<AppState>`) holds: `db_pool`, `stripe_client`, `jwt_secret`, `idempotency_service`, `stripe_webhook_secret`.
 
-Auth is handled by Axum extractors — add `AuthUser` or `ClubOwnerUser` as a handler parameter to protect a route. Owner-scoped routes live under `/owner/`.
+**Auth extractors:**
+- User JWT: `AuthUser(claims): AuthUser` (from `middleware/auth.rs`)
+- Club owner JWT: same extractor, role check inside handler
+- No auth needed: payment link routes (`/payment-links/:token/*`) and webhook
+
+**Error responses** — always use the `ApiError` envelope with Italian messages:
+```rust
+return Err(crate::models::ApiError::new(StatusCode::CONFLICT, "Messaggio in italiano"));
+```
+
+**Adding a route:** register handler in `src/main.rs` → `create_router()`; add model structs to `src/models/`, add DB query to `src/persistences/`, implement logic in `src/controllers/`.
 
 ### Mobile app (pierre_two/)
 
@@ -134,10 +155,6 @@ Auth uses `POST /auth/club-owner/login` (role `club_owner`). The JWT is stored i
 
 The QR scanner page supports both camera scanning (via `html5-qrcode`, dynamically imported) and manual code entry. It resolves codes for both tickets and table reservations.
 
-### Database
-
-Migrations live in `DB/migrations/` with numeric prefixes (`001_`, `002_`, ...). Always add new migrations as the next numbered file — never edit existing ones. The Docker init script runs them in order on first start; use `./start.sh --fresh` to re-apply everything.
-
 ### Key Domain Entities
 
 - **Event** — club night with date, capacity, ticket/table options
@@ -150,9 +167,31 @@ Migrations live in `DB/migrations/` with numeric prefixes (`001_`, `002_`, ...).
 
 Reservations use Stripe's authorize-then-capture pattern: `/reservations/create-with-payment` creates the PaymentIntent and reservation atomically. Capture happens at check-in or manually via `/payments/:id/capture`. Stripe webhooks arrive at `/stripe/webhooks` (signature-verified).
 
+### Split Payment Model
+
+- Owner reserves table → pays `total_cost / capacity` → gets `payment_link_token` on `table_reservations`
+- Guests open `/payment-links/:token` → submit name + phone + email → Stripe Checkout
+- Slot claiming is race-safe: `SELECT FOR UPDATE` on reservation row → count active shares → check duplicate phone → insert `checkout_pending` → all in one transaction
+- Stripe webhook at `/stripe/webhooks` updates share to `paid`, increments `num_people`, auto-confirms reservation when `amount_paid >= total_amount`
+- **Phone = unique consumer ID**: no two users share a phone; no two active payment shares on the same reservation share a phone
+
+Partial unique index pattern for payment shares:
+```sql
+WHERE phone_number IS NOT NULL AND is_owner = false AND status IN ('paid', 'checkout_pending')
+```
+
 ### Idempotency
 
 Payment mutations accept an `Idempotency-Key` header. The `IdempotencyService` stores request fingerprints and cached responses in the `idempotency_keys` table; an hourly Tokio task cleans expired records.
+
+## Local Command Docs
+
+| Command | What it does |
+|---------|-------------|
+| `/cargo-check` | Run `cargo check` in `rust_BE` and report compiler issues |
+| `/deploy-backend` | Compile-check then `fly deploy` |
+| `/new-migration` | Scaffold the next numbered migration file |
+| `/run-migration` | Run a specific migration file on Supabase |
 
 ## Workflow
 

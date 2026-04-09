@@ -1,34 +1,40 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { StyleSheet, Text, TouchableOpacity, View, Alert, ScrollView, RefreshControl, Switch, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../context/AuthContext';
-import { useTheme } from '../../context/ThemeContext';
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import {
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Linking from 'expo-linking';
+import Constants from 'expo-constants';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { API_URL } from '@/config/api';
+import { useAuth } from '@/context/AuthContext';
+import { useTheme } from '@/context/ThemeContext';
 import { ThemeSelector } from '@/components/settings/ThemeSelector';
+import { API_URL } from '@/config/api';
+import { apiFetch } from '@/config/apiFetch';
 
-export const options = {
-  icon: 'person',
-  tabBarLabel: 'Profile',
-};
+let Notifications: typeof import('expo-notifications') | null = null;
+try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
+
   const [refreshing, setRefreshing] = useState(false);
-
-  // Settings state
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [notifLoading, setNotifLoading] = useState(false);
   const [eventReminders, setEventReminders] = useState(true);
-
-  // Phone verification
   const [showPhoneVerification, setShowPhoneVerification] = useState(false);
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState(user?.phone_number || '');
   const [verificationCode, setVerificationCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
@@ -36,32 +42,79 @@ export default function ProfileScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 600));
+    await new Promise(resolve => setTimeout(resolve, 500));
     setRefreshing(false);
   };
 
+  const getInitials = (name: string) =>
+    name
+      .split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert('Esci', 'Vuoi uscire dal tuo account?', [
+      { text: 'Annulla', style: 'cancel' },
       {
-        text: 'Logout',
+        text: 'Esci',
+        style: 'destructive',
         onPress: async () => {
           await logout();
           router.replace('/login');
         },
-        style: 'destructive',
       },
     ]);
   };
 
-  // Get user initials for avatar
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+  const handleEnableNotifications = async () => {
+    if (!Notifications) {
+      Alert.alert('Non disponibile', 'Le notifiche non sono supportate in questa modalità.');
+      return;
+    }
+
+    setNotifLoading(true);
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+
+      if (status === 'denied') {
+        Alert.alert(
+          'Notifiche disabilitate',
+          'Abilita le notifiche dalle impostazioni del dispositivo.',
+          [
+            { text: 'Annulla', style: 'cancel' },
+            { text: 'Apri impostazioni', onPress: () => Linking.openSettings() },
+          ],
+        );
+        return;
+      }
+
+      if (status !== 'granted') {
+        const { status: newStatus } = await Notifications.requestPermissionsAsync();
+        if (newStatus !== 'granted') {
+          Alert.alert('Permesso negato', 'Non è stato possibile attivare le notifiche.');
+          return;
+        }
+      }
+
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      const tokenData = await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : undefined,
+      );
+
+      await apiFetch(`${API_URL}/auth/push-token`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ push_token: tokenData.data }),
+      });
+
+      Alert.alert('Notifiche attivate', 'Riceverai aggiornamenti su prenotazioni e pagamenti.');
+    } catch {
+      Alert.alert('Errore', 'Impossibile attivare le notifiche. Riprova.');
+    } finally {
+      setNotifLoading(false);
+    }
   };
 
   const handleSendVerificationCode = async () => {
@@ -71,41 +124,29 @@ export default function ProfileScreen() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/auth/send-sms-verification`, {
+      const response = await apiFetch(`${API_URL}/auth/send-sms-verification`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: user?.id,
-          phone_number: phoneNumber,
-        }),
+        body: JSON.stringify({ user_id: user?.id, phone_number: phoneNumber }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to send verification code');
-      }
+      if (!response.ok) throw new Error('Errore invio codice');
 
       setCodeSent(true);
-      Alert.alert('Codice Inviato', 'Controlla i tuoi SMS per il codice di verifica');
-    } catch (error) {
-      console.error('Error sending verification code:', error);
-      Alert.alert('Errore', 'Impossibile inviare il codice di verifica');
+      Alert.alert('Codice inviato', 'Controlla gli SMS per completare la verifica.');
+    } catch (e: any) {
+      Alert.alert('Errore', e.message || 'Impossibile inviare il codice.');
     }
   };
 
   const handleVerifyCode = async () => {
     if (!verificationCode || verificationCode.length !== 6) {
-      Alert.alert('Errore', 'Inserisci un codice di verifica valido');
+      Alert.alert('Errore', 'Inserisci un codice valido');
       return;
     }
 
     try {
-      const response = await fetch(`${API_URL}/auth/verify-sms-code`, {
+      const response = await apiFetch(`${API_URL}/auth/verify-sms-code`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           user_id: user?.id,
           phone_number: phoneNumber,
@@ -113,150 +154,116 @@ export default function ProfileScreen() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Invalid verification code');
-      }
+      if (!response.ok) throw new Error('Codice non valido');
 
       setIsPhoneVerified(true);
       setShowPhoneVerification(false);
       setCodeSent(false);
       setVerificationCode('');
-      Alert.alert('Verificato!', 'Il tuo numero di telefono è stato verificato con successo');
-    } catch (error) {
-      console.error('Error verifying code:', error);
-      Alert.alert('Errore', 'Codice di verifica non valido');
+      Alert.alert('Verificato', 'Il numero di telefono è stato verificato.');
+    } catch (e: any) {
+      Alert.alert('Errore', e.message || 'Verifica non riuscita');
     }
   };
 
-  // Dynamic styles based on theme
-  const dynamicStyles = {
-    container: {
-      flex: 1,
-      backgroundColor: theme.background,
-    },
-    sectionTitle: {
-      color: theme.text,
-      fontWeight: 'bold' as const,
-      fontSize: 18,
-      marginBottom: 12,
-      paddingHorizontal: 16,
-    },
-    actionCardGradient: {
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      justifyContent: 'space-between' as const,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: theme.border,
-      backgroundColor: theme.cardBackground,
-    },
-    actionTitle: {
-      color: theme.text,
-      fontSize: 16,
-      fontWeight: '600' as const,
-      marginBottom: 2,
-    },
-    actionSubtitle: {
-      color: theme.textTertiary,
-      fontSize: 13,
-    },
-    input: {
-      backgroundColor: theme.background,
-      borderRadius: 12,
-      padding: 14,
-      fontSize: 16,
-      color: theme.text,
-      borderWidth: 1,
-      borderColor: theme.border,
-      marginBottom: 12,
-    },
-    verificationSection: {
-      marginHorizontal: 16,
-      marginBottom: 12,
-      padding: 16,
-      backgroundColor: theme.backgroundElevated,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: theme.border,
-    },
-  };
+  const appVersion = Constants.expoConfig?.version || '1.0.0';
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={["top"]}>
-      <View style={dynamicStyles.container}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={theme.primary}
-              colors={[theme.primary]}
-              progressViewOffset={60}
-            />
-          }
-        >
-          {/* Profile Header with Avatar */}
-          <View style={styles.profileHeader}>
-            <View style={styles.avatarSection}>
-              <LinearGradient
-                colors={theme.gradientPrimary as [string, string]}
-                style={styles.avatar}
-              >
-                <Text style={styles.avatarText}>
-                  {getInitials(user?.name || 'User')}
-                </Text>
-              </LinearGradient>
-              <View style={styles.userInfo}>
-                <Text style={[styles.userName, { color: theme.text }]}>
-                  {user?.name || 'User'}
-                </Text>
-                <Text style={[styles.userEmail, { color: theme.textTertiary }]}>{user?.email}</Text>
-              </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
+      >
+        <View style={styles.header}>
+          <View style={[styles.kicker, { backgroundColor: `${theme.primary}16`, borderColor: `${theme.primary}30` }]}>
+            <IconSymbol name="person" size={12} color={theme.primary} />
+            <Text style={[styles.kickerText, { color: theme.primary }]}>Profilo</Text>
+          </View>
+          <Text style={[styles.pageTitle, { color: theme.text }]}>Il tuo account</Text>
+          <Text style={[styles.pageSubtitle, { color: theme.textTertiary }]}>
+            Dati essenziali, notifiche e supporto.
+          </Text>
+        </View>
+
+        <View style={[styles.heroCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
+          <LinearGradient
+            colors={[`${theme.primary}16`, 'rgba(0,0,0,0)', `${theme.secondary}10`] as [string, string, string]}
+            style={styles.heroGlow}
+          />
+          <View style={styles.heroTopRow}>
+            <LinearGradient
+              colors={theme.gradientPrimary as [string, string]}
+              style={styles.avatar}
+            >
+              <Text style={styles.avatarText}>{getInitials(user?.name || 'User')}</Text>
+            </LinearGradient>
+
+            <View style={styles.heroCopy}>
+              <Text style={[styles.userName, { color: theme.text }]} numberOfLines={1}>
+                {user?.name || 'Utente'}
+              </Text>
+              <Text style={[styles.userEmail, { color: theme.textSecondary }]} numberOfLines={1}>
+                {user?.email || 'email@pierre.app'}
+              </Text>
             </View>
-            <TouchableOpacity style={[styles.settingsButton, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
-              <IconSymbol name="gearshape.fill" size={24} color={theme.textTertiary} />
-            </TouchableOpacity>
           </View>
 
-          {/* Account Section */}
-          <View style={styles.section}>
-            <Text style={dynamicStyles.sectionTitle}>Account</Text>
+          <View style={styles.heroMetaRow}>
+            <View style={[styles.metaPill, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+              <IconSymbol name={isPhoneVerified ? 'checkmark.circle' : 'phone'} size={14} color={isPhoneVerified ? theme.success : theme.textTertiary} />
+              <Text style={[styles.metaPillText, { color: theme.textSecondary }]}>
+                {isPhoneVerified ? 'Telefono verificato' : 'Telefono da verificare'}
+              </Text>
+            </View>
+            <View style={[styles.metaPill, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+              <IconSymbol name="bell.fill" size={14} color={theme.primary} />
+              <Text style={[styles.metaPillText, { color: theme.textSecondary }]}>Notifiche account</Text>
+            </View>
+          </View>
+        </View>
 
-            {/* Phone Verification */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Account</Text>
+
+          <View style={[styles.cardGroup, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
             <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => setShowPhoneVerification(!showPhoneVerification)}
+              activeOpacity={0.88}
+              onPress={() => setShowPhoneVerification(prev => !prev)}
+              style={[styles.rowButton, { borderBottomColor: showPhoneVerification ? theme.border : 'transparent' }]}
             >
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.success}33` }]}>
-                    <IconSymbol
-                      name={isPhoneVerified ? "checkmark.circle" : "phone"}
-                      size={20}
-                      color={isPhoneVerified ? theme.success : theme.info}
-                    />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Verifica Numero</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>
-                      {isPhoneVerified ? 'Verificato ✓' : 'Non verificato'}
-                    </Text>
-                  </View>
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: `${theme.primary}18` }]}>
+                  <IconSymbol name="phone" size={18} color={theme.primary} />
                 </View>
-                <IconSymbol
-                  name={showPhoneVerification ? "chevron.down" : "chevron.right"}
-                  size={20}
-                  color={theme.textTertiary}
-                />
+                <View style={styles.rowCopy}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Verifica telefono</Text>
+                  <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>
+                    {isPhoneVerified ? 'Numero verificato' : 'Aggiungi e conferma il numero'}
+                  </Text>
+                </View>
               </View>
+              <IconSymbol
+                name={showPhoneVerification ? 'chevron.up' : 'chevron.right'}
+                size={18}
+                color={theme.textTertiary}
+              />
             </TouchableOpacity>
 
-            {/* Phone Verification Expanded */}
-            {showPhoneVerification && (
-              <View style={dynamicStyles.verificationSection}>
+            {showPhoneVerification ? (
+              <View style={styles.expandArea}>
                 <TextInput
-                  style={dynamicStyles.input}
+                  style={[
+                    styles.input,
+                    { backgroundColor: theme.background, borderColor: theme.border, color: theme.text },
+                  ]}
                   placeholder="Numero di telefono"
                   placeholderTextColor={theme.textTertiary}
                   value={phoneNumber}
@@ -267,373 +274,367 @@ export default function ProfileScreen() {
 
                 {!codeSent ? (
                   <TouchableOpacity
-                    style={[styles.sendCodeButton, { backgroundColor: theme.primary }]}
+                    style={[styles.primaryButton, { backgroundColor: theme.primary }]}
                     onPress={handleSendVerificationCode}
                   >
-                    <Text style={styles.sendCodeButtonText}>Invia Codice SMS</Text>
+                    <Text style={[styles.primaryButtonText, { color: theme.textInverse }]}>Invia codice</Text>
                   </TouchableOpacity>
                 ) : (
                   <>
                     <TextInput
-                      style={dynamicStyles.input}
-                      placeholder="Codice di verifica (6 cifre)"
+                      style={[
+                        styles.input,
+                        { backgroundColor: theme.background, borderColor: theme.border, color: theme.text },
+                      ]}
+                      placeholder="Codice SMS"
                       placeholderTextColor={theme.textTertiary}
                       value={verificationCode}
                       onChangeText={setVerificationCode}
                       keyboardType="number-pad"
                       maxLength={6}
                     />
-                    <View style={styles.verificationButtons}>
+                    <View style={styles.inlineButtons}>
                       <TouchableOpacity
-                        style={[styles.verifyButton, { backgroundColor: theme.success }]}
+                        style={[styles.primaryButton, styles.inlineButton, { backgroundColor: theme.success }]}
                         onPress={handleVerifyCode}
                       >
-                        <Text style={styles.verifyButtonText}>Verifica</Text>
+                        <Text style={[styles.primaryButtonText, { color: theme.textInverse }]}>Verifica</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.resendButton, { backgroundColor: theme.backgroundSurface }]}
+                        style={[styles.secondaryButton, styles.inlineButton, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}
                         onPress={handleSendVerificationCode}
                       >
-                        <Text style={[styles.resendButtonText, { color: theme.text }]}>Invia di nuovo</Text>
+                        <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Invia di nuovo</Text>
                       </TouchableOpacity>
                     </View>
                   </>
                 )}
               </View>
-            )}
+            ) : null}
 
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.warning}33` }]}>
-                    <IconSymbol name="lock" size={20} color={theme.warning} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Cambia Password</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Aggiorna la tua password</Text>
-                  </View>
-                </View>
-                <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.primary}33` }]}>
-                    <IconSymbol name="person" size={20} color={theme.primary} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Modifica Profilo</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Nome, email, data di nascita</Text>
-                  </View>
-                </View>
-                <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {/* Notifications Section */}
-          <View style={styles.section}>
-            <Text style={dynamicStyles.sectionTitle}>Notifiche</Text>
-
-            <View style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.primary}33` }]}>
-                    <IconSymbol name="bell.fill" size={20} color={theme.primary} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Notifiche Push</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Ricevi notifiche push</Text>
-                  </View>
-                </View>
-                <Switch
-                  value={pushNotifications}
-                  onValueChange={setPushNotifications}
-                  trackColor={{ false: theme.border, true: theme.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-            </View>
-
-            <View style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.info}33` }]}>
-                    <IconSymbol name="envelope" size={20} color={theme.info} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Email</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Ricevi email promozionali</Text>
-                  </View>
-                </View>
-                <Switch
-                  value={emailNotifications}
-                  onValueChange={setEmailNotifications}
-                  trackColor={{ false: theme.border, true: theme.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-            </View>
-
-            <View style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.secondary}33` }]}>
-                    <IconSymbol name="clock.fill" size={20} color={theme.secondary} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Promemoria Eventi</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>24h prima dell'evento</Text>
-                  </View>
-                </View>
-                <Switch
-                  value={eventReminders}
-                  onValueChange={setEventReminders}
-                  trackColor={{ false: theme.border, true: theme.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* App Settings */}
-          <View style={styles.section}>
-            <Text style={dynamicStyles.sectionTitle}>App</Text>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.secondary}33` }]}>
-                    <IconSymbol name="music.note" size={20} color={theme.secondary} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Preferenze Musicali</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Imposta i tuoi generi preferiti</Text>
-                  </View>
-                </View>
-                <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
-              </View>
-            </TouchableOpacity>
-
-            {/* Theme Selector */}
-            <ThemeSelector />
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.success}33` }]}>
-                    <IconSymbol name="globe" size={20} color={theme.success} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Lingua</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Italiano</Text>
-                  </View>
-                </View>
-                <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {/* Support Section */}
-          <View style={styles.section}>
-            <Text style={dynamicStyles.sectionTitle}>Supporto</Text>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.info}33` }]}>
-                    <IconSymbol name="questionmark.circle" size={20} color={theme.info} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Centro Assistenza</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>FAQ e supporto</Text>
-                  </View>
-                </View>
-                <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.warning}33` }]}>
-                    <IconSymbol name="doc.text" size={20} color={theme.warning} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Termini e Privacy</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Leggi i termini di servizio</Text>
-                  </View>
-                </View>
-                <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionCardGradient, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-                <View style={styles.actionLeft}>
-                  <View style={[styles.actionIconCircle, { backgroundColor: `${theme.primary}33` }]}>
-                    <IconSymbol name="info.circle" size={20} color={theme.primary} />
-                  </View>
-                  <View>
-                    <Text style={dynamicStyles.actionTitle}>Informazioni</Text>
-                    <Text style={dynamicStyles.actionSubtitle}>Versione 1.0.0</Text>
-                  </View>
-                </View>
-                <IconSymbol name="chevron.right" size={20} color={theme.textTertiary} />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {/* Logout Button */}
-          <TouchableOpacity style={styles.logoutCard} onPress={handleLogout}>
-            <LinearGradient
-              colors={[theme.error, theme.error]}
-              style={styles.logoutGradient}
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={handleEnableNotifications}
+              style={[styles.rowButton, { borderBottomColor: theme.border }]}
             >
-              <IconSymbol name="arrow.right.square.fill" size={20} color="#fff" />
-              <Text style={styles.logoutText}>Logout</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: `${theme.info}18` }]}>
+                  <IconSymbol name="bell.fill" size={18} color={theme.info} />
+                </View>
+                <View style={styles.rowCopy}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Notifiche push</Text>
+                  <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>
+                    {notifLoading ? 'Attivazione in corso...' : 'Aggiorna e riattiva le notifiche'}
+                  </Text>
+                </View>
+              </View>
+              <IconSymbol name="chevron.right" size={18} color={theme.textTertiary} />
+            </TouchableOpacity>
 
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      </View>
+            <View style={styles.rowButton}>
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: `${theme.secondary}18` }]}>
+                  <IconSymbol name="clock.fill" size={18} color={theme.secondary} />
+                </View>
+                <View style={styles.rowCopy}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Promemoria eventi</Text>
+                  <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>
+                    Ricevi un promemoria prima dell’evento
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={eventReminders}
+                onValueChange={setEventReminders}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Supporto</Text>
+          <View style={[styles.cardGroup, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={() => setShowThemeSelector(prev => !prev)}
+              style={[styles.rowButton, { borderBottomColor: theme.border }]}
+            >
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: `${theme.primary}18` }]}>
+                  <IconSymbol name="gearshape.fill" size={18} color={theme.primary} />
+                </View>
+                <View style={styles.rowCopy}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Tema app</Text>
+                  <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>
+                    Cambia il look dell’app
+                  </Text>
+                </View>
+              </View>
+              <IconSymbol
+                name={showThemeSelector ? 'chevron.up' : 'chevron.right'}
+                size={18}
+                color={theme.textTertiary}
+              />
+            </TouchableOpacity>
+
+            {showThemeSelector ? (
+              <View style={[styles.themeArea, { borderBottomColor: theme.border }]}>
+                <ThemeSelector />
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={() => Linking.openURL('mailto:support@pierre.app')}
+              style={[styles.rowButton, { borderBottomColor: theme.border }]}
+            >
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: `${theme.primary}18` }]}>
+                  <IconSymbol name="envelope" size={18} color={theme.primary} />
+                </View>
+                <View style={styles.rowCopy}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Contatta il supporto</Text>
+                  <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>support@pierre.app</Text>
+                </View>
+              </View>
+              <IconSymbol name="chevron.right" size={18} color={theme.textTertiary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={() => Alert.alert('Termini e privacy', 'Disponibili su pierre.app/terms')}
+              style={styles.rowButton}
+            >
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: `${theme.warning}18` }]}>
+                  <IconSymbol name="doc.text" size={18} color={theme.warning} />
+                </View>
+                <View style={styles.rowCopy}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Termini e privacy</Text>
+                  <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>Versione app {appVersion}</Text>
+                </View>
+              </View>
+              <IconSymbol name="chevron.right" size={18} color={theme.textTertiary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.logoutButton, { backgroundColor: `${theme.error}14`, borderColor: `${theme.error}35` }]}
+          onPress={handleLogout}
+          activeOpacity={0.88}
+        >
+          <IconSymbol name="arrow.right.square.fill" size={18} color={theme.error} />
+          <Text style={[styles.logoutText, { color: theme.error }]}>Esci dall’account</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  profileHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    marginBottom: 24,
-  },
-  avatarSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
+  container: {
     flex: 1,
-    marginRight: 12,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 40,
+  },
+  header: {
+    marginBottom: 18,
+  },
+  kicker: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  kickerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  pageSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  heroCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 18,
+    overflow: 'hidden',
+    marginBottom: 22,
+  },
+  heroGlow: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 16,
   },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarText: {
     color: '#fff',
     fontSize: 24,
-    fontWeight: 'bold',
-    letterSpacing: 1,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
-  userInfo: {
+  heroCopy: {
     flex: 1,
-    minWidth: 0,
   },
   userName: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '700',
     marginBottom: 4,
   },
   userEmail: {
-    fontSize: 13,
+    fontSize: 14,
   },
-  settingsButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
+  heroMetaRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  metaPill: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
     borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  metaPillText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
-  actionCard: {
-    marginHorizontal: 16,
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
     marginBottom: 12,
-    borderRadius: 16,
+  },
+  cardGroup: {
+    borderRadius: 20,
+    borderWidth: 1,
     overflow: 'hidden',
   },
-  actionCardGradient: {
+  rowButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  actionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    flex: 1,
-  },
-  actionIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoutCard: {
-    marginHorizontal: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginTop: 8,
-  },
-  logoutGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    gap: 10,
-  },
-  logoutText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  sendCodeButton: {
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-  },
-  sendCodeButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  verificationButtons: {
-    flexDirection: 'row',
     gap: 12,
   },
-  verifyButton: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 14,
+  rowLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
-  verifyButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowCopy: {
+    flex: 1,
+  },
+  rowTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  rowSubtitle: {
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  expandArea: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 16,
+  },
+  themeArea: {
+    paddingTop: 8,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    fontSize: 15,
+    marginBottom: 12,
+  },
+  primaryButton: {
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+  },
+  primaryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  inlineButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inlineButton: {
+    flex: 1,
+  },
+  secondaryButton: {
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+  },
+  secondaryButtonText: {
+    fontSize: 14,
     fontWeight: '600',
   },
-  resendButton: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 14,
+  logoutButton: {
+    height: 54,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 8,
   },
-  resendButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  logoutText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

@@ -44,7 +44,10 @@ export type IconSymbolName =
   | 'info.circle'
   | 'eurosign'
   | 'plus'
-  | 'minus';
+  | 'minus'
+  | 'xmark.circle.fill'
+  | 'checkmark.circle.fill'
+  | 'wineglass.fill';
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
@@ -92,6 +95,9 @@ const MAPPING = {
   'eurosign': 'euro',
   'plus': 'add',
   'minus': 'remove',
+  'xmark.circle.fill': 'cancel',
+  'checkmark.circle.fill': 'check-circle',
+  'wineglass.fill': 'local-bar',
 } as const;
 
 /**

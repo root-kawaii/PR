@@ -74,7 +74,8 @@ pub struct PaymentFilter {
     pub receiver_id: Option<i32>,
     pub status: Option<PaymentStatus>,
     pub amount: Option<Decimal>,
-    // Add any other filterable fields here
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]

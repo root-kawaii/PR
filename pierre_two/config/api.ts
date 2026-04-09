@@ -28,10 +28,9 @@ export const getApiUrl = (): string => {
     return "http://127.0.0.1:3000"; // iOS simulator
   }
 
-  // If explicitly a device OR if we can't determine (safer to assume device)
+  // If explicitly a device OR if we can't determine — use production URL
   if (isDevice === true || (isDevice !== false && !isSimulator)) {
-    // Physical device - use your computer's local network IP
-    return "http://127.0.0.1:3000";
+    return "https://pierre-two-backend.fly.dev";
   }
 
   // Default fallback for simulators

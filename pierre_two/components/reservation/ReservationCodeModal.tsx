@@ -12,6 +12,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTheme } from "@/context/ThemeContext";
@@ -70,9 +71,18 @@ export const ReservationCodeModal = ({
           <View style={[styles.modal, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <View>
-                {/* Header */}
+                <LinearGradient
+                  colors={[`${theme.primary}18`, "rgba(0,0,0,0)", `${theme.secondary}12`] as [string, string, string]}
+                  style={styles.modalGlow}
+                />
                 <View style={[styles.header, { borderBottomColor: theme.border }]}>
-                  <ThemedText style={[styles.title, { color: theme.text }]}>Inserisci Codice</ThemedText>
+                  <View style={styles.titleWrap}>
+                    <View style={[styles.kicker, { backgroundColor: `${theme.primary}15`, borderColor: `${theme.primary}33` }]}>
+                      <IconSymbol name="barcode" size={12} color={theme.primary} />
+                      <ThemedText style={[styles.kickerText, { color: theme.primary }]}>Accesso rapido</ThemedText>
+                    </View>
+                    <ThemedText style={[styles.title, { color: theme.text }]}>Inserisci il codice</ThemedText>
+                  </View>
                   <TouchableOpacity
                     onPress={handleClose}
                     style={styles.closeButton}
@@ -84,8 +94,7 @@ export const ReservationCodeModal = ({
                 {/* Content */}
                 <View style={styles.content}>
                   <ThemedText style={[styles.description, { color: theme.textTertiary }]}>
-                    Inserisci il codice della prenotazione per visualizzare i
-                    dettagli e contribuire al pagamento.
+                    Inserisci il codice della prenotazione per vedere i dettagli del tavolo e, se necessario, completare la tua quota.
                   </ThemedText>
 
                   <TextInput
@@ -169,15 +178,33 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     borderWidth: 1,
     borderColor: "#2a2a2a",
+    overflow: "hidden",
+    position: "relative",
+  },
+  modalGlow: {
+    ...StyleSheet.absoluteFillObject,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#2a2a2a",
   },
+  titleWrap: { flex: 1, paddingRight: 12 },
+  kicker: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  kickerText: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
   title: {
     fontSize: 20,
     fontWeight: "700",

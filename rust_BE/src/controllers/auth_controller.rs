@@ -8,43 +8,70 @@ use bcrypt::{hash, verify, DEFAULT_COST};
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use tracing::{info, warn, error};
+
+/// Validate an email address — must contain @ and a dot after it
+fn is_valid_email(email: &str) -> bool {
+    let parts: Vec<&str> = email.splitn(2, '@').collect();
+    if parts.len() != 2 { return false; }
+    let domain = parts[1];
+    !parts[0].is_empty() && domain.contains('.') && domain.len() > 2
+}
 
 /// Register a new user
 pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<RegisterRequest>,
-) -> Result<(StatusCode, Json<AuthResponse>), StatusCode> {
-    // Validate email format
-    if !payload.email.contains('@') {
-        return Err(StatusCode::BAD_REQUEST);
+) -> Result<(StatusCode, Json<AuthResponse>), (StatusCode, axum::Json<crate::models::ApiError>)> {
+    info!(email = %payload.email, "Registration attempt");
+
+    if !is_valid_email(&payload.email) {
+        warn!(email = %payload.email, "Registration rejected: invalid email format");
+        return Err(crate::models::ApiError::new(StatusCode::BAD_REQUEST, "Formato email non valido"));
     }
 
-    // Validate password strength (minimum 6 characters)
-    if payload.password.len() < 6 {
-        return Err(StatusCode::BAD_REQUEST);
+    if payload.password.len() < 8 {
+        warn!(email = %payload.email, "Registration rejected: password too short");
+        return Err(crate::models::ApiError::new(StatusCode::BAD_REQUEST, "La password deve essere di almeno 8 caratteri"));
     }
 
-    // Check if user already exists
     match user_persistence::find_user_by_email(&state.db_pool, &payload.email).await {
         Ok(Some(_)) => {
-            // User already exists
-            return Err(StatusCode::CONFLICT);
+            warn!(email = %payload.email, "Registration rejected: email already exists");
+            return Err(crate::models::ApiError::new(StatusCode::CONFLICT, "Esiste già un account con questa email"));
         }
-        Ok(None) => {
-            // User doesn't exist, proceed with registration
-        }
-        Err(_) => {
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(None) => {}
+        Err(e) => {
+            error!(error = %e, email = %payload.email, "DB error checking existing user");
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
         }
     }
 
-    // Hash the password
+    // Check phone uniqueness if provided
+    if let Some(ref phone) = payload.phone_number {
+        if !phone.is_empty() {
+            match user_persistence::find_user_by_phone(&state.db_pool, phone).await {
+                Ok(Some(_)) => {
+                    warn!(phone = %phone, "Registration rejected: phone already in use");
+                    return Err(crate::models::ApiError::new(StatusCode::CONFLICT, "Esiste già un account con questo numero di telefono"));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!(error = %e, "DB error checking phone uniqueness");
+                    return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+                }
+            }
+        }
+    }
+
     let password_hash = match hash(payload.password, DEFAULT_COST) {
         Ok(hash) => hash,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            error!(error = %e, "Failed to hash password");
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+        }
     };
 
-    // Create the user
     let user = match user_persistence::create_user(
         &state.db_pool,
         payload.email.clone(),
@@ -56,14 +83,21 @@ pub async fn register(
     .await
     {
         Ok(user) => user,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            error!(error = %e, email = %payload.email, "Failed to create user");
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+        }
     };
 
-    // Generate JWT token
     let token = match jwt::generate_token(user.id, user.email.clone(), "user".to_string(), &state.jwt_secret) {
         Ok(token) => token,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            error!(error = %e, user_id = %user.id, "Failed to generate JWT after registration");
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+        }
     };
+
+    info!(user_id = %user.id, email = %user.email, "User registered successfully");
 
     let response = AuthResponse {
         user: UserResponse::from(user),
@@ -77,44 +111,50 @@ pub async fn register(
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
-    // Find user by email
+) -> Result<Json<AuthResponse>, (StatusCode, axum::Json<crate::models::ApiError>)> {
+    info!(email = %payload.email, "Login attempt");
+
     let user = match user_persistence::find_user_by_email(&state.db_pool, &payload.email).await {
         Ok(Some(user)) => user,
         Ok(None) => {
-            // User not found
-            return Err(StatusCode::UNAUTHORIZED);
+            warn!(email = %payload.email, "Login failed: email not found");
+            return Err(crate::models::ApiError::new(StatusCode::UNAUTHORIZED, "Email o password non corretti"));
         }
-        Err(_) => {
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        Err(e) => {
+            error!(error = %e, email = %payload.email, "DB error during login");
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
         }
     };
 
-    // Verify password
     let is_valid = match verify(payload.password, &user.password_hash) {
         Ok(valid) => valid,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            error!(error = %e, user_id = %user.id, "bcrypt verify error");
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+        }
     };
 
     if !is_valid {
-        return Err(StatusCode::UNAUTHORIZED);
+        warn!(email = %payload.email, "Login failed: wrong password");
+        return Err(crate::models::ApiError::new(StatusCode::UNAUTHORIZED, "Email o password non corretti"));
     }
 
-    // Update last login (optional)
     let _ = user_persistence::update_last_login(&state.db_pool, user.id).await;
 
-    // Generate JWT token
     let token = match jwt::generate_token(user.id, user.email.clone(), "user".to_string(), &state.jwt_secret) {
         Ok(token) => token,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            error!(error = %e, user_id = %user.id, "Failed to generate JWT");
+            return Err(crate::models::ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore durante la generazione del token"));
+        }
     };
 
-    let response = AuthResponse {
+    info!(user_id = %user.id, email = %user.email, "Login successful");
+
+    Ok(Json(AuthResponse {
         user: UserResponse::from(user),
         token,
-    };
-
-    Ok(Json(response))
+    }))
 }
 
 
@@ -204,7 +244,7 @@ pub async fn send_sms_verification(
             }))
         },
         Err(e) => {
-            eprintln!("SMS sending error: {}", e);
+            tracing::error!(error = %e, "SMS sending error");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -224,7 +264,7 @@ pub async fn verify_sms_code(
     let is_valid = match sms_service::verify_code(&payload.phone_number, &payload.verification_code).await {
         Ok(valid) => valid,
         Err(e) => {
-            eprintln!("Twilio Verify error: {}", e);
+            tracing::error!(error = %e, "Twilio Verify error");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
@@ -256,7 +296,7 @@ pub async fn verify_sms_code(
             }))
         },
         Err(e) => {
-            eprintln!("Database error updating user: {}", e);
+            tracing::error!(error = %e, "Database error updating user phone verification");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

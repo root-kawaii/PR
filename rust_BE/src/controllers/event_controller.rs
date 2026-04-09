@@ -1,7 +1,8 @@
-use crate::models::{AppState, CreateEventRequest, UpdateEventRequest, EventResponse};
+use crate::models::{AppState, CreateEventRequest, UpdateEventRequest, EventResponse, PaginationParams};
 use crate::persistences::event_persistence;
+use crate::middleware::auth::ClubOwnerUser;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -14,11 +15,12 @@ pub struct EventsResponse {
     pub events: Vec<EventResponse>,
 }
 
-/// Get all events
+/// Get all events (paginated, default limit=50)
 pub async fn get_all_events(
     State(state): State<Arc<AppState>>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<EventsResponse>, StatusCode> {
-    match event_persistence::get_all_events(&state.db_pool).await {
+    match event_persistence::get_all_events(&state.db_pool, pagination.limit, pagination.offset).await {
         Ok(events) => {
             let responses: Vec<EventResponse> = events.into_iter().map(|e| e.into()).collect();
             Ok(Json(EventsResponse { events: responses }))
@@ -41,8 +43,9 @@ pub async fn get_event(
     }
 }
 
-/// Create a new event
+/// Create a new event (requires club_owner JWT)
 pub async fn create_event(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateEventRequest>,
 ) -> Result<(StatusCode, Json<EventResponse>), StatusCode> {
@@ -52,8 +55,9 @@ pub async fn create_event(
     }
 }
 
-/// Update an event
+/// Update an event (requires club_owner JWT)
 pub async fn update_event(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateEventRequest>,
@@ -67,8 +71,9 @@ pub async fn update_event(
     }
 }
 
-/// Delete an event
+/// Delete an event (requires club_owner JWT)
 pub async fn delete_event(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {

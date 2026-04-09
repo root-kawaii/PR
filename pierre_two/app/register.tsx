@@ -40,69 +40,80 @@ export default function RegisterScreen() {
   const [isVerifying, setIsVerifying] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
-  const { register } = useAuth();
+  const { login } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
 
   // Step 1: Validate and create account (without phone verification yet)
   const handleContinueToPhoneVerification = async () => {
-    // Validation
-    if (!name || !email || !password || !dateOfBirth || !phone) {
-      Alert.alert("Error", "Please fill in all required fields");
+    if (!name.trim()) {
+      Alert.alert("Errore", "Inserisci il tuo nome completo");
       return;
     }
-
+    if (!email.trim() || !email.includes("@")) {
+      Alert.alert("Errore", "Inserisci un indirizzo email valido");
+      return;
+    }
+    if (!dateOfBirth) {
+      Alert.alert("Errore", "Seleziona la tua data di nascita");
+      return;
+    }
+    // Italian mobile: starts with 3, 9-10 digits (e.g. 3331234567)
+    const italianMobileRegex = /^3\d{8,9}$/;
+    if (!italianMobileRegex.test(phone.trim())) {
+      Alert.alert("Errore", "Inserisci un numero di cellulare italiano valido (es. 3331234567)");
+      return;
+    }
     if (password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters");
+      Alert.alert("Errore", "La password deve contenere almeno 6 caratteri");
       return;
     }
-
     if (password !== confirmPassword) {
-      Alert.alert("Error", "Passwords do not match");
-      return;
-    }
-
-    if (!email.includes("@")) {
-      Alert.alert("Error", "Please enter a valid email address");
-      return;
-    }
-
-    // Validate phone number (must be 10 digits for Italian numbers)
-    if (phone.length < 8) {
-      Alert.alert("Error", "Please enter a valid phone number");
+      Alert.alert("Errore", "Le password non coincidono");
       return;
     }
 
     setIsLoading(true);
     try {
-      // Create the account first
       const response = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           password,
           date_of_birth: dateOfBirth.toISOString().split("T")[0],
         }),
       });
 
-      const data = await response.json();
-
+      let errorMessage = "Registrazione fallita";
       if (!response.ok) {
-        throw new Error(data.message || "Registration failed");
+        try {
+          const text = await response.text();
+          if (text) {
+            const json = JSON.parse(text);
+            errorMessage = json.error || json.message || errorMessage;
+          }
+        } catch { /* use fallback */ }
+        if (response.status === 409 && errorMessage === "Registrazione fallita") errorMessage = "Esiste già un account con questa email o numero di telefono";
+        throw new Error(errorMessage);
       }
 
-      // Store temp user ID for phone verification
-      setTempUserId(data.user.id);
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Risposta non valida dal server");
+      }
 
-      // Move to phone verification step
+      if (!data?.user?.id) {
+        throw new Error("Risposta non valida dal server");
+      }
+
+      setTempUserId(data.user.id);
       setStep("phone-verification");
     } catch (error: any) {
-      Alert.alert(
-        "Registration Failed",
-        error.message || "Could not create account",
-      );
+      Alert.alert("Registrazione fallita", error.message || "Impossibile creare l'account");
     } finally {
       setIsLoading(false);
     }
@@ -124,13 +135,21 @@ export default function RegisterScreen() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to send verification code");
+        let msg = "Invio del codice fallito";
+        try {
+          const text = await response.text();
+          if (text) {
+            const json = JSON.parse(text);
+            msg = json.error || json.message || msg;
+          }
+        } catch { /* use fallback */ }
+        throw new Error(msg);
       }
 
       setCodeSent(true);
-      Alert.alert("Success", "Verification code sent to your phone!");
+      Alert.alert("Codice inviato", `Codice di verifica inviato al +39${phone.trim()}`);
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to send verification code");
+      Alert.alert("Errore", error.message || "Impossibile inviare il codice. Riprova.");
     } finally {
       setIsLoading(false);
     }
@@ -138,8 +157,16 @@ export default function RegisterScreen() {
 
   // Step 3: Verify code and complete registration
   const handleVerifyAndCompleteRegistration = async () => {
-    if (!tempUserId || !phone || !verificationCode) {
-      Alert.alert("Error", "Please enter the verification code");
+    if (!verificationCode || verificationCode.trim().length !== 6) {
+      Alert.alert("Errore", "Inserisci il codice a 6 cifre");
+      return;
+    }
+    if (!tempUserId || !phone) {
+      Alert.alert("Errore", "Dati di registrazione mancanti. Ricomincia dall'inizio.");
+      return;
+    }
+    if (!dateOfBirth) {
+      Alert.alert("Errore", "Data di nascita mancante. Ricomincia dall'inizio.");
       return;
     }
 
@@ -155,42 +182,37 @@ export default function RegisterScreen() {
         }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.verified) {
-        throw new Error(data.message || "Invalid verification code");
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Risposta non valida dal server");
       }
 
-      // Phone verified! Now complete the login
-      Alert.alert("Success", "Phone verified! Logging you in...", [
-        {
-          text: "OK",
-          onPress: async () => {
-            try {
-              await register({
-                name: name.trim(),
-                email: email.trim(),
-                password,
-                phone_number: `+39${phone.trim()}`,
-                date_of_birth: dateOfBirth!.toISOString().split("T")[0],
-              });
-              router.replace("/(tabs)");
-            } catch {
-              Alert.alert(
-                "Error",
-                "Account created but login failed. Please log in manually.",
-              );
-              router.replace("/");
-            }
-          },
-        },
-      ]);
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || "Verifica fallita");
+      }
+      if (!data.verified) {
+        throw new Error("Codice non valido o scaduto. Richiedi un nuovo codice.");
+      }
+
+      // Phone verified — log in with existing credentials (account already created in step 1)
+      setIsVerifying(false);
+      try {
+        await login({
+          email: email.trim().toLowerCase(),
+          password,
+        });
+        router.replace("/(tabs)");
+      } catch (err: any) {
+        Alert.alert(
+          "Errore di accesso",
+          err.message || "Account creato ma accesso fallito. Effettua il login manualmente.",
+        );
+        router.replace("/login");
+      }
     } catch (error: any) {
-      Alert.alert(
-        "Verification Failed",
-        error.message || "Invalid code. Please try again.",
-      );
-    } finally {
+      Alert.alert("Verifica fallita", error.message || "Codice non valido. Riprova.");
       setIsVerifying(false);
     }
   };
@@ -211,6 +233,20 @@ export default function RegisterScreen() {
     }
   };
 
+  const stepBar = (
+    <View style={styles.stepBarContainer}>
+      <View style={styles.stepRow}>
+        <View style={[styles.stepDot, { backgroundColor: theme.primary }]} />
+        <View style={[styles.stepLine, { backgroundColor: step === 'phone-verification' ? theme.primary : theme.border }]} />
+        <View style={[styles.stepDot, { backgroundColor: step === 'phone-verification' ? theme.primary : theme.border }]} />
+      </View>
+      <View style={styles.stepLabels}>
+        <Text style={[styles.stepLabel, { color: theme.primary }]}>Dati</Text>
+        <Text style={[styles.stepLabel, { color: step === 'phone-verification' ? theme.primary : theme.textTertiary }]}>Verifica</Text>
+      </View>
+    </View>
+  );
+
   // Render different UI based on step
   if (step === "phone-verification") {
     return (
@@ -220,11 +256,16 @@ export default function RegisterScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.content}>
+            <View style={styles.brandContainer}>
+              <Text style={[styles.wordmark, { color: theme.primary }]}>PIERRE</Text>
+              <View style={[styles.wordmarkLine, { backgroundColor: theme.primary }]} />
+            </View>
+            {stepBar}
             <Text style={[styles.title, { color: theme.text }]}>
-              Verify Your Phone
+              Verifica Telefono
             </Text>
             <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
-              We'll send a verification code to +39 {phone}
+              Invieremo un codice a +39 {phone}
             </Text>
 
             <View style={styles.form}>
@@ -351,11 +392,16 @@ export default function RegisterScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
+          <View style={styles.brandContainer}>
+            <Text style={[styles.wordmark, { color: theme.primary }]}>PIERRE</Text>
+            <View style={[styles.wordmarkLine, { backgroundColor: theme.primary }]} />
+          </View>
+          {stepBar}
           <Text style={[styles.title, { color: theme.text }]}>
-            Create Account
+            Crea Account
           </Text>
           <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
-            Sign up to get started
+            Registrati per iniziare
           </Text>
 
           <View style={styles.form}>
@@ -442,13 +488,24 @@ export default function RegisterScreen() {
             </TouchableOpacity>
 
             {showDatePicker && (
-              <DateTimePicker
-                value={dateOfBirth || new Date()}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                onChange={onDateChange}
-                maximumDate={new Date()}
-              />
+              <View style={[styles.datePickerWrapper, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                <DateTimePicker
+                  value={dateOfBirth || new Date()}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={onDateChange}
+                  maximumDate={new Date()}
+                  textColor={theme.text}
+                />
+                {Platform.OS === "ios" && (
+                  <TouchableOpacity
+                    style={[styles.dateConfirmButton, { backgroundColor: theme.primary }]}
+                    onPress={() => setShowDatePicker(false)}
+                  >
+                    <Text style={[styles.dateConfirmText, { color: theme.textInverse }]}>Conferma</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
 
             <TextInput
@@ -465,6 +522,8 @@ export default function RegisterScreen() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              textContentType="newPassword"
+              autoComplete="new-password"
               editable={!isLoading}
             />
 
@@ -477,11 +536,13 @@ export default function RegisterScreen() {
                   color: theme.text,
                 },
               ]}
-              placeholder="Confirm Password"
+              placeholder="Conferma Password"
               placeholderTextColor={theme.textTertiary}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
+              textContentType="newPassword"
+              autoComplete="new-password"
               editable={!isLoading}
             />
 
@@ -519,7 +580,6 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
   },
   scrollContent: {
     flexGrow: 1,
@@ -530,41 +590,81 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 60,
   },
+  brandContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  wordmark: {
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: 12,
+    paddingLeft: 12,
+  },
+  wordmarkLine: {
+    width: 28,
+    height: 1,
+    marginTop: 10,
+    opacity: 0.5,
+  },
+  stepBarContainer: {
+    marginBottom: 32,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  stepLine: {
+    flex: 1,
+    height: 1,
+    marginHorizontal: 8,
+    maxWidth: 80,
+  },
+  stepLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 0,
+    marginTop: 6,
+    width: 120,
+    alignSelf: 'center',
+  },
+  stepLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 0.5,
+  },
   title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#fff",
-    marginBottom: 8,
+    fontSize: 28,
+    fontWeight: "700",
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 16,
-    color: "#999",
+    fontSize: 15,
     marginBottom: 32,
   },
   form: {
     gap: 16,
   },
   input: {
-    backgroundColor: "#1a1a1a",
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: "#fff",
     borderWidth: 1,
-    borderColor: "#333",
   },
   phoneInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a1a1a",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#333",
     paddingLeft: 16,
   },
   phonePrefix: {
     fontSize: 16,
-    color: "#fff",
     fontWeight: "600",
     marginRight: 8,
   },
@@ -572,10 +672,8 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     fontSize: 16,
-    color: "#fff",
   },
   button: {
-    backgroundColor: "#6C63FF",
     borderRadius: 12,
     padding: 16,
     alignItems: "center",
@@ -585,7 +683,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: "#fff",
     fontSize: 16,
     fontWeight: "600",
   },
@@ -595,54 +692,42 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   footerText: {
-    color: "#999",
     fontSize: 14,
   },
   linkText: {
-    color: "#6C63FF",
     fontSize: 14,
     fontWeight: "600",
   },
   datePickerText: {
-    color: "#fff",
     fontSize: 16,
   },
   datePickerPlaceholder: {
-    color: "#999",
     fontSize: 16,
   },
   phoneDisplay: {
-    backgroundColor: "#1a1a1a",
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: "#333",
   },
   phoneDisplayLabel: {
-    color: "#999",
     fontSize: 14,
     marginBottom: 8,
   },
   phoneDisplayValue: {
-    color: "#fff",
     fontSize: 18,
     fontWeight: "600",
   },
   instructionText: {
-    color: "#999",
     fontSize: 14,
     textAlign: "center",
     marginBottom: 16,
   },
   codeInput: {
-    backgroundColor: "#1a1a1a",
     borderRadius: 12,
     padding: 16,
     fontSize: 24,
-    color: "#fff",
     borderWidth: 1,
-    borderColor: "#333",
     textAlign: "center",
     letterSpacing: 8,
     fontWeight: "600",
@@ -652,12 +737,28 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   resendText: {
-    color: "#6C63FF",
     fontSize: 14,
     textAlign: "center",
   },
   backButton: {
     marginTop: 24,
     padding: 12,
+  },
+  datePickerWrapper: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  dateConfirmButton: {
+    margin: 12,
+    marginTop: 4,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  dateConfirmText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

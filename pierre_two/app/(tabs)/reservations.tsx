@@ -11,10 +11,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API_URL } from '@/config/api';
+import { useApiFetch } from '@/config/apiFetch';
 import { TableReservation } from '@/types';
 import { useAuth } from '@/context/AuthContext';
+import { useFocusEffect } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { TableReservationDetailModal } from '@/components/reservation/TableReservationDetailModal';
 import * as Clipboard from 'expo-clipboard';
@@ -30,17 +32,18 @@ export default function ReservationsScreen() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const { user } = useAuth();
   const { theme } = useTheme();
+  const apiFetch = useApiFetch();
 
   const fetchReservations = async (silent = false) => {
+    if (!user?.id) return;
     if (!silent) setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/reservations/user/${user?.id}`);
+      const response = await apiFetch(`${API_URL}/reservations/user/${user.id}`);
       if (!response.ok) throw new Error('Failed to fetch reservations');
-
       const data = await response.json();
       setReservations(data.reservations || data);
-    } catch (error) {
-      console.error('Error fetching reservations:', error);
+    } catch (e: any) {
+      if (e.name === 'AbortError') return;
       setReservations([]);
     } finally {
       setLoading(false);
@@ -48,10 +51,15 @@ export default function ReservationsScreen() {
   };
 
   useEffect(() => {
-    if (user?.id) {
-      fetchReservations();
-    }
+    if (user?.id) fetchReservations();
   }, [user]);
+
+  // Refetch whenever this tab comes into focus so data stays fresh
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id) fetchReservations(true);
+    }, [user]),
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

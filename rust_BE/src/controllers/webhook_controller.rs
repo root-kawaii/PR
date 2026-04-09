@@ -9,7 +9,6 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::sync::Arc;
 use uuid::Uuid;
-use rust_decimal::Decimal;
 use tracing::{info, warn, error};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -56,24 +55,20 @@ pub async fn handle_stripe_webhook(
         }
     };
 
-    // Verify HMAC-SHA256 signature (skip if secret not configured)
-    if !state.stripe_webhook_secret.is_empty() {
-        let signed_payload = format!("{}.{}", timestamp, String::from_utf8_lossy(&body));
-
-        let mut mac = match HmacSha256::new_from_slice(state.stripe_webhook_secret.as_bytes()) {
-            Ok(m) => m,
-            Err(_) => {
-                error!("Invalid webhook secret configuration");
-                return StatusCode::INTERNAL_SERVER_ERROR;
-            }
-        };
-        mac.update(signed_payload.as_bytes());
-        let computed_sig = hex::encode(mac.finalize().into_bytes());
-
-        if computed_sig != expected_sig {
-            warn!("Invalid Stripe webhook signature");
-            return StatusCode::BAD_REQUEST;
+    // Verify HMAC-SHA256 signature — always enforced, no bypass
+    let signed_payload = format!("{}.{}", timestamp, String::from_utf8_lossy(&body));
+    let mut mac = match HmacSha256::new_from_slice(state.stripe_webhook_secret.as_bytes()) {
+        Ok(m) => m,
+        Err(_) => {
+            error!("Invalid webhook secret configuration");
+            return StatusCode::INTERNAL_SERVER_ERROR;
         }
+    };
+    mac.update(signed_payload.as_bytes());
+    let computed_sig = hex::encode(mac.finalize().into_bytes());
+    if computed_sig != expected_sig {
+        warn!("Invalid Stripe webhook signature");
+        return StatusCode::BAD_REQUEST;
     }
 
     // Parse JSON event payload
@@ -86,9 +81,44 @@ pub async fn handle_stripe_webhook(
     };
 
     let event_type = event["type"].as_str().unwrap_or("");
+    let stripe_event_id = event["id"].as_str().unwrap_or("");
     let payment_intent_id = event["data"]["object"]["id"].as_str().unwrap_or("");
 
-    info!(event_type = %event_type, payment_intent_id = %payment_intent_id, "Received Stripe webhook");
+    info!(event_type = %event_type, stripe_event_id = %stripe_event_id, payment_intent_id = %payment_intent_id, "Received Stripe webhook");
+
+    // Deduplication — ignore already-processed events (Stripe retries on non-200)
+    if !stripe_event_id.is_empty() {
+        match sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM processed_stripe_events WHERE stripe_event_id = $1)"
+        )
+        .bind(stripe_event_id)
+        .fetch_one(&state.db_pool)
+        .await
+        {
+            Ok(true) => {
+                info!(stripe_event_id = %stripe_event_id, "Duplicate Stripe event — already processed");
+                return StatusCode::OK;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                error!(error = %e, "Failed to check event deduplication");
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
+        }
+
+        // Mark event as processed before handling so concurrent retries are rejected
+        if let Err(e) = sqlx::query(
+            "INSERT INTO processed_stripe_events (stripe_event_id, event_type, processed_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
+        )
+        .bind(stripe_event_id)
+        .bind(event_type)
+        .execute(&state.db_pool)
+        .await
+        {
+            error!(error = %e, "Failed to record Stripe event as processed");
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+    }
 
     match event_type {
         "payment_intent.succeeded" => {
@@ -177,7 +207,10 @@ async fn update_payment_status(
     }
 }
 
-/// Handle checkout.session.completed webhook for guest split payments
+/// Handle checkout.session.completed webhook for guest split payments.
+/// All DB writes run inside a single transaction — if any step fails the whole
+/// batch is rolled back, preventing partial state (e.g. payment created but
+/// reservation amount_paid not incremented).
 async fn handle_checkout_session_completed(
     state: &AppState,
     session_id: &str,
@@ -206,12 +239,29 @@ async fn handle_checkout_session_completed(
         .to_string();
 
     let now = chrono::Utc::now().naive_utc();
-
-    // Create payment record for this guest
     let payment_id = Uuid::new_v4();
     let sender_id = share.user_id.unwrap_or_else(Uuid::nil);
 
-    match sqlx::query(
+    // Fetch the reservation before starting the transaction (read-only)
+    let reservation = match table_persistence::get_reservation_by_id(&state.db_pool, share.reservation_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            error!(error = %e, "Failed to get reservation for ticket creation");
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+    };
+
+    // Begin transaction — all writes are atomic
+    let mut tx = match state.db_pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            error!(error = %e, "Failed to begin transaction for checkout completion");
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+    };
+
+    // 1. Create payment record
+    if let Err(e) = sqlx::query(
         r#"
         INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -226,64 +276,62 @@ async fn handle_checkout_session_completed(
     .bind(now)
     .bind(&stripe_pi_id)
     .bind(&vec![sender_id])
-    .execute(&state.db_pool)
+    .execute(&mut *tx)
     .await
     {
-        Ok(_) => info!(payment_id = %payment_id, "Created payment record for guest"),
-        Err(e) => {
-            error!(error = %e, "Failed to create payment record for guest");
-            return StatusCode::INTERNAL_SERVER_ERROR;
-        }
+        error!(error = %e, "Failed to create payment record for guest");
+        let _ = tx.rollback().await;
+        return StatusCode::INTERNAL_SERVER_ERROR;
     }
+    info!(payment_id = %payment_id, "Created payment record for guest");
 
-    // Update payment share to paid
-    match table_persistence::update_payment_share_paid(
-        &state.db_pool,
-        share.id,
-        payment_id,
-        if stripe_pi_id.is_empty() { None } else { Some(stripe_pi_id) },
+    // 2. Mark payment share as paid
+    let stripe_pi_opt = if stripe_pi_id.is_empty() { None } else { Some(stripe_pi_id.clone()) };
+    if let Err(e) = sqlx::query(
+        r#"UPDATE reservation_payment_shares
+           SET status = 'paid',
+               payment_id = $1,
+               stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+               updated_at = NOW()
+           WHERE id = $3"#
     )
+    .bind(payment_id)
+    .bind(&stripe_pi_opt)
+    .bind(share.id)
+    .execute(&mut *tx)
     .await
     {
-        Ok(_) => info!(share_id = %share.id, "Payment share marked as paid"),
-        Err(e) => {
-            error!(error = %e, share_id = %share.id, "Failed to update payment share");
-            return StatusCode::INTERNAL_SERVER_ERROR;
-        }
+        error!(error = %e, share_id = %share.id, "Failed to update payment share");
+        let _ = tx.rollback().await;
+        return StatusCode::INTERNAL_SERVER_ERROR;
     }
+    info!(share_id = %share.id, "Payment share marked as paid");
 
-    // Update reservation amount_paid
-    match table_persistence::increment_reservation_amount_paid(
-        &state.db_pool,
-        share.reservation_id,
-        share.amount,
+    // 3. Increment reservation amount_paid and num_people (one new guest paid)
+    if let Err(e) = sqlx::query(
+        "UPDATE table_reservations SET amount_paid = amount_paid + $1, num_people = num_people + 1, updated_at = NOW() WHERE id = $2"
     )
+    .bind(share.amount)
+    .bind(share.reservation_id)
+    .execute(&mut *tx)
     .await
     {
-        Ok(_) => info!(reservation_id = %share.reservation_id, amount = %share.amount, "Reservation amount_paid updated"),
-        Err(e) => {
-            error!(error = %e, "Failed to update reservation amount_paid");
-            return StatusCode::INTERNAL_SERVER_ERROR;
-        }
+        error!(error = %e, "Failed to update reservation amount_paid and num_people");
+        let _ = tx.rollback().await;
+        return StatusCode::INTERNAL_SERVER_ERROR;
     }
+    info!(reservation_id = %share.reservation_id, amount = %share.amount, "Reservation amount_paid and num_people updated");
 
-    // Add payment to reservation's payment_ids array
-    let _ = table_persistence::add_payment_to_reservation(
-        &state.db_pool,
-        share.reservation_id,
-        payment_id,
-        Decimal::ZERO, // amount already incremented above
-    ).await;
+    // 4. Add payment ID to reservation's payment_ids array
+    let _ = sqlx::query(
+        "UPDATE table_reservations SET payment_ids = array_append(payment_ids, $1) WHERE id = $2"
+    )
+    .bind(payment_id)
+    .bind(share.reservation_id)
+    .execute(&mut *tx)
+    .await;
 
-    // Create ticket for the guest
-    let reservation = match table_persistence::get_reservation_by_id(&state.db_pool, share.reservation_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            error!(error = %e, "Failed to get reservation for ticket creation");
-            return StatusCode::INTERNAL_SERVER_ERROR;
-        }
-    };
-
+    // 5. Create ticket for the guest
     let ticket_code = generate_ticket_code();
     let ticket_id = Uuid::new_v4();
     match sqlx::query(
@@ -299,26 +347,46 @@ async fn handle_checkout_session_completed(
     .bind("table")
     .bind(share.amount)
     .bind("active")
-    .execute(&state.db_pool)
+    .execute(&mut *tx)
     .await
     {
         Ok(_) => {
             info!(ticket_id = %ticket_id, "Created ticket for guest");
-            // Link ticket to reservation
-            let _ = table_persistence::add_ticket_to_reservation(&state.db_pool, share.reservation_id, ticket_id).await;
+            let _ = sqlx::query(
+                "UPDATE table_reservations SET ticket_ids = array_append(ticket_ids, $1) WHERE id = $2"
+            )
+            .bind(ticket_id)
+            .bind(share.reservation_id)
+            .execute(&mut *tx)
+            .await;
         }
         Err(e) => {
             error!(error = %e, "Failed to create ticket for guest");
         }
     }
 
-    // Check if all shares are paid -> confirm reservation
-    match table_persistence::check_and_confirm_reservation(&state.db_pool, share.reservation_id).await {
-        Ok(_) => info!(reservation_id = %share.reservation_id, "Checked reservation confirmation status"),
-        Err(e) => error!(error = %e, "Failed to check reservation confirmation"),
+    // 6. Auto-confirm the reservation once amount_paid >= total_amount
+    if let Err(e) = sqlx::query(
+        r#"UPDATE table_reservations SET status = 'confirmed', updated_at = NOW()
+           WHERE id = $1
+             AND status != 'confirmed'
+             AND amount_paid >= total_amount"#
+    )
+    .bind(share.reservation_id)
+    .execute(&mut *tx)
+    .await
+    {
+        error!(error = %e, "Failed to check reservation confirmation");
     }
 
-    // Push notification to the reservation owner
+    // Commit everything atomically
+    if let Err(e) = tx.commit().await {
+        error!(error = %e, "Failed to commit checkout completion transaction");
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+    info!(reservation_id = %share.reservation_id, "Checkout completion transaction committed");
+
+    // Check final reservation status (for push notification — outside transaction)
     let reservation_status: Option<String> = sqlx::query_scalar(
         "SELECT status FROM table_reservations WHERE id = $1"
     )
