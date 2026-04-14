@@ -1,13 +1,62 @@
 use std::env;
 
 #[derive(Clone, Debug)]
-pub struct AppConfig {
-    pub database_url: String,
-    pub stripe_api_key: String,
+pub struct DatabaseConfig {
+    pub url: String,
+    pub read_url: Option<String>,
+    pub public_cache_ttl_seconds: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct AuthConfig {
     pub jwt_secret: String,
-    pub stripe_webhook_secret: String,
-    pub app_base_url: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct StripeConfig {
+    pub api_key: String,
+    pub webhook_secret: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct NotificationsConfig {
     pub alert_webhook_url: Option<String>,
+    pub twilio_account_sid: Option<String>,
+    pub twilio_auth_token: Option<String>,
+    pub twilio_verify_service_sid: Option<String>,
+    pub twilio_phone_number: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AnalyticsConfig {
+    pub outbox_poll_interval_seconds: u64,
+    pub outbox_batch_size: i64,
+    pub posthog_api_key: Option<String>,
+    pub posthog_host: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct FeatureFlagsConfig {
+    pub provider: String,
+    pub bootstrap_flags_from_env: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct JobsConfig {
+    pub payment_frequent_interval_seconds: u64,
+    pub idempotency_cleanup_interval_seconds: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct AppConfig {
+    pub database: DatabaseConfig,
+    pub auth: AuthConfig,
+    pub stripe: StripeConfig,
+    pub notifications: NotificationsConfig,
+    pub analytics: AnalyticsConfig,
+    pub feature_flags: FeatureFlagsConfig,
+    pub jobs: JobsConfig,
+    pub app_base_url: String,
     pub payment_share_ttl_hours: i64,
     pub port: u16,
 }
@@ -16,6 +65,11 @@ impl AppConfig {
     pub fn from_env() -> Self {
         let database_url = env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://postgres:password@localhost:5432/events".to_string());
+        let read_database_url = env::var("DATABASE_READ_URL").ok().filter(|s| !s.is_empty());
+        let public_cache_ttl_seconds = env::var("PUBLIC_CACHE_TTL_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(60);
 
         let stripe_api_key = env::var("STRIPE_SECRET_KEY")
             .or_else(|_| env::var("STRIPE_API_KEY"))
@@ -40,22 +94,79 @@ impl AppConfig {
         }
 
         let alert_webhook_url = env::var("ALERT_WEBHOOK_URL").ok().filter(|s| !s.is_empty());
+        let twilio_account_sid = env::var("TWILIO_ACCOUNT_SID").ok().filter(|s| !s.is_empty());
+        let twilio_auth_token = env::var("TWILIO_AUTH_TOKEN").ok().filter(|s| !s.is_empty());
+        let twilio_verify_service_sid = env::var("TWILIO_VERIFY_SERVICE_SID").ok().filter(|s| !s.is_empty());
+        let twilio_phone_number = env::var("TWILIO_PHONE_NUMBER").ok().filter(|s| !s.is_empty());
         let payment_share_ttl_hours = env::var("PAYMENT_SHARE_TTL_HOURS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(48);
+        let outbox_poll_interval_seconds = env::var("OUTBOX_POLL_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5);
+        let outbox_batch_size = env::var("OUTBOX_BATCH_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(50);
+        let posthog_api_key = env::var("POSTHOG_API_KEY").ok().filter(|s| !s.is_empty());
+        let posthog_host = env::var("POSTHOG_HOST")
+            .unwrap_or_else(|_| "https://eu.i.posthog.com".to_string());
+        let feature_flag_provider = env::var("FEATURE_FLAG_PROVIDER")
+            .unwrap_or_else(|_| "posthog".to_string());
+        let bootstrap_flags_from_env = env::var("FEATURE_FLAGS_BOOTSTRAP_FROM_ENV")
+            .ok()
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        let payment_frequent_interval_seconds = env::var("PAYMENT_FREQUENT_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(30 * 60);
+        let idempotency_cleanup_interval_seconds = env::var("IDEMPOTENCY_CLEANUP_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(3600);
         let port = env::var("PORT")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(3000);
 
         Self {
-            database_url,
-            stripe_api_key,
-            jwt_secret,
-            stripe_webhook_secret,
+            database: DatabaseConfig {
+                url: database_url,
+                read_url: read_database_url,
+                public_cache_ttl_seconds,
+            },
+            auth: AuthConfig {
+                jwt_secret,
+            },
+            stripe: StripeConfig {
+                api_key: stripe_api_key,
+                webhook_secret: stripe_webhook_secret,
+            },
+            notifications: NotificationsConfig {
+                alert_webhook_url,
+                twilio_account_sid,
+                twilio_auth_token,
+                twilio_verify_service_sid,
+                twilio_phone_number,
+            },
+            analytics: AnalyticsConfig {
+                outbox_poll_interval_seconds,
+                outbox_batch_size,
+                posthog_api_key,
+                posthog_host,
+            },
+            feature_flags: FeatureFlagsConfig {
+                provider: feature_flag_provider,
+                bootstrap_flags_from_env,
+            },
+            jobs: JobsConfig {
+                payment_frequent_interval_seconds,
+                idempotency_cleanup_interval_seconds,
+            },
             app_base_url,
-            alert_webhook_url,
             payment_share_ttl_hours,
             port,
         }

@@ -234,7 +234,7 @@ pub async fn send_sms_verification(
     }
 
     // Send SMS using Twilio Verify API (Twilio generates and manages the code)
-    match sms_service::send_verification_sms(&payload.phone_number).await {
+    match sms_service::send_verification_sms(&state.config, &payload.phone_number).await {
         Ok(_) => {
             // Log the verification attempt in our database for audit trail
             // Skipping database logging for now to simplify
@@ -261,7 +261,7 @@ pub async fn verify_sms_code(
     };
 
     // Verify the code using Twilio Verify API
-    let is_valid = match sms_service::verify_code(&payload.phone_number, &payload.verification_code).await {
+    let is_valid = match sms_service::verify_code(&state.config, &payload.phone_number, &payload.verification_code).await {
         Ok(valid) => valid,
         Err(e) => {
             tracing::error!(error = %e, "Twilio Verify error");

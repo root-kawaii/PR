@@ -26,7 +26,7 @@ pub async fn get_all_tickets(
     State(state): State<Arc<AppState>>,
     Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<TicketsResponse>, StatusCode> {
-    match ticket_persistence::get_all_tickets(&state.db_pool, pagination.limit, pagination.offset).await {
+    match ticket_persistence::get_all_tickets(&state.read_db_pool, pagination.limit, pagination.offset).await {
         Ok(tickets) => {
             let responses: Vec<TicketResponse> = tickets.into_iter().map(|t| t.into()).collect();
             Ok(Json(TicketsResponse { tickets: responses }))
@@ -42,7 +42,7 @@ pub async fn get_user_tickets_with_events(
 ) -> Result<Json<TicketsWithEventsResponse>, StatusCode> {
     let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let tickets = ticket_persistence::list_user_tickets_with_event_details(&state.db_pool, user_uuid)
+    let tickets = ticket_persistence::list_user_tickets_with_event_details(&state.read_db_pool, user_uuid)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -56,7 +56,7 @@ pub async fn get_ticket(
 ) -> Result<Json<TicketResponse>, StatusCode> {
     let ticket_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    match ticket_persistence::get_ticket_by_id(&state.db_pool, ticket_id).await {
+    match ticket_persistence::get_ticket_by_id(&state.read_db_pool, ticket_id).await {
         Ok(Some(ticket)) => Ok(Json(ticket.into())),
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -68,7 +68,7 @@ pub async fn get_ticket_by_code(
     State(state): State<Arc<AppState>>,
     Path(code): Path<String>,
 ) -> Result<Json<TicketResponse>, StatusCode> {
-    match ticket_persistence::get_ticket_by_code(&state.db_pool, &code).await {
+    match ticket_persistence::get_ticket_by_code(&state.read_db_pool, &code).await {
         Ok(Some(ticket)) => Ok(Json(ticket.into())),
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),

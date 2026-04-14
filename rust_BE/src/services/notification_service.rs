@@ -1,6 +1,8 @@
 use reqwest::Client;
 use tracing::{error, info, warn};
 
+use crate::bootstrap::config::AppConfig;
+
 /// Sends a plain SMS via the Twilio Messages API.
 ///
 /// Requires:
@@ -9,33 +11,22 @@ use tracing::{error, info, warn};
 ///   - `TWILIO_PHONE_NUMBER` (your Twilio "from" number, e.g. +15005550006 for test)
 ///
 /// Fire-and-forget — logs errors but never panics or blocks the caller.
-pub async fn send_sms(to: &str, body: &str) {
-    let account_sid = match std::env::var("TWILIO_ACCOUNT_SID")
-        .ok()
-        .filter(|s| !s.is_empty())
-    {
-        Some(s) => s,
-        None => {
-            info!(to = %to, "SMS skipped (TWILIO_ACCOUNT_SID not set)");
-            return;
-        }
+pub async fn send_sms(
+    config: &AppConfig,
+    to: &str,
+    body: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(account_sid) = config.notifications.twilio_account_sid.as_deref() else {
+        info!(to = %to, "SMS skipped (TWILIO_ACCOUNT_SID not set)");
+        return Ok(());
     };
-    let auth_token = match std::env::var("TWILIO_AUTH_TOKEN")
-        .ok()
-        .filter(|s| !s.is_empty())
-    {
-        Some(s) => s,
-        None => return,
+    let Some(auth_token) = config.notifications.twilio_auth_token.as_deref() else {
+        warn!("SMS skipped: TWILIO_AUTH_TOKEN not set");
+        return Ok(());
     };
-    let from = match std::env::var("TWILIO_PHONE_NUMBER")
-        .ok()
-        .filter(|s| !s.is_empty())
-    {
-        Some(s) => s,
-        None => {
-            warn!("SMS skipped: TWILIO_PHONE_NUMBER not set");
-            return;
-        }
+    let Some(from) = config.notifications.twilio_phone_number.as_deref() else {
+        warn!("SMS skipped: TWILIO_PHONE_NUMBER not set");
+        return Ok(());
     };
 
     let url = format!(
@@ -47,18 +38,21 @@ pub async fn send_sms(to: &str, body: &str) {
     match client
         .post(&url)
         .basic_auth(&account_sid, Some(&auth_token))
-        .form(&[("To", to), ("From", from.as_str()), ("Body", body)])
+        .form(&[("To", to), ("From", from), ("Body", body)])
         .send()
         .await
     {
         Ok(resp) if resp.status().is_success() => {
             info!(to = %to, "SMS sent successfully");
+            Ok(())
         }
         Ok(resp) => {
             warn!(to = %to, status = %resp.status(), "SMS returned non-success status");
+            Err(format!("SMS returned non-success status {}", resp.status()).into())
         }
         Err(e) => {
             error!(to = %to, error = %e, "Failed to send SMS");
+            Err(Box::new(e))
         }
     }
 }
@@ -69,9 +63,14 @@ pub async fn send_sms(to: &str, body: &str) {
 /// No API key required for Expo's free push service.
 ///
 /// Fire-and-forget — logs errors but never panics or blocks the caller.
-pub async fn send_push_notification(token: &str, title: &str, body: &str) {
+pub async fn send_push_notification(
+    _config: &AppConfig,
+    token: &str,
+    title: &str,
+    body: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if token.is_empty() {
-        return;
+        return Ok(());
     }
 
     let payload = serde_json::json!({
@@ -90,12 +89,15 @@ pub async fn send_push_notification(token: &str, title: &str, body: &str) {
     {
         Ok(resp) if resp.status().is_success() => {
             info!("Push notification sent");
+            Ok(())
         }
         Ok(resp) => {
             warn!(status = %resp.status(), "Push notification returned non-success status");
+            Err(format!("Push notification returned non-success status {}", resp.status()).into())
         }
         Err(e) => {
             error!(error = %e, "Failed to send push notification");
+            Err(Box::new(e))
         }
     }
 }

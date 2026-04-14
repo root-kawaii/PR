@@ -5,7 +5,7 @@ use axum::{
 };
 use uuid::Uuid;
 use std::sync::Arc;
-use tracing::{info, error};
+use tracing::{info, error, warn};
 
 use crate::application::payment_service::{
     load_all_payments_service,
@@ -16,6 +16,7 @@ use crate::application::payment_service::{
     cancel_payment_authorization_service,
     erase_payment_service,
 };
+use crate::application::outbox_service;
 use crate::models::{PaymentEntity, PaymentRequest, PaymentFilter, AppState, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentRequest, CancelPaymentResponse};
 use crate::middleware::auth::ClubOwnerUser;
 
@@ -44,6 +45,21 @@ pub async fn post_payment(
     info!(amount = ?payload.amount, "Creating payment");
     let payment = create_payment_service(payload, &app_state).await?;
     info!(payment_id = %payment.id, status = ?payment.status, "Payment created");
+
+    if let Err(error) = outbox_service::enqueue_analytics_event(
+        &app_state.db_pool,
+        "payment_created",
+        None,
+        Some("payment"),
+        Some(payment.id),
+        serde_json::json!({
+            "payment_id": payment.id,
+            "status": format!("{:?}", payment.status),
+        }),
+    ).await {
+        warn!(error = %error, payment_id = %payment.id, "Failed to enqueue payment created analytics event");
+    }
+
     Ok((StatusCode::CREATED, Json(payment)))
 }
 
@@ -89,6 +105,20 @@ pub async fn capture_payment(
         message: "Payment captured successfully".to_string(),
     };
 
+    if let Err(error) = outbox_service::enqueue_analytics_event(
+        &app_state.db_pool,
+        "payment_captured",
+        None,
+        Some("payment"),
+        Some(payment.id),
+        serde_json::json!({
+            "payment_id": payment.id,
+            "captured_amount": response.captured_amount,
+        }),
+    ).await {
+        warn!(error = %error, payment_id = %payment.id, "Failed to enqueue payment captured analytics event");
+    }
+
     Ok(Json(response))
 }
 
@@ -110,6 +140,19 @@ pub async fn cancel_payment(
         cancelled_at: payment.cancelled_at.ok_or(StatusCode::INTERNAL_SERVER_ERROR)?,
         message: "Payment authorization cancelled successfully".to_string(),
     };
+
+    if let Err(error) = outbox_service::enqueue_analytics_event(
+        &app_state.db_pool,
+        "payment_cancelled",
+        None,
+        Some("payment"),
+        Some(payment.id),
+        serde_json::json!({
+            "payment_id": payment.id,
+        }),
+    ).await {
+        warn!(error = %error, payment_id = %payment.id, "Failed to enqueue payment cancelled analytics event");
+    }
 
     Ok(Json(response))
 }

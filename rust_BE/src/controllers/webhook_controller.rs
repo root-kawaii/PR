@@ -1,4 +1,5 @@
 use crate::models::{AppState, PaymentStatus};
+use crate::application::outbox_service;
 use crate::application::reservation_service as table_persistence;
 use axum::{
     extract::State,
@@ -417,9 +418,14 @@ async fn handle_checkout_session_completed(
                     format!("{} ha pagato la sua parte.", guest_name),
                 )
             };
-            tokio::spawn(async move {
-                crate::services::notification_service::send_push_notification(&token, &title, &body).await;
-            });
+            let _ = outbox_service::enqueue_push_notification(
+                &state.db_pool,
+                &token,
+                &title,
+                &body,
+                Some("reservation"),
+                Some(share.reservation_id),
+            ).await;
         }
     }
 

@@ -8,6 +8,7 @@ mod application;
 mod bootstrap;
 mod controllers;
 mod infrastructure;
+mod jobs;
 mod utils;
 mod services;
 mod idempotency;

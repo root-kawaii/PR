@@ -11,6 +11,7 @@ use stripe::{
 
 use crate::bootstrap::state::AppState;
 use crate::application::{
+    outbox_service,
     payment_service::capture_payment_service,
     reservation_service::check_and_confirm_reservation,
 };
@@ -74,7 +75,9 @@ pub async fn run(state: Arc<AppState>) {
 
 /// Runs capture + reconciliation every 30 minutes.
 async fn run_frequent_loop(state: Arc<AppState>) {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+        state.config.jobs.payment_frequent_interval_seconds,
+    ));
 
     loop {
         interval.tick().await;
@@ -89,6 +92,14 @@ async fn run_frequent_loop(state: Arc<AppState>) {
         run_checkout_reconciliation(&state).await;
 
         info!("Scheduler: frequent job complete");
+        crate::jobs::record_job_run(
+            &state,
+            "payment_maintenance_frequent",
+            "success",
+            serde_json::json!({ "date": today.to_string() }),
+            None,
+        )
+        .await;
     }
 }
 
@@ -109,6 +120,14 @@ async fn run_daily_loop(state: Arc<AppState>) {
         run_payment_share_expiry(&state).await;
 
         info!("Scheduler: daily job complete");
+        crate::jobs::record_job_run(
+            &state,
+            "payment_maintenance_daily",
+            "success",
+            serde_json::json!({ "date": today.to_string() }),
+            None,
+        )
+        .await;
     }
 }
 
@@ -508,10 +527,17 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
                 "Un ospite ({}) non ha pagato la sua parte di €{:.2} per {} a {}. Puoi riassegnare il posto.",
                 guest_phone, share.amount, share.event_name, share.table_name,
             );
-            let owner_phone = owner_phone.clone();
-            tokio::spawn(async move {
-                crate::services::notification_service::send_sms(&owner_phone, &sms).await;
-            });
+            if let Err(error) = outbox_service::enqueue_sms_notification(
+                &state.db_pool,
+                owner_phone,
+                &sms,
+                Some("reservation"),
+                Some(share.reservation_id),
+            )
+            .await
+            {
+                error!(reservation_id = %share.reservation_id, error = %error, "Failed to enqueue owner SMS notification");
+            }
         }
 
         // Push notification to owner if they have a push token
@@ -521,10 +547,18 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
                 "L'ospite {} non ha pagato la sua parte (€{:.2}) per {}.",
                 guest_phone, share.amount, share.event_name,
             );
-            let push_token = push_token.clone();
-            tokio::spawn(async move {
-                crate::services::notification_service::send_push_notification(&push_token, &title, &body).await;
-            });
+            if let Err(error) = outbox_service::enqueue_push_notification(
+                &state.db_pool,
+                push_token,
+                &title,
+                &body,
+                Some("reservation"),
+                Some(share.reservation_id),
+            )
+            .await
+            {
+                error!(reservation_id = %share.reservation_id, error = %error, "Failed to enqueue owner push notification");
+            }
         }
     }
 }
@@ -536,29 +570,12 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
 /// Sends an alert message to the configured Discord/Slack webhook.
 /// Silently does nothing if no webhook URL is configured.
 async fn send_alert(state: &AppState, message: &str) {
-    let url = match &state.alert_webhook_url {
-        Some(u) if !u.is_empty() => u.clone(),
-        _ => return,
-    };
+    if state.alert_webhook_url.is_none() {
+        return;
+    }
 
-    // Discord and Slack both accept {"content": "..."} / {"text": "..."}
-    // We send both keys so it works with either platform.
-    let payload = serde_json::json!({
-        "content": message,
-        "text": message,
-    });
-
-    let client = reqwest::Client::new();
-    match client.post(&url).json(&payload).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            info!("Alert sent successfully");
-        }
-        Ok(resp) => {
-            warn!(status = %resp.status(), "Alert webhook returned non-success status");
-        }
-        Err(e) => {
-            error!(error = %e, "Failed to send alert webhook");
-        }
+    if let Err(error) = outbox_service::enqueue_alert_webhook(&state.db_pool, message, "payment_maintenance").await {
+        error!(error = %error, "Failed to enqueue alert webhook");
     }
 }
 
