@@ -7,6 +7,7 @@ use crate::idempotency::IdempotencyService;
 
 pub struct AppState {
     pub db_pool: PgPool,
+    pub read_db_pool: PgPool,
     pub stripe_client: stripe::Client,
     pub jwt_secret: String,
     pub idempotency_service: IdempotencyService,
@@ -19,17 +20,19 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         db_pool: PgPool,
+        read_db_pool: PgPool,
         stripe_client: stripe::Client,
         idempotency_service: IdempotencyService,
         config: Arc<AppConfig>,
     ) -> Self {
         Self {
             db_pool,
+            read_db_pool,
             stripe_client,
-            jwt_secret: config.jwt_secret.clone(),
+            jwt_secret: config.auth.jwt_secret.clone(),
             idempotency_service,
-            stripe_webhook_secret: config.stripe_webhook_secret.clone(),
-            alert_webhook_url: config.alert_webhook_url.clone(),
+            stripe_webhook_secret: config.stripe.webhook_secret.clone(),
+            alert_webhook_url: config.notifications.alert_webhook_url.clone(),
             payment_share_ttl_hours: config.payment_share_ttl_hours,
             config,
         }

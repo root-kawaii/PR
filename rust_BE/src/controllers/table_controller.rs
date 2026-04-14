@@ -219,7 +219,7 @@ pub async fn get_user_reservations_with_details(
 ) -> Result<Json<TableReservationsWithDetailsResponse>, StatusCode> {
     let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let reservations = table_persistence::list_user_reservations_with_details(&state.db_pool, user_uuid)
+    let reservations = table_persistence::list_user_reservations_with_details(&state.read_db_pool, user_uuid)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -775,7 +775,7 @@ pub async fn create_reservation_with_payment(
             (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
         })?;
 
-    let app_base_url = std::env::var("APP_BASE_URL").unwrap_or_default();
+    let app_base_url = state.config.app_base_url.clone();
     let share_link = format!("{}/pay/{}", app_base_url, payment_link_token);
 
     tracing::info!(
@@ -1032,7 +1032,7 @@ pub async fn create_payment_link_checkout(
         }
     ]);
 
-    let app_base_url = std::env::var("APP_BASE_URL").unwrap_or_else(|_| "https://pierre-two-backend.fly.dev".to_string());
+    let app_base_url = state.config.app_base_url.clone();
     let success_url = format!("{}/payment/success?session_id={{CHECKOUT_SESSION_ID}}", app_base_url);
     let cancel_url = format!("{}/payment/cancel/{}", app_base_url, token);
     checkout_params.success_url = Some(&success_url);
@@ -1109,7 +1109,7 @@ pub async fn get_reservation_payment_status(
 
     let amount_remaining = reservation.total_amount - reservation.amount_paid;
 
-    let app_base_url = std::env::var("APP_BASE_URL").unwrap_or_default();
+    let app_base_url = state.config.app_base_url.clone();
     let share_link = reservation.payment_link_token.as_ref()
         .map(|token| format!("{}/pay/{}", app_base_url, token));
 
@@ -1133,10 +1133,10 @@ pub async fn get_reservation_payment_status(
 /// - If the Pierre app is installed, the deep link opens it automatically.
 /// - Otherwise the page falls back to a full web payment flow.
 pub async fn guest_payment_page(
+    State(state): State<Arc<AppState>>,
     Path(token): Path<String>,
 ) -> axum::response::Response {
-    let base_url = std::env::var("APP_BASE_URL")
-        .unwrap_or_else(|_| "https://pierre-two-backend.fly.dev".to_string());
+    let base_url = state.config.app_base_url.clone();
     let api_base = base_url.clone();
 
     let html = format!(r#"<!DOCTYPE html>
@@ -1355,10 +1355,10 @@ pub async fn payment_success_page() -> axum::response::Response {
 
 /// Simple cancel page shown if the guest exits Stripe Checkout without paying.
 pub async fn payment_cancel_page(
+    State(state): State<Arc<AppState>>,
     Path(token): Path<String>,
 ) -> axum::response::Response {
-    let base_url = std::env::var("APP_BASE_URL")
-        .unwrap_or_else(|_| "https://pierre-two-backend.fly.dev".to_string());
+    let base_url = state.config.app_base_url.clone();
     let pay_url = format!("{}/pay/{}", base_url, token);
 
     let html = format!(r#"<!DOCTYPE html>

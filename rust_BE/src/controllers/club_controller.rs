@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub async fn get_all_clubs(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ClubResponse>>, StatusCode> {
-    match club_persistence::get_all_clubs(&state.db_pool).await {
+    match club_persistence::get_all_clubs(&state.read_db_pool).await {
         Ok(clubs) => {
             let responses: Vec<ClubResponse> = clubs.into_iter().map(|c| c.into()).collect();
             Ok(Json(responses))
@@ -29,7 +29,7 @@ pub async fn get_club(
 ) -> Result<Json<ClubResponse>, StatusCode> {
     let club_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    match club_persistence::get_club_by_id(&state.db_pool, club_id).await {
+    match club_persistence::get_club_by_id(&state.read_db_pool, club_id).await {
         Ok(Some(club)) => Ok(Json(club.into())),
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),

@@ -14,6 +14,7 @@ use crate::application::{
     club_owner_service as club_owner_persistence,
     club_service as club_persistence,
     event_service as event_persistence,
+    outbox_service,
     reservation_service as table_persistence,
 };
 use crate::utils::jwt;
@@ -25,6 +26,7 @@ use axum::{
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rust_decimal::Decimal;
 use std::sync::Arc;
+use tracing::warn;
 use uuid::Uuid;
 
 /// Register a new club owner and create their club
@@ -484,7 +486,7 @@ pub async fn get_event_reservations_handler(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let reservations = club_owner_persistence::list_event_reservations(&state.db_pool, event_uuid)
+    let reservations = club_owner_persistence::list_event_reservations(&state.read_db_pool, event_uuid)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -529,6 +531,22 @@ pub async fn create_manual_reservation_handler(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    if let Err(error) = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        "owner_manual_reservation_created",
+        Some(&claims.sub),
+        Some("reservation"),
+        Some(reservation.id),
+        serde_json::json!({
+            "event_id": event_uuid,
+            "table_id": table_uuid,
+            "owner_id": claims.sub,
+            "reservation_id": reservation.id,
+        }),
+    ).await {
+        warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue manual reservation analytics event");
+    }
+
     Ok((StatusCode::CREATED, Json(TableReservationResponse::from(reservation))))
 }
 
@@ -551,6 +569,21 @@ pub async fn update_reservation_status_handler(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
+    if let Err(error) = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        "reservation_status_updated",
+        Some(&claims.sub),
+        Some("reservation"),
+        Some(reservation.id),
+        serde_json::json!({
+            "reservation_id": reservation.id,
+            "status": reservation.status,
+            "owner_id": claims.sub,
+        }),
+    ).await {
+        warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue reservation status analytics event");
+    }
+
     Ok(Json(TableReservationResponse::from(reservation)))
 }
 
@@ -567,7 +600,24 @@ pub async fn scan_code_handler(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match result {
-        Some(scan) => Ok(Json(scan)),
+        Some(scan) => {
+            if scan.valid {
+                let _ = outbox_service::enqueue_analytics_event(
+                    &state.db_pool,
+                    "ticket_checked_in",
+                    Some(&claims.sub),
+                    Some("checkin"),
+                    None,
+                    serde_json::json!({
+                        "owner_id": claims.sub,
+                        "code": code,
+                        "scan_type": scan.scan_type,
+                        "event_title": scan.event_title,
+                    }),
+                ).await;
+            }
+            Ok(Json(scan))
+        }
         None => Ok(Json(ScanResult {
             valid: false,
             already_used: false,

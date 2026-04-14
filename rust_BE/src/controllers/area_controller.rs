@@ -25,7 +25,7 @@ pub async fn list_areas_by_club(
     Path(club_id): Path<String>,
 ) -> Result<Json<Vec<AreaResponse>>, StatusCode> {
     let club_uuid = Uuid::parse_str(&club_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let areas = area_persistence::get_areas_by_club(&state.db_pool, club_uuid)
+    let areas = area_persistence::get_areas_by_club(&state.read_db_pool, club_uuid)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(areas.into_iter().map(AreaResponse::from).collect()))

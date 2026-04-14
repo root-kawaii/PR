@@ -1,6 +1,7 @@
 use reqwest::Client;
 use serde::Deserialize;
-use std::env;
+
+use crate::bootstrap::config::AppConfig;
 
 #[derive(Debug, Deserialize)]
 struct TwilioVerifyResponse {
@@ -16,11 +17,13 @@ struct TwilioVerifyCheckResponse {
 
 /// Send verification SMS using Twilio Verify API
 /// This function initiates the verification - Twilio generates and sends the code
-pub async fn send_verification_sms(phone_number: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // Get Twilio credentials from environment
-    let account_sid = env::var("TWILIO_ACCOUNT_SID").ok();
-    let auth_token = env::var("TWILIO_AUTH_TOKEN").ok();
-    let verify_service_sid = env::var("TWILIO_VERIFY_SERVICE_SID").ok();
+pub async fn send_verification_sms(
+    config: &AppConfig,
+    phone_number: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let account_sid = config.notifications.twilio_account_sid.clone();
+    let auth_token = config.notifications.twilio_auth_token.clone();
+    let verify_service_sid = config.notifications.twilio_verify_service_sid.clone();
 
     // If Twilio is not configured, just log (for development)
     if account_sid.is_none() || auth_token.is_none() || verify_service_sid.is_none() {
@@ -64,11 +67,14 @@ pub async fn send_verification_sms(phone_number: &str) -> Result<(), Box<dyn std
 }
 
 /// Verify the code using Twilio Verify API
-pub async fn verify_code(phone_number: &str, code: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    // Get Twilio credentials from environment
-    let account_sid = env::var("TWILIO_ACCOUNT_SID").ok();
-    let auth_token = env::var("TWILIO_AUTH_TOKEN").ok();
-    let verify_service_sid = env::var("TWILIO_VERIFY_SERVICE_SID").ok();
+pub async fn verify_code(
+    config: &AppConfig,
+    phone_number: &str,
+    code: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let account_sid = config.notifications.twilio_account_sid.clone();
+    let auth_token = config.notifications.twilio_auth_token.clone();
+    let verify_service_sid = config.notifications.twilio_verify_service_sid.clone();
 
     // If Twilio is not configured, accept '123456' for development
     if account_sid.is_none() || auth_token.is_none() || verify_service_sid.is_none() {
