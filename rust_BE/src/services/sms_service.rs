@@ -20,7 +20,7 @@ struct TwilioVerifyCheckResponse {
 pub async fn send_verification_sms(
     config: &AppConfig,
     phone_number: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let account_sid = config.notifications.twilio_account_sid.clone();
     let auth_token = config.notifications.twilio_auth_token.clone();
     let verify_service_sid = config.notifications.twilio_verify_service_sid.clone();
@@ -71,7 +71,7 @@ pub async fn verify_code(
     config: &AppConfig,
     phone_number: &str,
     code: &str,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let account_sid = config.notifications.twilio_account_sid.clone();
     let auth_token = config.notifications.twilio_auth_token.clone();
     let verify_service_sid = config.notifications.twilio_verify_service_sid.clone();

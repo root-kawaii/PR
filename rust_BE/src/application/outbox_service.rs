@@ -1,6 +1,8 @@
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::application::analytics_service;
+use crate::bootstrap::config::AppConfig;
 use crate::infrastructure::outbox;
 
 pub async fn enqueue_alert_webhook(
@@ -65,12 +67,20 @@ pub async fn enqueue_sms_notification(
 
 pub async fn enqueue_analytics_event(
     pool: &sqlx::PgPool,
+    config: &AppConfig,
     event_name: &str,
     distinct_id: Option<&str>,
     aggregate_type: Option<&str>,
     aggregate_id: Option<Uuid>,
     properties: serde_json::Value,
 ) -> Result<Uuid, sqlx::Error> {
+    let properties = analytics_service::build_properties(
+        config,
+        aggregate_type,
+        aggregate_id,
+        properties,
+    );
+
     outbox::enqueue_event(
         pool,
         "analytics.capture",
@@ -81,6 +91,36 @@ pub async fn enqueue_analytics_event(
             "distinct_id": distinct_id,
             "properties": properties,
         }),
+    )
+    .await
+}
+
+pub async fn enqueue_analytics_error(
+    pool: &sqlx::PgPool,
+    config: &AppConfig,
+    event_name: &str,
+    distinct_id: Option<&str>,
+    aggregate_type: Option<&str>,
+    aggregate_id: Option<Uuid>,
+    error_message: &str,
+    properties: serde_json::Value,
+) -> Result<Uuid, sqlx::Error> {
+    let mut props = match properties {
+        serde_json::Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    props.insert("outcome".to_string(), json!("failure"));
+    props.insert("severity".to_string(), json!("error"));
+    props.insert("error_message".to_string(), json!(error_message));
+
+    enqueue_analytics_event(
+        pool,
+        config,
+        event_name,
+        distinct_id,
+        aggregate_type,
+        aggregate_id,
+        serde_json::Value::Object(props),
     )
     .await
 }

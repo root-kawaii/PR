@@ -43,11 +43,31 @@ pub async fn post_payment(
     Json(payload): Json<PaymentRequest>
 ) -> Result<(StatusCode, Json<PaymentEntity>), StatusCode> {
     info!(amount = ?payload.amount, "Creating payment");
-    let payment = create_payment_service(payload, &app_state).await?;
+    let payment = match create_payment_service(payload, &app_state).await {
+        Ok(payment) => payment,
+        Err(status) => {
+            let _ = outbox_service::enqueue_analytics_error(
+                &app_state.db_pool,
+                &app_state.config,
+                "payment_create_failed",
+                None,
+                Some("payment"),
+                None,
+                &format!("status_{status}"),
+                serde_json::json!({
+                    "status_code": status.as_u16(),
+                    "outcome": "failure",
+                    "severity": "error",
+                }),
+            ).await;
+            return Err(status);
+        }
+    };
     info!(payment_id = %payment.id, status = ?payment.status, "Payment created");
 
     if let Err(error) = outbox_service::enqueue_analytics_event(
         &app_state.db_pool,
+        &app_state.config,
         "payment_created",
         None,
         Some("payment"),
@@ -55,6 +75,7 @@ pub async fn post_payment(
         serde_json::json!({
             "payment_id": payment.id,
             "status": format!("{:?}", payment.status),
+            "outcome": "success",
         }),
     ).await {
         warn!(error = %error, payment_id = %payment.id, "Failed to enqueue payment created analytics event");
@@ -93,8 +114,27 @@ pub async fn capture_payment(
     Json(payload): Json<CapturePaymentRequest>
 ) -> Result<Json<CapturePaymentResponse>, StatusCode> {
     info!(payment_id = %id, amount = ?payload.amount, "Capturing payment");
-    let payment = capture_payment_service(id, payload.amount, payload.idempotency_key, &app_state).await
-        .map_err(|e| { error!(payment_id = %id, status = ?e, "Payment capture failed"); e })?;
+    let payment = match capture_payment_service(id, payload.amount, payload.idempotency_key, &app_state).await {
+        Ok(payment) => payment,
+        Err(status) => {
+            error!(payment_id = %id, status = ?status, "Payment capture failed");
+            let _ = outbox_service::enqueue_analytics_error(
+                &app_state.db_pool,
+                &app_state.config,
+                "payment_capture_failed",
+                None,
+                Some("payment"),
+                Some(id),
+                &format!("status_{status}"),
+                serde_json::json!({
+                    "payment_id": id,
+                    "status_code": status.as_u16(),
+                    "requested_amount": payload.amount,
+                }),
+            ).await;
+            return Err(status);
+        }
+    };
 
     info!(payment_id = %payment.id, captured_amount = ?payment.captured_amount, "Payment captured successfully");
     let response = CapturePaymentResponse {
@@ -107,6 +147,7 @@ pub async fn capture_payment(
 
     if let Err(error) = outbox_service::enqueue_analytics_event(
         &app_state.db_pool,
+        &app_state.config,
         "payment_captured",
         None,
         Some("payment"),
@@ -114,6 +155,7 @@ pub async fn capture_payment(
         serde_json::json!({
             "payment_id": payment.id,
             "captured_amount": response.captured_amount,
+            "outcome": "success",
         }),
     ).await {
         warn!(error = %error, payment_id = %payment.id, "Failed to enqueue payment captured analytics event");
@@ -130,8 +172,26 @@ pub async fn cancel_payment(
     Json(payload): Json<CancelPaymentRequest>,
 ) -> Result<Json<CancelPaymentResponse>, StatusCode> {
     info!(payment_id = %id, "Cancelling payment authorization");
-    let payment = cancel_payment_authorization_service(id, payload.idempotency_key, &app_state).await
-        .map_err(|e| { error!(payment_id = %id, status = ?e, "Payment cancellation failed"); e })?;
+    let payment = match cancel_payment_authorization_service(id, payload.idempotency_key, &app_state).await {
+        Ok(payment) => payment,
+        Err(status) => {
+            error!(payment_id = %id, status = ?status, "Payment cancellation failed");
+            let _ = outbox_service::enqueue_analytics_error(
+                &app_state.db_pool,
+                &app_state.config,
+                "payment_cancel_failed",
+                None,
+                Some("payment"),
+                Some(id),
+                &format!("status_{status}"),
+                serde_json::json!({
+                    "payment_id": id,
+                    "status_code": status.as_u16(),
+                }),
+            ).await;
+            return Err(status);
+        }
+    };
 
     info!(payment_id = %payment.id, "Payment authorization cancelled");
     let response = CancelPaymentResponse {
@@ -143,12 +203,14 @@ pub async fn cancel_payment(
 
     if let Err(error) = outbox_service::enqueue_analytics_event(
         &app_state.db_pool,
+        &app_state.config,
         "payment_cancelled",
         None,
         Some("payment"),
         Some(payment.id),
         serde_json::json!({
             "payment_id": payment.id,
+            "outcome": "success",
         }),
     ).await {
         warn!(error = %error, payment_id = %payment.id, "Failed to enqueue payment cancelled analytics event");

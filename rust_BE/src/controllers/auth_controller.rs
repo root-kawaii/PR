@@ -1,5 +1,6 @@
 use crate::models::{AppState, AuthResponse, LoginRequest, RegisterRequest, UserResponse};
 use crate::application::auth_service as user_persistence;
+use crate::application::outbox_service;
 use crate::utils::jwt;
 use crate::services::sms_service;
 use crate::middleware::auth::AuthUser;
@@ -236,8 +237,18 @@ pub async fn send_sms_verification(
     // Send SMS using Twilio Verify API (Twilio generates and manages the code)
     match sms_service::send_verification_sms(&state.config, &payload.phone_number).await {
         Ok(_) => {
-            // Log the verification attempt in our database for audit trail
-            // Skipping database logging for now to simplify
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "sms_verification_sent",
+                Some(&payload.user_id),
+                Some("user"),
+                Some(user_uuid),
+                serde_json::json!({
+                    "user_id": user_uuid,
+                    "outcome": "success",
+                }),
+            ).await;
 
             Ok(Json(SendSmsResponse {
                 message: "Verification code sent successfully".to_string(),
@@ -245,6 +256,18 @@ pub async fn send_sms_verification(
         },
         Err(e) => {
             tracing::error!(error = %e, "SMS sending error");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "sms_verification_send_failed",
+                Some(&payload.user_id),
+                Some("user"),
+                Some(user_uuid),
+                &e.to_string(),
+                serde_json::json!({
+                    "user_id": user_uuid,
+                }),
+            ).await;
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -265,11 +288,35 @@ pub async fn verify_sms_code(
         Ok(valid) => valid,
         Err(e) => {
             tracing::error!(error = %e, "Twilio Verify error");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "sms_verification_check_failed",
+                Some(&payload.user_id),
+                Some("user"),
+                Some(user_uuid),
+                &e.to_string(),
+                serde_json::json!({
+                    "user_id": user_uuid,
+                }),
+            ).await;
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
 
     if !is_valid {
+        let _ = outbox_service::enqueue_analytics_event(
+            &state.db_pool,
+            &state.config,
+            "sms_verification_invalid",
+            Some(&payload.user_id),
+            Some("user"),
+            Some(user_uuid),
+            serde_json::json!({
+                "user_id": user_uuid,
+                "outcome": "invalid",
+            }),
+        ).await;
         return Ok(Json(VerifySmsResponse {
             message: "Invalid or expired verification code".to_string(),
             verified: false,
@@ -290,6 +337,18 @@ pub async fn verify_sms_code(
     .await
     {
         Ok(_) => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "sms_verification_verified",
+                Some(&payload.user_id),
+                Some("user"),
+                Some(user_uuid),
+                serde_json::json!({
+                    "user_id": user_uuid,
+                    "outcome": "success",
+                }),
+            ).await;
             Ok(Json(VerifySmsResponse {
                 message: "Phone number verified successfully".to_string(),
                 verified: true,
@@ -297,6 +356,18 @@ pub async fn verify_sms_code(
         },
         Err(e) => {
             tracing::error!(error = %e, "Database error updating user phone verification");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "sms_verification_persist_failed",
+                Some(&payload.user_id),
+                Some("user"),
+                Some(user_uuid),
+                &e.to_string(),
+                serde_json::json!({
+                    "user_id": user_uuid,
+                }),
+            ).await;
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

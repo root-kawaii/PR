@@ -533,6 +533,7 @@ pub async fn create_manual_reservation_handler(
 
     if let Err(error) = outbox_service::enqueue_analytics_event(
         &state.db_pool,
+        &state.config,
         "owner_manual_reservation_created",
         Some(&claims.sub),
         Some("reservation"),
@@ -542,6 +543,7 @@ pub async fn create_manual_reservation_handler(
             "table_id": table_uuid,
             "owner_id": claims.sub,
             "reservation_id": reservation.id,
+            "outcome": "success",
         }),
     ).await {
         warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue manual reservation analytics event");
@@ -571,6 +573,7 @@ pub async fn update_reservation_status_handler(
 
     if let Err(error) = outbox_service::enqueue_analytics_event(
         &state.db_pool,
+        &state.config,
         "reservation_status_updated",
         Some(&claims.sub),
         Some("reservation"),
@@ -579,6 +582,7 @@ pub async fn update_reservation_status_handler(
             "reservation_id": reservation.id,
             "status": reservation.status,
             "owner_id": claims.sub,
+            "outcome": "success",
         }),
     ).await {
         warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue reservation status analytics event");
@@ -604,6 +608,7 @@ pub async fn scan_code_handler(
             if scan.valid {
                 let _ = outbox_service::enqueue_analytics_event(
                     &state.db_pool,
+                    &state.config,
                     "ticket_checked_in",
                     Some(&claims.sub),
                     Some("checkin"),
@@ -613,6 +618,7 @@ pub async fn scan_code_handler(
                         "code": code,
                         "scan_type": scan.scan_type,
                         "event_title": scan.event_title,
+                        "outcome": "success",
                     }),
                 ).await;
             }

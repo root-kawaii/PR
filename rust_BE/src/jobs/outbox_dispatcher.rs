@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use serde_json::{json, Value};
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 use crate::bootstrap::state::AppState;
 use crate::infrastructure::outbox::{self, OutboxEvent};
@@ -167,37 +167,20 @@ async fn dispatch_analytics_event(state: &AppState, payload: &Value) -> Result<(
         .get("event")
         .and_then(Value::as_str)
         .ok_or_else(|| "Missing analytics event name".to_string())?;
+    let distinct_id = payload
+        .get("distinct_id")
+        .and_then(Value::as_str)
+        .unwrap_or("system");
+    let properties = payload
+        .get("properties")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
-    if let Some(api_key) = &state.config.analytics.posthog_api_key {
-        let host = state.config.analytics.posthog_host.trim_end_matches('/');
-        let distinct_id = payload
-            .get("distinct_id")
-            .and_then(Value::as_str)
-            .unwrap_or("system");
-        let properties = payload
-            .get("properties")
-            .cloned()
-            .unwrap_or_else(|| json!({}));
-        let body = json!({
-            "api_key": api_key,
-            "event": event_name,
-            "distinct_id": distinct_id,
-            "properties": properties,
-        });
-
-        let response = reqwest::Client::new()
-            .post(format!("{host}/capture/"))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|error| error.to_string())?;
-
-        if !response.status().is_success() {
-            return Err(format!("PostHog returned status {}", response.status()));
-        }
-    } else {
-        info!(event = event_name, "Analytics event delivered to local sink");
-    }
-
-    Ok(())
+    crate::infrastructure::analytics::posthog::capture_event(
+        &state.config.analytics,
+        event_name,
+        distinct_id,
+        properties,
+    )
+    .await
 }
