@@ -9,8 +9,11 @@ use stripe::{
     PaymentIntentOffSession,
 };
 
-use crate::models::AppState;
-use crate::persistences::payment_persistence::capture_payment_service;
+use crate::bootstrap::state::AppState;
+use crate::application::{
+    payment_service::capture_payment_service,
+    reservation_service::check_and_confirm_reservation,
+};
 
 // Row returned by the scheduler query
 #[derive(sqlx::FromRow)]
@@ -414,11 +417,7 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
         }
 
         // Check if all shares paid -> confirm reservation
-        let _ = crate::persistences::table_persistence::check_and_confirm_reservation(
-            &state.db_pool,
-            share.reservation_id,
-        )
-        .await;
+        let _ = check_and_confirm_reservation(&state.db_pool, share.reservation_id).await;
 
         info!(share_id = %share.share_id, payment_id = %payment_id, "Reconciliation: share reconciled successfully");
         send_alert(state, &format!("Reconciliation: recovered missed payment for share {}", share.share_id)).await;

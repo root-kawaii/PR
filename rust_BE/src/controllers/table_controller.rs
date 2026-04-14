@@ -11,7 +11,10 @@ use crate::models::{
     ReservationPaymentStatusResponse,
     TableSummary, PaymentStatus, PaymentCaptureMethod, EventSummary,
 };
-use crate::persistences::{table_persistence, user_persistence};
+use crate::application::{
+    auth_service as user_persistence,
+    reservation_service as table_persistence,
+};
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::PaginationParams;
 use axum::{
@@ -216,85 +219,9 @@ pub async fn get_user_reservations_with_details(
 ) -> Result<Json<TableReservationsWithDetailsResponse>, StatusCode> {
     let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    // Fetch reservations with table details
-    let reservation_results = match table_persistence::get_reservations_with_details_by_user_id(&state.db_pool, user_uuid).await {
-        Ok(results) => results,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-    };
-
-    // Get all reservation IDs to fetch event details
-    let reservation_ids: Vec<Uuid> = reservation_results.iter().map(|r| r.0).collect();
-
-    // Fetch event details for all reservations
-    let event_results = match table_persistence::get_event_details_by_reservation_ids(&state.db_pool, reservation_ids).await {
-        Ok(results) => results,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-    };
-
-    // Create a hashmap for quick event lookup by reservation_id
-    use std::collections::HashMap;
-    let event_map: HashMap<Uuid, (Uuid, String, String, String, String)> = event_results
-        .into_iter()
-        .map(|(res_id, event_id, title, venue, date, image)| {
-            (res_id, (event_id, title, venue, date, image))
-        })
-        .collect();
-
-    // Combine reservation + table data with event data
-    let reservations: Vec<TableReservationWithDetailsResponse> = reservation_results
-        .into_iter()
-        .map(|(
-            res_id, res_code, status, num_people, total_amount, amount_paid,
-            contact_name, contact_email, contact_phone, special_requests, created_at,
-            table_id, table_name, table_zone, capacity, min_spend
-        )| {
-            let amount_remaining = total_amount - amount_paid;
-
-            // Look up event data for this reservation
-            let (event_id, event_title, event_venue, event_date, event_image) = event_map
-                .get(&res_id)
-                .cloned()
-                .unwrap_or_else(|| (
-                    Uuid::nil(),
-                    String::from("Unknown Event"),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                ));
-
-            TableReservationWithDetailsResponse {
-                id: res_id.to_string(),
-                reservation_code: res_code,
-                status,
-                num_people,
-                total_amount: format!("{:.2} €", total_amount),
-                amount_paid: format!("{:.2} €", amount_paid),
-                amount_remaining: format!("{:.2} €", amount_remaining),
-                contact_name,
-                contact_email,
-                contact_phone,
-                special_requests,
-                created_at: created_at.to_rfc3339(),
-                table: TableSummary {
-                    id: table_id.to_string(),
-                    name: table_name,
-                    zone: table_zone,
-                    capacity,
-                    min_spend: format!("{:.2} €", min_spend),
-                    location_description: None,
-                    features: None,
-                },
-                event: EventSummary {
-                    id: event_id.to_string(),
-                    title: event_title,
-                    venue: event_venue,
-                    date: event_date,
-                    image: event_image,
-                    status: None,
-                },
-            }
-        })
-        .collect();
+    let reservations = table_persistence::list_user_reservations_with_details(&state.db_pool, user_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(TableReservationsWithDetailsResponse { reservations }))
 }

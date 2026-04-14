@@ -7,7 +7,7 @@ use uuid::Uuid;
 use std::sync::Arc;
 use tracing::{info, error};
 
-use crate::persistences::payment_persistence::{
+use crate::application::payment_service::{
     load_all_payments_service,
     load_payment_service,
     create_payment_service,
