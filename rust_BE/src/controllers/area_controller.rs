@@ -1,6 +1,11 @@
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{AppState, AreaResponse, AssignAreaRequest, CreateAreaRequest, UpdateAreaRequest};
-use crate::persistences::{area_persistence, club_persistence, table_persistence};
+use crate::application::{
+    area_service as area_persistence,
+    club_service as club_persistence,
+    event_service as event_persistence,
+    reservation_service as table_persistence,
+};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -171,7 +176,7 @@ pub async fn assign_table_area(
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
     // Check event → club ownership
-    let event = crate::persistences::event_persistence::get_event_by_id(&state.db_pool, table.event_id)
+    let event = event_persistence::get_event_by_id(&state.db_pool, table.event_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;

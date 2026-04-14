@@ -1,5 +1,5 @@
 use crate::models::{AppState, CreateGenreRequest, UpdateGenreRequest, GenreResponse};
-use crate::persistences::genre_persistence;
+use crate::application::genre_service as genre_persistence;
 use crate::middleware::auth::ClubOwnerUser;
 use axum::{
     extract::{Path, State},

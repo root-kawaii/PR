@@ -1,5 +1,5 @@
 use crate::models::{AppState, PaymentStatus};
-use crate::persistences::table_persistence;
+use crate::application::reservation_service as table_persistence;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},

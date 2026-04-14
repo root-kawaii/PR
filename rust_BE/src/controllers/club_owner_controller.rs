@@ -10,7 +10,12 @@ use crate::models::club_owner::{
     OwnerStats,
 };
 use crate::models::table::TableReservationResponse;
-use crate::persistences::{club_owner_persistence, club_persistence, event_persistence, table_persistence};
+use crate::application::{
+    club_owner_service as club_owner_persistence,
+    club_service as club_persistence,
+    event_service as event_persistence,
+    reservation_service as table_persistence,
+};
 use crate::utils::jwt;
 use axum::{
     extract::{Path, State},
@@ -479,16 +484,11 @@ pub async fn get_event_reservations_handler(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let reservations = club_owner_persistence::get_event_reservations(&state.db_pool, event_uuid)
+    let reservations = club_owner_persistence::list_event_reservations(&state.db_pool, event_uuid)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let responses: Vec<TableReservationResponse> = reservations
-        .into_iter()
-        .map(TableReservationResponse::from)
-        .collect();
-
-    Ok(Json(responses))
+    Ok(Json(reservations))
 }
 
 /// Create a manual reservation (no Stripe, no user account needed)

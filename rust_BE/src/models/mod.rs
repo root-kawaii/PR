@@ -37,9 +37,12 @@ pub use table::{
 pub mod area;
 pub use area::{Area, CreateAreaRequest, UpdateAreaRequest, AreaResponse, AssignAreaRequest};
 
-use crate::idempotency::IdempotencyService;
-use serde::{Deserialize, Serialize};
-use axum::{response::{IntoResponse, Response}, http::StatusCode, Json as AxumJson};
+use serde::Deserialize;
+
+#[allow(unused_imports)]
+pub use crate::api::errors::{ApiError, AppError, AppResult};
+#[allow(unused_imports)]
+pub use crate::bootstrap::state::AppState;
 
 /// Common pagination query params: ?limit=50&offset=0
 #[derive(Debug, Deserialize)]
@@ -51,36 +54,3 @@ pub struct PaginationParams {
 }
 
 fn default_limit() -> i64 { 50 }
-
-/// Standard JSON error envelope used by all API responses.
-/// Frontend can always parse `{ "error": "...", "code": "..." }` on non-2xx.
-#[derive(Debug, Serialize)]
-pub struct ApiError {
-    pub error: String,
-    pub code: String,
-}
-
-impl ApiError {
-    pub fn new(status: StatusCode, message: impl Into<String>) -> (StatusCode, AxumJson<ApiError>) {
-        let code = status.canonical_reason().unwrap_or("error").to_lowercase().replace(' ', "_");
-        (status, AxumJson(ApiError { error: message.into(), code }))
-    }
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        (StatusCode::BAD_REQUEST, AxumJson(self)).into_response()
-    }
-}
-
-pub struct AppState {
-    pub db_pool: sqlx::PgPool,
-    pub stripe_client: stripe::Client,
-    pub jwt_secret: String,
-    pub idempotency_service: IdempotencyService,
-    pub stripe_webhook_secret: String,
-    /// Optional Discord/Slack webhook URL for failure alerts
-    pub alert_webhook_url: Option<String>,
-    /// Hours before a pending payment share expires (default: 48)
-    pub payment_share_ttl_hours: i64,
-}

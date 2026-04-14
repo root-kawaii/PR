@@ -2,7 +2,8 @@ use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
 };
-use crate::models::{AppState, Claims};
+use crate::bootstrap::state::AppState;
+use crate::models::Claims;
 use crate::utils::jwt;
 use std::sync::Arc;
 

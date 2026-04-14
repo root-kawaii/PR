@@ -1,5 +1,5 @@
 use crate::models::{AppState, CreateEventRequest, UpdateEventRequest, EventResponse, PaginationParams};
-use crate::persistences::event_persistence;
+use crate::application::event_service as event_persistence;
 use crate::middleware::auth::ClubOwnerUser;
 use axum::{
     extract::{Path, Query, State},

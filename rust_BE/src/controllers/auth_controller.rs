@@ -1,5 +1,5 @@
 use crate::models::{AppState, AuthResponse, LoginRequest, RegisterRequest, UserResponse};
-use crate::persistences::user_persistence;
+use crate::application::auth_service as user_persistence;
 use crate::utils::jwt;
 use crate::services::sms_service;
 use crate::middleware::auth::AuthUser;

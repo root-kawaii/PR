@@ -3,6 +3,7 @@ use tracing_appender::{
     non_blocking::WorkerGuard,
     rolling::{RollingFileAppender, Rotation},
 };
+use std::time::Duration;
 
 /// Initialize the tracing subscriber with dual outputs:
 /// - Console: colored, human-readable (for development)
@@ -52,4 +53,61 @@ pub fn init_logging() -> WorkerGuard {
         .init();
 
     guard // MUST be kept alive
+}
+
+pub fn log_request_start(request_id: &str, method: &str, route: &str) {
+    tracing::info!(
+        log_category = "request",
+        request_id,
+        method,
+        route,
+        "Request started"
+    );
+}
+
+pub fn log_request_complete(
+    request_id: &str,
+    method: &str,
+    route: &str,
+    status_code: u16,
+    latency: Duration,
+) {
+    tracing::info!(
+        log_category = "request",
+        request_id,
+        method,
+        route,
+        status_code,
+        latency_ms = latency.as_millis() as u64,
+        "Request completed"
+    );
+}
+
+pub fn log_business_event(event_name: &str, entity_type: &str, entity_id: &str) {
+    tracing::info!(
+        log_category = "business_event",
+        event_name,
+        entity_type,
+        entity_id,
+        "Business event"
+    );
+}
+
+pub fn log_dependency_event(dependency: &str, operation: &str, outcome: &str) {
+    tracing::info!(
+        log_category = "dependency",
+        dependency,
+        operation,
+        outcome,
+        "Dependency call"
+    );
+}
+
+pub fn log_security_event(event_name: &str, actor_id: Option<&str>) {
+    tracing::warn!(
+        log_category = "security",
+        event_name,
+        actor_id = actor_id.unwrap_or("anonymous"),
+        "Security event"
+    );
 }
