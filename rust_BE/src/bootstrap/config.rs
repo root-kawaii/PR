@@ -33,6 +33,8 @@ pub struct AnalyticsConfig {
     pub outbox_batch_size: i64,
     pub posthog_api_key: Option<String>,
     pub posthog_host: String,
+    pub environment: String,
+    pub service_name: String,
 }
 
 #[derive(Clone, Debug)]
@@ -113,6 +115,11 @@ impl AppConfig {
         let posthog_api_key = env::var("POSTHOG_API_KEY").ok().filter(|s| !s.is_empty());
         let posthog_host = env::var("POSTHOG_HOST")
             .unwrap_or_else(|_| "https://eu.i.posthog.com".to_string());
+        let analytics_environment = env::var("APP_ENV")
+            .or_else(|_| env::var("RUST_ENV"))
+            .unwrap_or_else(|_| "development".to_string());
+        let analytics_service_name = env::var("SERVICE_NAME")
+            .unwrap_or_else(|_| "rust_BE".to_string());
         let feature_flag_provider = env::var("FEATURE_FLAG_PROVIDER")
             .unwrap_or_else(|_| "posthog".to_string());
         let bootstrap_flags_from_env = env::var("FEATURE_FLAGS_BOOTSTRAP_FROM_ENV")
@@ -157,6 +164,8 @@ impl AppConfig {
                 outbox_batch_size,
                 posthog_api_key,
                 posthog_host,
+                environment: analytics_environment,
+                service_name: analytics_service_name,
             },
             feature_flags: FeatureFlagsConfig {
                 provider: feature_flag_provider,

@@ -24,6 +24,18 @@ pub async fn handle_stripe_webhook(
         Some(sig) => sig.to_string(),
         None => {
             warn!("Missing Stripe-Signature header");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_webhook_rejected",
+                None,
+                Some("stripe_webhook"),
+                None,
+                "missing_signature_header",
+                serde_json::json!({
+                    "outcome": "rejected",
+                }),
+            ).await;
             return StatusCode::BAD_REQUEST;
         }
     };
@@ -44,6 +56,16 @@ pub async fn handle_stripe_webhook(
         Some(t) => t,
         None => {
             warn!("Missing timestamp in Stripe-Signature");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_webhook_rejected",
+                None,
+                Some("stripe_webhook"),
+                None,
+                "missing_signature_timestamp",
+                serde_json::json!({ "outcome": "rejected" }),
+            ).await;
             return StatusCode::BAD_REQUEST;
         }
     };
@@ -52,6 +74,16 @@ pub async fn handle_stripe_webhook(
         Some(s) => s,
         None => {
             warn!("Missing v1 signature in Stripe-Signature");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_webhook_rejected",
+                None,
+                Some("stripe_webhook"),
+                None,
+                "missing_signature_v1",
+                serde_json::json!({ "outcome": "rejected" }),
+            ).await;
             return StatusCode::BAD_REQUEST;
         }
     };
@@ -62,6 +94,16 @@ pub async fn handle_stripe_webhook(
         Ok(m) => m,
         Err(_) => {
             error!("Invalid webhook secret configuration");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_webhook_internal_error",
+                None,
+                Some("stripe_webhook"),
+                None,
+                "invalid_webhook_secret_configuration",
+                serde_json::json!({ "outcome": "failure" }),
+            ).await;
             return StatusCode::INTERNAL_SERVER_ERROR;
         }
     };
@@ -69,6 +111,16 @@ pub async fn handle_stripe_webhook(
     let computed_sig = hex::encode(mac.finalize().into_bytes());
     if computed_sig != expected_sig {
         warn!("Invalid Stripe webhook signature");
+        let _ = outbox_service::enqueue_analytics_error(
+            &state.db_pool,
+            &state.config,
+            "stripe_webhook_rejected",
+            None,
+            Some("stripe_webhook"),
+            None,
+            "invalid_signature",
+            serde_json::json!({ "outcome": "rejected" }),
+        ).await;
         return StatusCode::BAD_REQUEST;
     }
 
@@ -77,6 +129,16 @@ pub async fn handle_stripe_webhook(
         Ok(e) => e,
         Err(e) => {
             error!(error = %e, "Failed to parse webhook payload");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_webhook_parse_failed",
+                None,
+                Some("stripe_webhook"),
+                None,
+                &e.to_string(),
+                serde_json::json!({ "outcome": "failure" }),
+            ).await;
             return StatusCode::BAD_REQUEST;
         }
     };
@@ -86,6 +148,20 @@ pub async fn handle_stripe_webhook(
     let payment_intent_id = event["data"]["object"]["id"].as_str().unwrap_or("");
 
     info!(event_type = %event_type, stripe_event_id = %stripe_event_id, payment_intent_id = %payment_intent_id, "Received Stripe webhook");
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "stripe_webhook_received",
+        None,
+        Some("stripe_webhook"),
+        None,
+        serde_json::json!({
+            "stripe_event_id": stripe_event_id,
+            "event_type": event_type,
+            "payment_intent_id": payment_intent_id,
+            "outcome": "received",
+        }),
+    ).await;
 
     // Deduplication — ignore already-processed events (Stripe retries on non-200)
     if !stripe_event_id.is_empty() {
@@ -98,11 +174,37 @@ pub async fn handle_stripe_webhook(
         {
             Ok(true) => {
                 info!(stripe_event_id = %stripe_event_id, "Duplicate Stripe event — already processed");
+                let _ = outbox_service::enqueue_analytics_event(
+                    &state.db_pool,
+                    &state.config,
+                    "stripe_webhook_duplicate",
+                    None,
+                    Some("stripe_webhook"),
+                    None,
+                    serde_json::json!({
+                        "stripe_event_id": stripe_event_id,
+                        "event_type": event_type,
+                        "outcome": "duplicate",
+                    }),
+                ).await;
                 return StatusCode::OK;
             }
             Ok(false) => {}
             Err(e) => {
                 error!(error = %e, "Failed to check event deduplication");
+                let _ = outbox_service::enqueue_analytics_error(
+                    &state.db_pool,
+                    &state.config,
+                    "stripe_webhook_dedup_failed",
+                    None,
+                    Some("stripe_webhook"),
+                    None,
+                    &e.to_string(),
+                    serde_json::json!({
+                        "stripe_event_id": stripe_event_id,
+                        "event_type": event_type,
+                    }),
+                ).await;
                 return StatusCode::INTERNAL_SERVER_ERROR;
             }
         }
@@ -117,6 +219,19 @@ pub async fn handle_stripe_webhook(
         .await
         {
             error!(error = %e, "Failed to record Stripe event as processed");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_webhook_persist_failed",
+                None,
+                Some("stripe_webhook"),
+                None,
+                &e.to_string(),
+                serde_json::json!({
+                    "stripe_event_id": stripe_event_id,
+                    "event_type": event_type,
+                }),
+            ).await;
             return StatusCode::INTERNAL_SERVER_ERROR;
         }
     }
@@ -170,11 +285,35 @@ async fn store_authorization(
         Ok(result) => {
             if result.rows_affected() > 0 {
                 info!(payment_intent_id = %payment_intent_id, "Payment authorization stored");
+                let _ = outbox_service::enqueue_analytics_event(
+                    &state.db_pool,
+                    &state.config,
+                    "stripe_payment_authorization_stored",
+                    None,
+                    Some("payment"),
+                    None,
+                    serde_json::json!({
+                        "payment_intent_id": payment_intent_id,
+                        "outcome": "success",
+                    }),
+                ).await;
             }
             StatusCode::OK
         }
         Err(e) => {
             error!(error = %e, payment_intent_id = %payment_intent_id, "Failed to store payment authorization");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_payment_authorization_store_failed",
+                None,
+                Some("payment"),
+                None,
+                &e.to_string(),
+                serde_json::json!({
+                    "payment_intent_id": payment_intent_id,
+                }),
+            ).await;
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
@@ -196,6 +335,19 @@ async fn update_payment_status(
         Ok(result) => {
             if result.rows_affected() > 0 {
                 info!(payment_intent_id = %payment_intent_id, status = ?status, "Payment status updated");
+                let _ = outbox_service::enqueue_analytics_event(
+                    &state.db_pool,
+                    &state.config,
+                    "stripe_payment_status_updated",
+                    None,
+                    Some("payment"),
+                    None,
+                    serde_json::json!({
+                        "payment_intent_id": payment_intent_id,
+                        "status": format!("{:?}", status),
+                        "outcome": "success",
+                    }),
+                ).await;
             } else {
                 info!(payment_intent_id = %payment_intent_id, "No payment found for this PaymentIntent (may be external)");
             }
@@ -203,6 +355,19 @@ async fn update_payment_status(
         }
         Err(e) => {
             error!(error = %e, payment_intent_id = %payment_intent_id, "Failed to update payment status");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_payment_status_update_failed",
+                None,
+                Some("payment"),
+                None,
+                &e.to_string(),
+                serde_json::json!({
+                    "payment_intent_id": payment_intent_id,
+                    "status": format!("{:?}", status),
+                }),
+            ).await;
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
@@ -230,6 +395,19 @@ async fn handle_checkout_session_completed(
 
     if share.status == "paid" {
         info!(share_id = %share.id, "Payment share already marked as paid, skipping");
+        let _ = outbox_service::enqueue_analytics_event(
+            &state.db_pool,
+            &state.config,
+            "split_payment_checkout_duplicate",
+            None,
+            Some("reservation"),
+            Some(share.reservation_id),
+            serde_json::json!({
+                "share_id": share.id,
+                "session_id": session_id,
+                "outcome": "duplicate",
+            }),
+        ).await;
         return StatusCode::OK;
     }
 
@@ -248,6 +426,20 @@ async fn handle_checkout_session_completed(
         Ok(r) => r,
         Err(e) => {
             error!(error = %e, "Failed to get reservation for ticket creation");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "split_payment_checkout_failed",
+                None,
+                Some("reservation"),
+                Some(share.reservation_id),
+                &e.to_string(),
+                serde_json::json!({
+                    "share_id": share.id,
+                    "session_id": session_id,
+                    "stage": "reservation_lookup",
+                }),
+            ).await;
             return StatusCode::INTERNAL_SERVER_ERROR;
         }
     };
@@ -257,6 +449,20 @@ async fn handle_checkout_session_completed(
         Ok(tx) => tx,
         Err(e) => {
             error!(error = %e, "Failed to begin transaction for checkout completion");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "split_payment_checkout_failed",
+                None,
+                Some("reservation"),
+                Some(share.reservation_id),
+                &e.to_string(),
+                serde_json::json!({
+                    "share_id": share.id,
+                    "session_id": session_id,
+                    "stage": "begin_transaction",
+                }),
+            ).await;
             return StatusCode::INTERNAL_SERVER_ERROR;
         }
     };
@@ -383,9 +589,40 @@ async fn handle_checkout_session_completed(
     // Commit everything atomically
     if let Err(e) = tx.commit().await {
         error!(error = %e, "Failed to commit checkout completion transaction");
+        let _ = outbox_service::enqueue_analytics_error(
+            &state.db_pool,
+            &state.config,
+            "split_payment_checkout_failed",
+            None,
+            Some("reservation"),
+            Some(share.reservation_id),
+            &e.to_string(),
+            serde_json::json!({
+                "share_id": share.id,
+                "session_id": session_id,
+                "stage": "commit_transaction",
+            }),
+        ).await;
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
     info!(reservation_id = %share.reservation_id, "Checkout completion transaction committed");
+    let distinct_id = share.user_id.map(|id| id.to_string());
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "split_payment_checkout_completed",
+        distinct_id.as_deref(),
+        Some("reservation"),
+        Some(share.reservation_id),
+        serde_json::json!({
+            "share_id": share.id,
+            "session_id": session_id,
+            "payment_id": payment_id,
+            "ticket_id": ticket_id,
+            "reservation_id": share.reservation_id,
+            "outcome": "success",
+        }),
+    ).await;
 
     // Check final reservation status (for push notification — outside transaction)
     let reservation_status: Option<String> = sqlx::query_scalar(
