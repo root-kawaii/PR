@@ -18,6 +18,7 @@ import { useState, useEffect } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
+import { trackEvent } from "@/config/analytics";
 import { Alert } from "react-native";
 import { TableReservationModal } from "./TableReservationModal";
 import { ThemePalette } from "@/constants/theme";
@@ -46,15 +47,36 @@ export const EventDetailModal = ({
     }
   }, [visible]);
 
+  useEffect(() => {
+    if (!visible || !event) {
+      return;
+    }
+
+    trackEvent("event_detail_opened", {
+      event_id: event.id,
+      event_title: event.title,
+      venue: event.venue,
+    });
+  }, [event?.id, visible]);
+
   const handleBuyTicket = () => {
+    if (!event) return;
+
     if (!user) {
+      trackEvent("reserve_table_login_required", {
+        event_id: event.id,
+        event_title: event.title,
+      });
       Alert.alert("Accesso richiesto", "Effettua il login per prenotare un tavolo.", [
         { text: "OK" },
       ]);
       return;
     }
 
-    if (!event) return;
+    trackEvent("reserve_table_tapped", {
+      event_id: event.id,
+      event_title: event.title,
+    });
 
     setShowTableReservation(true);
   };

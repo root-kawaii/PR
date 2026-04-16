@@ -35,6 +35,7 @@ export default {
     },
     plugins: [
       'expo-router',
+      'expo-localization',
       [
         'expo-notifications',
         {
@@ -71,8 +72,11 @@ export default {
       eas: {
         projectId: '4e65bba3-9d05-4b27-9300-a81a9b8181be',
       },
+      appEnv: process.env.APP_ENV || 'development',
       apiUrl: process.env.EXPO_PUBLIC_API_URL || 'https://pierre-two-backend.fly.dev',
       stripePublishableKey: process.env.EXPO_PUBLIC_STRIPE_KEY || '',
+      posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_KEY || '',
+      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com',
     },
   },
 };

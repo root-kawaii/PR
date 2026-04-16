@@ -1,8 +1,9 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 import { API_URL } from '../config/api';
+import { identifyAnalyticsUser, resetAnalytics, trackEvent } from '../config/analytics';
 
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
@@ -153,10 +154,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const previousAnalyticsUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     loadAuthData();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      if (previousAnalyticsUserIdRef.current) {
+        resetAnalytics();
+        previousAnalyticsUserIdRef.current = null;
+      }
+      return;
+    }
+
+    identifyAnalyticsUser(user);
+    previousAnalyticsUserIdRef.current = user.id;
+  }, [user]);
 
   const loadAuthData = async () => {
     try {
@@ -187,12 +202,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = useCallback(async () => {
+    if (user) {
+      trackEvent('auth_logout', {
+        user_id: user.id,
+      });
+    }
     setUser(null);
     setToken(null);
     await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
-  }, []);
+  }, [user]);
 
   const login = async (credentials: LoginRequest) => {
+    trackEvent('auth_login_submitted');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     let response: Response;
@@ -204,14 +225,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signal: controller.signal,
       });
     } catch (e: any) {
-      if (e.name === 'AbortError') throw new Error('Connessione scaduta. Controlla la tua rete e riprova.');
+      if (e.name === 'AbortError') {
+        trackEvent('auth_login_failed', {
+          error_type: 'timeout',
+        });
+        throw new Error('Connessione scaduta. Controlla la tua rete e riprova.');
+      }
+      trackEvent('auth_login_failed', {
+        error_type: 'network',
+      });
       throw e;
     } finally {
       clearTimeout(timeout);
     }
 
     if (!response.ok) {
-      throw new Error(await extractErrorMessage(response, 'Login failed'));
+      const errorMessage = await extractErrorMessage(response, 'Login failed');
+      trackEvent('auth_login_failed', {
+        status_code: response.status,
+        error_message: errorMessage,
+      });
+      throw new Error(errorMessage);
     }
 
     const data: AuthResponse = await safeJson(response, 'Login failed');
@@ -222,10 +256,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       secureSet(TOKEN_KEY, data.token),
       secureSet(USER_KEY, JSON.stringify(data.user)),
     ]);
+    trackEvent('auth_login_succeeded', {
+      user_id: data.user.id,
+    });
     registerPushToken(data.token);
   };
 
   const register = async (data: RegisterRequest) => {
+    trackEvent('auth_register_submitted');
     const response = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -233,7 +271,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (!response.ok) {
-      throw new Error(await extractErrorMessage(response, 'Registration failed'));
+      const errorMessage = await extractErrorMessage(response, 'Registration failed');
+      trackEvent('auth_register_failed', {
+        status_code: response.status,
+        error_message: errorMessage,
+      });
+      throw new Error(errorMessage);
     }
 
     const authData: AuthResponse = await safeJson(response, 'Registration failed');
@@ -244,6 +287,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       secureSet(TOKEN_KEY, authData.token),
       secureSet(USER_KEY, JSON.stringify(authData.user)),
     ]);
+    trackEvent('auth_register_succeeded', {
+      user_id: authData.user.id,
+    });
     registerPushToken(authData.token);
   };
 
