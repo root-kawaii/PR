@@ -16,6 +16,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Table, Event } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/context/ThemeContext";
+import { trackEvent } from "@/config/analytics";
 import { useStripe } from "@stripe/stripe-react-native";
 import { API_URL } from "@/config/api";
 
@@ -45,12 +46,27 @@ export const TableReservationModal = ({
     }
   }, [visible]);
 
-  if (!table || !event) return null;
-
   // Owner's share = total_cost / capacity (same formula as backend)
-  const rawCost = parseFloat((table.totalCost || "0").replace(/[^0-9.]/g, ""));
+  const rawCost = parseFloat((table?.totalCost || "0").replace(/[^0-9.]/g, ""));
   const tableTotalCost = isNaN(rawCost) || rawCost < 0 ? 0 : rawCost;
-  const ownerShare = Math.round((tableTotalCost / table.capacity) * 100) / 100;
+  const ownerShare = table?.capacity
+    ? Math.round((tableTotalCost / table.capacity) * 100) / 100
+    : 0;
+
+  useEffect(() => {
+    if (!visible || !table || !event) {
+      return;
+    }
+
+    trackEvent("table_reservation_modal_opened", {
+      event_id: event.id,
+      table_id: table.id,
+      table_name: table.name,
+      owner_share: ownerShare,
+    });
+  }, [event?.id, ownerShare, table?.id, visible]);
+
+  if (!table || !event) return null;
 
   const handleReservation = async () => {
     if (!user) {
@@ -65,7 +81,24 @@ export const TableReservationModal = ({
     paymentFlowInProgressRef.current = true;
     setLoading(true);
 
+    let failureTracked = false;
+    const trackReservationFailure = (step: string, errorMessage: string) => {
+      failureTracked = true;
+      trackEvent("table_reservation_flow_failed", {
+        event_id: event.id,
+        table_id: table.id,
+        step,
+        error_message: errorMessage,
+      });
+    };
+
     try {
+      trackEvent("table_reservation_flow_started", {
+        event_id: event.id,
+        table_id: table.id,
+        owner_share: ownerShare,
+      });
+
       // Step 1: Create Stripe PaymentIntent for owner's share
       const paymentIntentResponse = await fetch(
         `${API_URL}/reservations/create-payment-intent`,
@@ -86,6 +119,7 @@ export const TableReservationModal = ({
 
       if (!paymentIntentResponse.ok) {
         const errorText = await paymentIntentResponse.text();
+        trackReservationFailure("create_payment_intent", errorText || "payment_intent_failed");
         throw new Error(`Failed to create payment intent: ${errorText}`);
       }
 
@@ -99,16 +133,28 @@ export const TableReservationModal = ({
       });
 
       if (initError) {
+        trackReservationFailure("init_payment_sheet", initError.message || "payment_sheet_init_failed");
         Alert.alert("Errore", "Impossibile inizializzare il pagamento. Riprova.");
         setLoading(false);
         return;
       }
 
+      trackEvent("table_reservation_payment_sheet_presented", {
+        event_id: event.id,
+        table_id: table.id,
+      });
+
       const { error: presentError } = await presentPaymentSheet();
 
       if (presentError) {
         if (presentError.code !== "Canceled") {
+          trackReservationFailure("present_payment_sheet", presentError.message || "payment_sheet_failed");
           Alert.alert("Errore", "Pagamento non riuscito. Riprova.");
+        } else {
+          trackEvent("table_reservation_payment_cancelled", {
+            event_id: event.id,
+            table_id: table.id,
+          });
         }
         setLoading(false);
         return;
@@ -135,15 +181,27 @@ export const TableReservationModal = ({
 
       if (!reservationResponse.ok) {
         const errorText = await reservationResponse.text();
+        trackReservationFailure("create_reservation", errorText || "reservation_failed");
         throw new Error(`Failed to create reservation: ${errorText}`);
       }
 
       const data = await reservationResponse.json();
       const shareLink: string = data.shareLink || "";
 
+      trackEvent("table_reservation_flow_completed", {
+        event_id: event.id,
+        table_id: table.id,
+        reservation_id: data.reservation?.id || null,
+        has_share_link: Boolean(shareLink),
+      });
+
       // Show share sheet immediately with the link
       if (shareLink) {
         try {
+          trackEvent("table_reservation_share_sheet_opened", {
+            event_id: event.id,
+            table_id: table.id,
+          });
           await Share.share({
             message: `Unisciti al mio tavolo "${table.name}" all'evento "${event.title}"! Paga la tua quota qui: ${shareLink}`,
             url: shareLink,
@@ -160,6 +218,12 @@ export const TableReservationModal = ({
 
       onClose();
     } catch (error) {
+      if (!failureTracked) {
+        trackReservationFailure(
+          "unexpected",
+          error instanceof Error ? error.message : "unknown_error",
+        );
+      }
       console.error("Reservation error:", error);
       Alert.alert(
         "Errore",
