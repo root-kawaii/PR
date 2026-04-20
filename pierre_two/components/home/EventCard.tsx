@@ -44,10 +44,10 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
         />
         <View style={[styles.topBar, { borderColor: theme.border }]}>
           <View style={[styles.iconChip, { backgroundColor: `${theme.background}d9`, borderColor: theme.border }]}>
-            <IconSymbol name="ticket.fill" size={12} color={theme.primary} />
+            <IconSymbol name="ticket.fill" size={14} color={theme.primary} />
           </View>
           <View style={styles.timeBadge}>
-            <IconSymbol name="clock.fill" size={12} color={theme.primary} />
+            <IconSymbol name="clock.fill" size={14} color={theme.primary} />
             <ThemedText style={[styles.timeBadgeText, { color: theme.text }]}>{formatEventTime(event)}</ThemedText>
           </View>
         </View>
@@ -76,14 +76,14 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
           </View>
 
           <View style={styles.metaRow}>
-            <IconSymbol name="mappin" size={12} color={theme.textSecondary} />
+            <IconSymbol name="mappin" size={13} color={theme.textSecondary} />
             <ThemedText style={[styles.metaText, { color: theme.textSecondary }]} numberOfLines={1}>
               {event.venue}
             </ThemedText>
           </View>
 
           <View style={styles.metaRow}>
-            <IconSymbol name="calendar" size={12} color={theme.textTertiary} />
+            <IconSymbol name="calendar" size={13} color={theme.textTertiary} />
             <ThemedText style={[styles.metaText, { color: theme.textTertiary }]} numberOfLines={1}>
               {event.date}
             </ThemedText>
@@ -104,13 +104,13 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
 
 const styles = StyleSheet.create({
   eventCard: {
-    width: 320,
+    width: 336,
     marginRight: 18,
   },
   eventImageContainer: {
-    width: 320,
-    height: 430,
-    borderRadius: 24,
+    width: 336,
+    height: 450,
+    borderRadius: 26,
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
@@ -131,26 +131,26 @@ const styles = StyleSheet.create({
   },
   topBar: {
     position: 'absolute',
-    top: 14,
-    left: 14,
-    right: 14,
+    top: 16,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     zIndex: 2,
   },
   iconChip: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   statusBadge: {
     position: 'absolute',
-    top: 14,
-    right: 14,
+    top: 16,
+    right: 16,
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   timeBadgeText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
   },
   statusText: {
@@ -178,11 +178,11 @@ const styles = StyleSheet.create({
   },
   infoPanel: {
     position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 14,
-    borderRadius: 22,
-    padding: 18,
+    left: 16,
+    right: 16,
+    bottom: 16,
+    borderRadius: 24,
+    padding: 20,
     borderWidth: 1,
   },
   kickerRow: {
@@ -204,29 +204,29 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   eventTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
-    lineHeight: 25,
+    lineHeight: 28,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 4,
+    marginTop: 6,
   },
   metaText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
   },
   footerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 14,
+    marginTop: 16,
   },
   ctaPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 999,
   },
   ctaText: {

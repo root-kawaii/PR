@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   RefreshControl,
   ScrollView,
@@ -10,7 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Linking from 'expo-linking';
@@ -20,25 +21,36 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { ThemeSelector } from '@/components/settings/ThemeSelector';
 import { API_URL } from '@/config/api';
-import { apiFetch } from '@/config/apiFetch';
+import { useApiFetch } from '@/config/apiFetch';
+import { PRIVACY_POLICY_URL, SUPPORT_URL, TERMS_URL } from '@/config/appLinks';
 
 let Notifications: typeof import('expo-notifications') | null = null;
 try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
 
 export default function ProfileScreen() {
-  const { user, token, logout } = useAuth();
+  const { user, logout, deleteAccount, updateUser } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const authenticatedFetch = useApiFetch();
 
   const [refreshing, setRefreshing] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
   const [eventReminders, setEventReminders] = useState(true);
   const [showPhoneVerification, setShowPhoneVerification] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState(user?.phone_number || '');
   const [verificationCode, setVerificationCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
-  const [isPhoneVerified, setIsPhoneVerified] = useState(false);
+  const [isPhoneVerified, setIsPhoneVerified] = useState(user?.phone_verified ?? false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  useEffect(() => {
+    setPhoneNumber(user?.phone_number || '');
+    setIsPhoneVerified(user?.phone_verified ?? false);
+  }, [user]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -103,9 +115,8 @@ export default function ProfileScreen() {
         projectId ? { projectId } : undefined,
       );
 
-      await apiFetch(`${API_URL}/auth/push-token`, {
+      await authenticatedFetch(`${API_URL}/auth/push-token`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({ push_token: tokenData.data }),
       });
 
@@ -117,6 +128,50 @@ export default function ProfileScreen() {
     }
   };
 
+  const openExternalLink = async (url: string, label: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Link non disponibile', `Impossibile aprire ${label} in questo momento.`);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword.trim()) {
+      Alert.alert('Password richiesta', 'Inserisci la password per confermare.');
+      return;
+    }
+
+    Alert.alert(
+      'Elimina account',
+      'Questa azione eliminerà il tuo accesso e rimuoverà i dati personali associati all’account. Alcuni dati di pagamento o prenotazione potranno essere conservati se richiesto dalla legge.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Elimina',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleteLoading(true);
+            try {
+              await deleteAccount(deletePassword);
+              setDeletePassword('');
+              setShowDeleteAccount(false);
+              Alert.alert(
+                'Account eliminato',
+                'Il tuo account è stato eliminato. Potrai creare un nuovo account in futuro se vorrai tornare.',
+                [{ text: 'OK', onPress: () => router.replace('/login') }],
+              );
+            } catch (error: any) {
+              Alert.alert('Eliminazione non riuscita', error.message || 'Riprova più tardi.');
+            } finally {
+              setDeleteLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleSendVerificationCode = async () => {
     if (!phoneNumber || phoneNumber.length < 10) {
       Alert.alert('Errore', 'Inserisci un numero di telefono valido');
@@ -124,9 +179,9 @@ export default function ProfileScreen() {
     }
 
     try {
-      const response = await apiFetch(`${API_URL}/auth/send-sms-verification`, {
+      const response = await authenticatedFetch(`${API_URL}/auth/send-sms-verification`, {
         method: 'POST',
-        body: JSON.stringify({ user_id: user?.id, phone_number: phoneNumber }),
+        body: JSON.stringify({ phone_number: phoneNumber }),
       });
 
       if (!response.ok) throw new Error('Errore invio codice');
@@ -145,18 +200,23 @@ export default function ProfileScreen() {
     }
 
     try {
-      const response = await apiFetch(`${API_URL}/auth/verify-sms-code`, {
+      const response = await authenticatedFetch(`${API_URL}/auth/verify-sms-code`, {
         method: 'POST',
         body: JSON.stringify({
-          user_id: user?.id,
           phone_number: phoneNumber,
           verification_code: verificationCode,
         }),
       });
 
-      if (!response.ok) throw new Error('Codice non valido');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || data?.message || 'Codice non valido');
 
-      setIsPhoneVerified(true);
+      if (data?.user) {
+        await updateUser(data.user);
+      }
+
+      setIsPhoneVerified(Boolean(data?.user?.phone_verified ?? true));
+      setPhoneNumber(data?.user?.phone_number ?? phoneNumber);
       setShowPhoneVerification(false);
       setCodeSent(false);
       setVerificationCode('');
@@ -167,6 +227,7 @@ export default function ProfileScreen() {
   };
 
   const appVersion = Constants.expoConfig?.version || '1.0.0';
+  const logoutScrollSpacer = Math.max(insets.bottom + 180, 220);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
@@ -314,6 +375,67 @@ export default function ProfileScreen() {
 
             <TouchableOpacity
               activeOpacity={0.88}
+              onPress={() => setShowDeleteAccount(prev => !prev)}
+              style={[styles.rowButton, { borderBottomColor: theme.border }]}
+            >
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: `${theme.error}16` }]}>
+                  <IconSymbol name="xmark.circle.fill" size={18} color={theme.error} />
+                </View>
+                <View style={styles.rowCopy}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Elimina account</Text>
+                  <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>
+                    Rimuovi accesso e dati personali dal tuo account
+                  </Text>
+                </View>
+              </View>
+              <IconSymbol
+                name={showDeleteAccount ? 'chevron.up' : 'chevron.right'}
+                size={18}
+                color={theme.textTertiary}
+              />
+            </TouchableOpacity>
+
+            {showDeleteAccount ? (
+              <View style={styles.expandArea}>
+                <Text style={[styles.helperText, { color: theme.textTertiary }]}>
+                  Conferma con la tua password. Se hai prenotazioni o pagamenti esistenti, conserveremo solo i dati strettamente necessari per obblighi amministrativi e contabili.
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { backgroundColor: theme.background, borderColor: theme.border, color: theme.text },
+                  ]}
+                  placeholder="Password attuale"
+                  placeholderTextColor={theme.textTertiary}
+                  value={deletePassword}
+                  onChangeText={setDeletePassword}
+                  secureTextEntry
+                  editable={!deleteLoading}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.primaryButton,
+                    styles.destructiveButton,
+                    { backgroundColor: theme.error },
+                    deleteLoading && styles.buttonDisabled,
+                  ]}
+                  onPress={handleDeleteAccount}
+                  disabled={deleteLoading}
+                >
+                  {deleteLoading ? (
+                    <ActivityIndicator color={theme.textInverse} />
+                  ) : (
+                    <Text style={[styles.primaryButtonText, { color: theme.textInverse }]}>
+                      Elimina definitivamente
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              activeOpacity={0.88}
               onPress={handleEnableNotifications}
               style={[styles.rowButton, { borderBottomColor: theme.border }]}
             >
@@ -387,7 +509,7 @@ export default function ProfileScreen() {
 
             <TouchableOpacity
               activeOpacity={0.88}
-              onPress={() => Linking.openURL('mailto:support@pierre.app')}
+              onPress={() => openExternalLink(SUPPORT_URL || 'mailto:support@pierre.app', 'il supporto')}
               style={[styles.rowButton, { borderBottomColor: theme.border }]}
             >
               <View style={styles.rowLeft}>
@@ -404,16 +526,33 @@ export default function ProfileScreen() {
 
             <TouchableOpacity
               activeOpacity={0.88}
-              onPress={() => Alert.alert('Termini e privacy', 'Disponibili su pierre.app/terms')}
-              style={styles.rowButton}
+              onPress={() => openExternalLink(PRIVACY_POLICY_URL, 'la privacy policy')}
+              style={[styles.rowButton, { borderBottomColor: theme.border }]}
             >
               <View style={styles.rowLeft}>
                 <View style={[styles.iconWrap, { backgroundColor: `${theme.warning}18` }]}>
                   <IconSymbol name="doc.text" size={18} color={theme.warning} />
                 </View>
                 <View style={styles.rowCopy}>
-                  <Text style={[styles.rowTitle, { color: theme.text }]}>Termini e privacy</Text>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Privacy policy</Text>
                   <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>Versione app {appVersion}</Text>
+                </View>
+              </View>
+              <IconSymbol name="chevron.right" size={18} color={theme.textTertiary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={() => openExternalLink(TERMS_URL, 'i termini di servizio')}
+              style={styles.rowButton}
+            >
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconWrap, { backgroundColor: `${theme.info}18` }]}>
+                  <IconSymbol name="info.circle" size={18} color={theme.info} />
+                </View>
+                <View style={styles.rowCopy}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>Termini di servizio</Text>
+                  <Text style={[styles.rowSubtitle, { color: theme.textTertiary }]}>Condizioni di utilizzo di Pierre</Text>
                 </View>
               </View>
               <IconSymbol name="chevron.right" size={18} color={theme.textTertiary} />
@@ -422,13 +561,28 @@ export default function ProfileScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.logoutButton, { backgroundColor: `${theme.error}14`, borderColor: `${theme.error}35` }]}
+          style={[
+            styles.logoutButton,
+            {
+              backgroundColor: theme.error,
+              borderColor: `${theme.error}CC`,
+              shadowColor: theme.error,
+            },
+          ]}
           onPress={handleLogout}
           activeOpacity={0.88}
         >
-          <IconSymbol name="arrow.right.square.fill" size={18} color={theme.error} />
-          <Text style={[styles.logoutText, { color: theme.error }]}>Esci dall’account</Text>
+          <IconSymbol
+            name="arrow.right.square.fill"
+            size={18}
+            color={theme.textInverse}
+          />
+          <Text style={[styles.logoutText, { color: theme.textInverse }]}>
+            Esci dall’account
+          </Text>
         </TouchableOpacity>
+
+        <View style={{ height: logoutScrollSpacer }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -623,6 +777,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  helperText: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  destructiveButton: {
+    marginTop: 2,
+  },
+  buttonDisabled: {
+    opacity: 0.65,
+  },
   logoutButton: {
     height: 54,
     borderRadius: 18,
@@ -632,6 +797,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     marginTop: 8,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    elevation: 6,
   },
   logoutText: {
     fontSize: 15,

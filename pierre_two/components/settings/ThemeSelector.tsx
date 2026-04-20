@@ -48,14 +48,14 @@ export const ThemeSelector: React.FC = () => {
             >
               {/* Color Preview */}
               <LinearGradient
-                colors={themeData.gradientPrimary}
+                colors={themeData.gradientPrimary as [string, string]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.colorPreview}
               >
                 {isSelected && (
                   <View style={[styles.checkmark, { backgroundColor: themeData.text }]}>
-                    <IconSymbol name="checkmark" size={12} color={themeData.primary} />
+                    <IconSymbol name="checkmark.circle.fill" size={12} color={themeData.primary} />
                   </View>
                 )}
               </LinearGradient>

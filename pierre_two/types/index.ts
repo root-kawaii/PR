@@ -20,6 +20,8 @@ export type Table = {
   eventId: string;
   name: string;
   zone?: string;
+  areaId?: string;
+  areaName?: string;
   capacity: number;
   minSpend: string; // Formatted as "X.XX €"
   totalCost: string; // Formatted as "X.XX €"
@@ -110,6 +112,7 @@ export type User = {
   email: string;
   name: string;
   phone_number?: string;
+  phone_verified: boolean;
   avatar_url?: string;
   date_of_birth?: string;
   created_at: string;
@@ -120,7 +123,7 @@ export type RegisterRequest = {
   email: string;
   password: string;
   name: string;
-  phone_number?: string;
+  phone_number: string;
   date_of_birth: string;
 };
 

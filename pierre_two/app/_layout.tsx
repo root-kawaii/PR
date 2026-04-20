@@ -6,6 +6,7 @@ import { View, ActivityIndicator } from 'react-native';
 import 'react-native-reanimated';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import Constants from 'expo-constants';
+import * as Linking from 'expo-linking';
 import { PostHogProvider } from 'posthog-react-native';
 let Notifications: typeof import('expo-notifications') | null = null;
 try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
@@ -21,6 +22,10 @@ import {
 } from '../config/analytics';
 
 const stripePublishableKey = Constants.expoConfig?.extra?.stripePublishableKey || '';
+const stripeUrlScheme =
+  Constants.appOwnership === 'expo'
+    ? Linking.createURL('/--/')
+    : Linking.createURL('');
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -74,15 +79,6 @@ function RootLayoutNav() {
     return () => sub.remove();
   }, [isAuthenticated]);
 
-  // Block rendering until auth state is resolved — prevents flash of protected screens
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
-    );
-  }
-
   // Create navigation theme from app theme
   const navigationTheme: Theme = useMemo(() => ({
     dark: theme.statusBarStyle === 'light',
@@ -113,6 +109,15 @@ function RootLayoutNav() {
       },
     },
   }), [theme]);
+
+  // Block rendering until auth state is resolved — prevents flash of protected screens
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
 
   return (
     <NavigationThemeProvider value={navigationTheme}>
@@ -147,7 +152,10 @@ function AnalyticsProvider({ children }: { children: ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <StripeProvider publishableKey={stripePublishableKey}>
+    <StripeProvider
+      publishableKey={stripePublishableKey}
+      urlScheme={stripeUrlScheme}
+    >
       <AnalyticsProvider>
         <ThemeProvider>
           <AuthProvider>

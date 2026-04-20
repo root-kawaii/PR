@@ -13,6 +13,7 @@ import {
 import Slider from "@react-native-community/slider";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useTheme } from "@/context/ThemeContext";
 import { Table } from "@/types";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -53,6 +54,7 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
   selectedTableId,
   onFilterChange,
 }) => {
+  const { theme } = useTheme();
   const [searchText, setSearchText] = useState("");
   const [maxPriceFilter, setMaxPriceFilter] = useState(100);
   const [sortAscending, setSortAscending] = useState(true);
@@ -112,7 +114,10 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
         // Search filter (name)
         if (searchText) {
           const searchLower = searchText.toLowerCase();
-          if (!table.name.toLowerCase().includes(searchLower)) {
+          const matchesTableName = table.name.toLowerCase().includes(searchLower);
+          const matchesAreaName = getAreaLabel(table).toLowerCase().includes(searchLower);
+
+          if (!matchesTableName && !matchesAreaName) {
             return false;
           }
         }
@@ -132,6 +137,16 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
       });
   }, [tables, searchText, maxPriceFilter, sortAscending]);
 
+  const getAreaLabel = (table: Table): string => {
+    const areaName = table.areaName?.trim();
+    if (areaName) return areaName;
+
+    const zoneName = table.zone?.trim();
+    if (zoneName) return zoneName;
+
+    return "A";
+  };
+
   // Store callback in ref to avoid infinite loops
   const onFilterChangeRef = useRef(onFilterChange);
   onFilterChangeRef.current = onFilterChange;
@@ -142,23 +157,25 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
     onFilterChangeRef.current?.(filteredIds);
   }, [filteredTables]);
 
-  // Group tables by zone
+  // Group tables by area
   const sections = useMemo((): TableSection[] => {
     const grouped = new Map<string, Table[]>();
 
     filteredTables.forEach((table) => {
-      const zone = table.zone || "Altro";
-      if (!grouped.has(zone)) {
-        grouped.set(zone, []);
+      const areaLabel = getAreaLabel(table);
+      if (!grouped.has(areaLabel)) {
+        grouped.set(areaLabel, []);
       }
-      grouped.get(zone)!.push(table);
+      grouped.get(areaLabel)!.push(table);
     });
 
-    return Array.from(grouped.entries()).map(([zone, zoneTables]) => ({
-      title: zone,
-      availableCount: zoneTables.length,
-      data: zoneTables,
-    }));
+    return Array.from(grouped.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([areaLabel, areaTables]) => ({
+        title: areaLabel,
+        availableCount: areaTables.length,
+        data: areaTables,
+      }));
   }, [filteredTables]);
 
   const handleTablePress = (table: Table) => {
@@ -171,9 +188,19 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
   }: {
     section: TableSection;
   }) => (
-    <View style={styles.sectionHeader}>
-      <ThemedText style={styles.sectionTitle}>{section.title}</ThemedText>
-      <ThemedText style={styles.sectionCount}>
+    <View
+      style={[
+        styles.sectionHeader,
+        {
+          backgroundColor: theme.backgroundSurface,
+          borderBottomColor: theme.border,
+        },
+      ]}
+    >
+      <ThemedText style={[styles.sectionTitle, { color: theme.secondary }]}>
+        {section.title}
+      </ThemedText>
+      <ThemedText style={[styles.sectionCount, { color: theme.textTertiary }]}>
         ({section.availableCount} disponibili)
       </ThemedText>
     </View>
@@ -185,22 +212,32 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
 
     return (
       <TouchableOpacity
-        style={[styles.tableRow, isSelected && styles.tableRowSelected]}
+        style={[
+          styles.tableRow,
+          { borderBottomColor: theme.border },
+          isSelected && { backgroundColor: `${theme.secondary}18` },
+        ]}
         onPress={() => handleTablePress(item)}
         activeOpacity={0.7}
       >
         <View style={styles.tableNameContainer}>
-          <ThemedText style={styles.tableName}>{item.name}</ThemedText>
+          <ThemedText style={[styles.tableName, { color: theme.text }]}>
+            {item.name}
+          </ThemedText>
         </View>
         <View style={styles.tableCapacity}>
-          <ThemedText style={styles.capacityIcon}>👥</ThemedText>
-          <ThemedText style={styles.capacityText}>{item.capacity}</ThemedText>
+          <IconSymbol name="person.2.fill" size={15} color={theme.info} />
+          <ThemedText style={[styles.capacityText, { color: theme.textSecondary }]}>
+            {item.capacity}
+          </ThemedText>
         </View>
         <View style={styles.tablePrice}>
-          <ThemedText style={styles.priceText}>
+          <ThemedText style={[styles.priceText, { color: theme.text }]}>
             {pricePerPerson.toFixed(0)}€
           </ThemedText>
-          <ThemedText style={styles.priceLabel}>/persona</ThemedText>
+          <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>
+            /persona
+          </ThemedText>
         </View>
       </TouchableOpacity>
     );
@@ -213,7 +250,13 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
       {/* Backdrop */}
       <TouchableWithoutFeedback onPress={onClose}>
         <Animated.View
-          style={[styles.backdrop, { opacity: backdropAnim }]}
+          style={[
+            styles.backdrop,
+            {
+              backgroundColor: theme.overlay,
+              opacity: backdropAnim,
+            },
+          ]}
         />
       </TouchableWithoutFeedback>
 
@@ -221,29 +264,52 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
       <Animated.View
         style={[
           styles.menuPanel,
+          {
+            backgroundColor: theme.modalBackground,
+            borderRightColor: theme.border,
+          },
           { transform: [{ translateX: slideAnim }] },
         ]}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <ThemedText style={styles.headerTitle}>TAVOLI DISPONIBILI</ThemedText>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <IconSymbol name="xmark" size={24} color="#fff" />
+        <View style={[styles.header, { borderBottomColor: theme.border }]}>
+          <ThemedText style={[styles.headerTitle, { color: theme.text }]}>
+            AREE DISPONIBILI
+          </ThemedText>
+          <TouchableOpacity
+            onPress={onClose}
+            style={[
+              styles.closeButton,
+              {
+                backgroundColor: theme.backgroundSurface,
+                borderColor: theme.border,
+              },
+            ]}
+          >
+            <IconSymbol name="xmark" size={24} color={theme.text} />
           </TouchableOpacity>
         </View>
 
         {/* Search Input */}
-        <View style={styles.searchContainer}>
+        <View
+          style={[
+            styles.searchContainer,
+            {
+              backgroundColor: theme.inputBackground,
+              borderColor: theme.border,
+            },
+          ]}
+        >
           <IconSymbol
             name="magnifyingglass"
             size={18}
-            color="#9ca3af"
+            color={theme.textTertiary}
             style={styles.searchIcon}
           />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: theme.text }]}
             placeholder="Cerca tavolo..."
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={theme.textTertiary}
             value={searchText}
             onChangeText={setSearchText}
             autoCapitalize="none"
@@ -254,7 +320,7 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
               onPress={() => setSearchText("")}
               style={styles.clearButton}
             >
-              <IconSymbol name="xmark" size={16} color="#6b7280" />
+              <IconSymbol name="xmark" size={16} color={theme.textTertiary} />
             </TouchableOpacity>
           )}
         </View>
@@ -262,33 +328,45 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
         {/* Price Filter */}
         <View style={styles.priceFilterContainer}>
           <View style={styles.priceFilterHeader}>
-            <ThemedText style={styles.filterLabel}>Prezzo per persona</ThemedText>
-            <ThemedText style={styles.priceValue}>
+            <ThemedText style={[styles.filterLabel, { color: theme.textSecondary }]}>
+              Prezzo per persona
+            </ThemedText>
+            <ThemedText style={[styles.priceValue, { color: theme.secondary }]}>
               max {maxPriceFilter}€
             </ThemedText>
           </View>
           <View style={styles.sliderContainer}>
-            <ThemedText style={styles.sliderLabel}>0€</ThemedText>
+            <ThemedText style={[styles.sliderLabel, { color: theme.textTertiary }]}>
+              0€
+            </ThemedText>
             <Slider
               style={styles.slider}
               minimumValue={0}
               maximumValue={maxPriceInData}
               value={maxPriceFilter}
               onValueChange={(value) => setMaxPriceFilter(Math.round(value))}
-              minimumTrackTintColor="#ec4899"
-              maximumTrackTintColor="#374151"
-              thumbTintColor="#ec4899"
+              minimumTrackTintColor={theme.secondary}
+              maximumTrackTintColor={theme.borderLight}
+              thumbTintColor={theme.secondary}
             />
-            <ThemedText style={styles.sliderLabel}>{maxPriceInData}€</ThemedText>
+            <ThemedText style={[styles.sliderLabel, { color: theme.textTertiary }]}>
+              {maxPriceInData}€
+            </ThemedText>
           </View>
         </View>
 
         {/* Sort Toggle */}
         <TouchableOpacity
-          style={styles.sortButton}
+          style={[
+            styles.sortButton,
+            {
+              backgroundColor: theme.backgroundSurface,
+              borderColor: theme.border,
+            },
+          ]}
           onPress={() => setSortAscending(!sortAscending)}
         >
-          <ThemedText style={styles.sortButtonText}>
+          <ThemedText style={[styles.sortButtonText, { color: theme.text }]}>
             Prezzo {sortAscending ? "↑" : "↓"}
           </ThemedText>
         </TouchableOpacity>
@@ -303,7 +381,7 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <ThemedText style={styles.emptyText}>
+              <ThemedText style={[styles.emptyText, { color: theme.textTertiary }]}>
                 Nessun tavolo trovato
               </ThemedText>
             </View>
@@ -321,7 +399,6 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   menuPanel: {
     position: "absolute",
@@ -329,7 +406,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: MENU_WIDTH,
-    backgroundColor: "#111827",
+    borderRightWidth: 1,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -350,27 +427,25 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === "ios" ? 60 : 40,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#1f2937",
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#fff",
     letterSpacing: 0.5,
   },
   closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 1,
     justifyContent: "center",
     alignItems: "center",
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1f2937",
     borderRadius: 8,
+    borderWidth: 1,
     marginHorizontal: 16,
     marginTop: 16,
     paddingHorizontal: 12,
@@ -382,7 +457,6 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: "#fff",
     height: "100%",
   },
   clearButton: {
@@ -401,12 +475,10 @@ const styles = StyleSheet.create({
   },
   filterLabel: {
     fontSize: 14,
-    color: "#9ca3af",
   },
   priceValue: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#ec4899",
   },
   sliderContainer: {
     flexDirection: "row",
@@ -419,7 +491,6 @@ const styles = StyleSheet.create({
   },
   sliderLabel: {
     fontSize: 12,
-    color: "#6b7280",
     minWidth: 30,
     textAlign: "center",
   },
@@ -429,14 +500,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: "#1f2937",
+    borderWidth: 1,
     borderRadius: 6,
     alignSelf: "flex-start",
   },
   sortButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#fff",
   },
   listContent: {
     paddingBottom: 40,
@@ -444,20 +514,18 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a1f2e",
     paddingHorizontal: 16,
     paddingVertical: 10,
     gap: 8,
+    borderBottomWidth: 1,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#ec4899",
     textTransform: "uppercase",
   },
   sectionCount: {
     fontSize: 12,
-    color: "#9ca3af",
   },
   tableRow: {
     flexDirection: "row",
@@ -465,10 +533,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#1f2937",
-  },
-  tableRowSelected: {
-    backgroundColor: "rgba(236, 72, 153, 0.15)",
   },
   tableNameContainer: {
     flex: 1,
@@ -476,7 +540,6 @@ const styles = StyleSheet.create({
   tableName: {
     fontSize: 15,
     fontWeight: "500",
-    color: "#fff",
   },
   tableCapacity: {
     flexDirection: "row",
@@ -484,12 +547,8 @@ const styles = StyleSheet.create({
     marginRight: 16,
     gap: 4,
   },
-  capacityIcon: {
-    fontSize: 14,
-  },
   capacityText: {
     fontSize: 14,
-    color: "#9ca3af",
   },
   tablePrice: {
     flexDirection: "row",
@@ -500,11 +559,9 @@ const styles = StyleSheet.create({
   priceText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#fff",
   },
   priceLabel: {
     fontSize: 11,
-    color: "#6b7280",
     marginLeft: 2,
   },
   emptyContainer: {
@@ -513,7 +570,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 15,
-    color: "#6b7280",
     textAlign: "center",
   },
 });

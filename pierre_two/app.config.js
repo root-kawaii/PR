@@ -2,7 +2,7 @@ const IS_STAGING = process.env.APP_ENV === 'staging';
 
 export default {
   expo: {
-    name: IS_STAGING ? 'Pierre (Staging)' : 'pierre_two',
+    name: IS_STAGING ? 'Pierre (Staging)' : 'Pierre',
     slug: 'pierre_two',
     version: '1.1.0',
     orientation: 'portrait',
@@ -15,7 +15,6 @@ export default {
       bundleIdentifier: IS_STAGING ? 'PR.staging' : 'com.rootkawaii.pierre',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
-        NSCameraUsageDescription: 'Used to scan QR codes for event check-in.',
       },
     },
     android: {
@@ -77,6 +76,9 @@ export default {
       stripePublishableKey: process.env.EXPO_PUBLIC_STRIPE_KEY || '',
       posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_KEY || '',
       posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com',
+      supportUrl: process.env.EXPO_PUBLIC_SUPPORT_URL || 'https://pierre.app/support',
+      privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL || 'https://pierre.app/privacy',
+      termsUrl: process.env.EXPO_PUBLIC_TERMS_URL || 'https://pierre.app/terms',
     },
   },
 };

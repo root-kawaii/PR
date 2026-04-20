@@ -38,6 +38,7 @@ export default function RegisterScreen() {
   const [verificationCode, setVerificationCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [tempUserId, setTempUserId] = useState<string | null>(null);
+  const [tempAuthToken, setTempAuthToken] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -65,8 +66,8 @@ export default function RegisterScreen() {
       Alert.alert("Errore", "Inserisci un numero di cellulare italiano valido (es. 3331234567)");
       return;
     }
-    if (password.length < 6) {
-      Alert.alert("Errore", "La password deve contenere almeno 6 caratteri");
+    if (password.length < 8) {
+      Alert.alert("Errore", "La password deve contenere almeno 8 caratteri");
       return;
     }
     if (password !== confirmPassword) {
@@ -84,6 +85,7 @@ export default function RegisterScreen() {
           name: name.trim(),
           email: email.trim().toLowerCase(),
           password,
+          phone_number: `+39${phone.trim()}`,
           date_of_birth: dateOfBirth.toISOString().split("T")[0],
         }),
       });
@@ -113,6 +115,7 @@ export default function RegisterScreen() {
       }
 
       setTempUserId(data.user.id);
+      setTempAuthToken(data.token);
       trackEvent("registration_account_created", {
         user_id: data.user.id,
       });
@@ -129,7 +132,7 @@ export default function RegisterScreen() {
 
   // Step 2: Send verification code
   const handleSendVerificationCode = async () => {
-    if (!tempUserId || !phone) return;
+    if (!tempAuthToken || !phone) return;
 
     setIsLoading(true);
     try {
@@ -138,9 +141,11 @@ export default function RegisterScreen() {
       });
       const response = await fetch(`${API_URL}/auth/send-sms-verification`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tempAuthToken}`,
+        },
         body: JSON.stringify({
-          user_id: tempUserId,
           phone_number: `+39${phone.trim()}`,
         }),
       });
@@ -179,7 +184,7 @@ export default function RegisterScreen() {
       Alert.alert("Errore", "Inserisci il codice a 6 cifre");
       return;
     }
-    if (!tempUserId || !phone) {
+    if (!tempAuthToken || !phone) {
       Alert.alert("Errore", "Dati di registrazione mancanti. Ricomincia dall'inizio.");
       return;
     }
@@ -195,9 +200,11 @@ export default function RegisterScreen() {
       });
       const response = await fetch(`${API_URL}/auth/verify-sms-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tempAuthToken}`,
+        },
         body: JSON.stringify({
-          user_id: tempUserId,
           phone_number: `+39${phone.trim()}`,
           verification_code: verificationCode.trim(),
         }),
@@ -224,6 +231,7 @@ export default function RegisterScreen() {
           email: email.trim().toLowerCase(),
           password,
         });
+        setTempAuthToken(null);
         trackEvent("registration_completed", {
           user_id: tempUserId,
         });
@@ -391,7 +399,7 @@ export default function RegisterScreen() {
                     disabled={isLoading}
                   >
                     <Text style={[styles.resendText, { color: theme.primary }]}>
-                      Didn't receive the code? Resend
+                      Didn&apos;t receive the code? Resend
                     </Text>
                   </TouchableOpacity>
                 </>
