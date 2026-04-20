@@ -3,10 +3,10 @@
 // ====================================
 import { View, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 
 type SectionHeaderProps = {
-  icon?: string;
+  icon?: IconSymbolName;
   title: string;
   iconColor?: string;
 };

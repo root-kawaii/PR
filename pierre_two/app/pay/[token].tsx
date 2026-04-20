@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { API_URL } from '../../config/api';
 import { useTheme } from '../../context/ThemeContext';
 import { IconSymbol } from '../../components/ui/icon-symbol';
+import { trackEvent } from '../../config/analytics';
 
 type Step = 'loading' | 'checkout' | 'paid' | 'full' | 'error';
 
@@ -49,21 +50,38 @@ export default function GuestPaymentScreen() {
 
   const loadPreview = async () => {
     setStep('loading');
+    trackEvent('guest_payment_preview_requested', {
+      payment_link_token: token ?? null,
+    });
     try {
       const res = await fetch(`${API_URL}/payment-links/${token}`);
       if (!res.ok) {
+        trackEvent('guest_payment_preview_failed', {
+          payment_link_token: token ?? null,
+          status_code: res.status,
+        });
         setErrorMsg('Link di pagamento non valido o scaduto.');
         setStep('error');
         return;
       }
       const data = await res.json();
       setPreview(data);
+      trackEvent('guest_payment_preview_loaded', {
+        payment_link_token: token ?? null,
+        status: data.status,
+        slots_filled: data.slots_filled,
+        slots_total: data.slots_total,
+      });
       if (data.status === 'full') {
         setStep('full');
       } else {
         setStep('checkout');
       }
     } catch {
+      trackEvent('guest_payment_preview_failed', {
+        payment_link_token: token ?? null,
+        error_type: 'network',
+      });
       setErrorMsg('Impossibile caricare i dettagli del pagamento.');
       setStep('error');
     }
@@ -79,6 +97,10 @@ export default function GuestPaymentScreen() {
       return;
     }
     setPayLoading(true);
+    trackEvent('guest_payment_checkout_submitted', {
+      payment_link_token: token ?? null,
+      has_email: Boolean(guestEmail.trim()),
+    });
     try {
       const res = await fetch(`${API_URL}/payment-links/${token}/checkout`, {
         method: 'POST',
@@ -90,19 +112,35 @@ export default function GuestPaymentScreen() {
         }),
       });
       if (res.status === 409) {
+        trackEvent('guest_payment_checkout_rejected', {
+          payment_link_token: token ?? null,
+          reason: 'table_full',
+        });
         setStep('full');
         return;
       }
       const data = await res.json();
       if (!res.ok) {
+        trackEvent('guest_payment_checkout_failed', {
+          payment_link_token: token ?? null,
+          status_code: res.status,
+          error_message: data.error || 'Impossibile avviare il pagamento.',
+        });
         Alert.alert('Errore', data.error || 'Impossibile avviare il pagamento.');
         return;
       }
       const checkoutUrl = data.checkoutUrl || data.checkout_url;
       if (checkoutUrl) {
+        trackEvent('guest_payment_checkout_redirected', {
+          payment_link_token: token ?? null,
+        });
         await Linking.openURL(checkoutUrl);
       }
     } catch {
+      trackEvent('guest_payment_checkout_failed', {
+        payment_link_token: token ?? null,
+        error_type: 'network',
+      });
       Alert.alert('Errore', 'Impossibile avviare il pagamento. Riprova.');
     } finally {
       setPayLoading(false);

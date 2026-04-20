@@ -145,7 +145,9 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (nextUser: User) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -212,6 +214,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
   }, [user]);
 
+  const updateUser = useCallback(async (nextUser: User) => {
+    setUser(nextUser);
+    await secureSet(USER_KEY, JSON.stringify(nextUser));
+  }, []);
+
   const login = async (credentials: LoginRequest) => {
     trackEvent('auth_login_submitted');
     const controller = new AbortController();
@@ -262,6 +269,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     registerPushToken(data.token);
   };
 
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      if (!token || !user) {
+        throw new Error('Devi effettuare il login per eliminare l’account.');
+      }
+
+      trackEvent('account_deletion_submitted', {
+        user_id: user.id,
+      });
+
+      const response = await fetch(`${API_URL}/auth/account`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ password }),
+      });
+
+      if (!response.ok) {
+        const errorMessage = await extractErrorMessage(
+          response,
+          'Impossibile eliminare l’account.',
+        );
+        trackEvent('account_deletion_failed', {
+          user_id: user.id,
+          status_code: response.status,
+          error_message: errorMessage,
+        });
+        throw new Error(errorMessage);
+      }
+
+      trackEvent('account_deletion_succeeded', {
+        user_id: user.id,
+      });
+
+      setUser(null);
+      setToken(null);
+      await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+    },
+    [token, user],
+  );
+
   const register = async (data: RegisterRequest) => {
     trackEvent('auth_register_submitted');
     const response = await fetch(`${API_URL}/auth/register`, {
@@ -280,6 +330,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const authData: AuthResponse = await safeJson(response, 'Registration failed');
+
+    if (!authData.user.phone_verified) {
+      trackEvent('auth_register_pending_phone_verification', {
+        user_id: authData.user.id,
+      });
+      return;
+    }
 
     setUser(authData.user);
     setToken(authData.token);
@@ -300,7 +357,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: !!user && !!token,
     login,
     register,
+    deleteAccount,
     logout,
+    updateUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

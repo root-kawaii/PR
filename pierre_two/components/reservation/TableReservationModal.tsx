@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Linking from "expo-linking";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Table, Event } from "@/types";
@@ -52,6 +53,7 @@ export const TableReservationModal = ({
   const ownerShare = table?.capacity
     ? Math.round((tableTotalCost / table.capacity) * 100) / 100
     : 0;
+  const tableAreaLabel = table?.areaName?.trim() || table?.zone?.trim() || null;
 
   useEffect(() => {
     if (!visible || !table || !event) {
@@ -129,7 +131,7 @@ export const TableReservationModal = ({
       const { error: initError } = await initPaymentSheet({
         paymentIntentClientSecret: paymentIntentData.clientSecret,
         merchantDisplayName: "Pierre Two",
-        returnURL: "pierre-two://stripe-redirect",
+        returnURL: Linking.createURL("stripe-redirect"),
       });
 
       if (initError) {
@@ -148,6 +150,7 @@ export const TableReservationModal = ({
 
       if (presentError) {
         if (presentError.code !== "Canceled") {
+          console.error("PaymentSheet present error:", presentError);
           trackReservationFailure("present_payment_sheet", presentError.message || "payment_sheet_failed");
           Alert.alert("Errore", "Pagamento non riuscito. Riprova.");
         } else {
@@ -272,7 +275,7 @@ export const TableReservationModal = ({
               <View style={styles.locationRow}>
                 <IconSymbol name="location.fill" size={16} color="#fff" />
                 <ThemedText style={styles.tableName}>
-                  {table.name}{table.zone ? ` - ${table.zone}` : ""}
+                  {table.name}{tableAreaLabel ? ` - ${tableAreaLabel}` : ""}
                 </ThemedText>
               </View>
 
