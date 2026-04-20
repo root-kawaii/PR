@@ -1,41 +1,44 @@
 // src/models.rs
 pub mod event;
-pub use event::{Event, CreateEventRequest, UpdateEventRequest, EventResponse};
+pub use event::{CreateEventRequest, Event, EventResponse, UpdateEventRequest};
 
 pub mod payment;
-pub use payment::{PaymentEntity, PaymentRequest, PaymentFilter, PaymentStatus, PaymentCaptureMethod, CapturePaymentRequest, CapturePaymentResponse, CancelPaymentRequest, CancelPaymentResponse};
+pub use payment::{
+    CancelPaymentRequest, CancelPaymentResponse, CapturePaymentRequest, CapturePaymentResponse,
+    PaymentCaptureMethod, PaymentEntity, PaymentFilter, PaymentRequest, PaymentStatus,
+};
 
 pub mod user;
-pub use user::{User, UserResponse, RegisterRequest, LoginRequest, AuthResponse, Claims};
+pub use user::{AuthResponse, Claims, LoginRequest, RegisterRequest, User, UserResponse};
 
 pub mod genre;
-pub use genre::{Genre, CreateGenreRequest, UpdateGenreRequest, GenreResponse};
+pub use genre::{CreateGenreRequest, Genre, GenreResponse, UpdateGenreRequest};
 
 pub mod club;
-pub use club::{Club, CreateClubRequest, UpdateClubRequest, ClubResponse};
+pub use club::{Club, ClubResponse, CreateClubRequest, UpdateClubRequest};
 
 pub mod club_owner;
 
 pub mod ticket;
-pub use ticket::{Ticket, CreateTicketRequest, UpdateTicketRequest, TicketResponse, TicketWithEventResponse, EventSummary};
+pub use ticket::{
+    CreateTicketRequest, EventSummary, Ticket, TicketResponse, TicketWithEventResponse,
+    UpdateTicketRequest,
+};
 
 pub mod table;
 pub use table::{
-    Table, CreateTableRequest, UpdateTableRequest, TableResponse, TablesResponse,
-    TableReservation, CreateTableReservationRequest, UpdateTableReservationRequest,
-    TableReservationResponse, TableReservationWithDetailsResponse, TableReservationsResponse, TableReservationsWithDetailsResponse,
-    TableSummary,
-    AddPaymentToReservationRequest, LinkTicketToReservationRequest,
-    CreatePaymentIntentResponse,
-    ReservationPaymentShare, ReservationGuest,
-    CreateSplitPaymentIntentRequest, CreateSplitReservationRequest, CreateSplitReservationResponse,
-    PaymentShareResponse, PaymentLinkPreviewResponse,
-    CreateCheckoutRequest, CreateCheckoutResponse,
-    ReservationPaymentStatusResponse
+    AddPaymentToReservationRequest, CreateCheckoutRequest, CreateCheckoutResponse,
+    CreatePaymentIntentResponse, CreateSplitPaymentIntentRequest, CreateSplitReservationRequest,
+    CreateSplitReservationResponse, CreateTableRequest, CreateTableReservationRequest,
+    LinkTicketToReservationRequest, PaymentLinkPreviewResponse, PaymentShareResponse,
+    ReservationGuest, ReservationPaymentShare, ReservationPaymentStatusResponse, Table,
+    TableReservation, TableReservationResponse, TableReservationWithDetailsResponse,
+    TableReservationsResponse, TableReservationsWithDetailsResponse, TableResponse, TableSummary,
+    TablesResponse, UpdateTableRequest, UpdateTableReservationRequest,
 };
 
 pub mod area;
-pub use area::{Area, CreateAreaRequest, UpdateAreaRequest, AreaResponse, AssignAreaRequest};
+pub use area::{Area, AreaResponse, AssignAreaRequest, CreateAreaRequest, UpdateAreaRequest};
 
 use serde::Deserialize;
 
@@ -53,4 +56,6 @@ pub struct PaginationParams {
     pub offset: i64,
 }
 
-fn default_limit() -> i64 { 50 }
+fn default_limit() -> i64 {
+    50
+}

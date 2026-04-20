@@ -1,33 +1,33 @@
-use crate::models::{
-    AppState, CreateTableRequest, UpdateTableRequest, TableResponse, TablesResponse,
-    CreateTableReservationRequest, UpdateTableReservationRequest,
-    TableReservationResponse, TableReservationWithDetailsResponse,
-    TableReservationsResponse, TableReservationsWithDetailsResponse,
-    AddPaymentToReservationRequest, LinkTicketToReservationRequest,
-    CreatePaymentIntentResponse,
-    CreateSplitPaymentIntentRequest, CreateSplitReservationRequest, CreateSplitReservationResponse,
-    PaymentLinkPreviewResponse,
-    CreateCheckoutRequest, CreateCheckoutResponse,
-    ReservationPaymentStatusResponse,
-    TableSummary, PaymentStatus, PaymentCaptureMethod, EventSummary,
-};
 use crate::application::{
-    auth_service as user_persistence,
-    reservation_service as table_persistence,
+    auth_service as user_persistence, outbox_service, reservation_service as table_persistence,
 };
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::PaginationParams;
+use crate::models::{
+    AddPaymentToReservationRequest, AppState, CreateCheckoutRequest, CreateCheckoutResponse,
+    CreatePaymentIntentResponse, CreateSplitPaymentIntentRequest, CreateSplitReservationRequest,
+    CreateSplitReservationResponse, CreateTableRequest, CreateTableReservationRequest,
+    EventSummary, LinkTicketToReservationRequest, PaymentCaptureMethod, PaymentLinkPreviewResponse,
+    PaymentStatus, ReservationPaymentStatusResponse, TableReservationResponse,
+    TableReservationWithDetailsResponse, TableReservationsResponse,
+    TableReservationsWithDetailsResponse, TableResponse, TableSummary, TablesResponse,
+    UpdateTableRequest, UpdateTableReservationRequest,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
-use std::sync::Arc;
-use uuid::Uuid;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use chrono::Utc;
-use stripe::{CreatePaymentIntent, CreateCustomer, Currency, Customer, PaymentIntent, PaymentIntentCaptureMethod, PaymentIntentSetupFutureUsage, PaymentIntentStatus};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
+use std::sync::Arc;
+use stripe::{
+    CreateCustomer, CreatePaymentIntent, Currency, Customer, PaymentIntent,
+    PaymentIntentCaptureMethod, PaymentIntentSetupFutureUsage, PaymentIntentStatus,
+};
+use tracing::warn;
+use uuid::Uuid;
 
 // ============================================================================
 // Tables endpoints
@@ -39,10 +39,8 @@ pub async fn get_all_tables(
 ) -> Result<Json<TablesResponse>, StatusCode> {
     match table_persistence::get_all_tables(&state.db_pool).await {
         Ok(tables) => {
-            let table_responses: Vec<TableResponse> = tables
-                .into_iter()
-                .map(|t| t.into())
-                .collect();
+            let table_responses: Vec<TableResponse> =
+                tables.into_iter().map(|t| t.into()).collect();
 
             Ok(Json(TablesResponse {
                 tables: table_responses,
@@ -61,10 +59,8 @@ pub async fn get_tables_by_event(
 
     match table_persistence::get_tables_by_event_id(&state.db_pool, event_uuid).await {
         Ok(tables) => {
-            let table_responses: Vec<TableResponse> = tables
-                .into_iter()
-                .map(|t| t.into())
-                .collect();
+            let table_responses: Vec<TableResponse> =
+                tables.into_iter().map(|t| t.into()).collect();
 
             Ok(Json(TablesResponse {
                 tables: table_responses,
@@ -83,10 +79,8 @@ pub async fn get_available_tables_by_event(
 
     match table_persistence::get_available_tables_by_event_id(&state.db_pool, event_uuid).await {
         Ok(tables) => {
-            let table_responses: Vec<TableResponse> = tables
-                .into_iter()
-                .map(|t| t.into())
-                .collect();
+            let table_responses: Vec<TableResponse> =
+                tables.into_iter().map(|t| t.into()).collect();
 
             Ok(Json(TablesResponse {
                 tables: table_responses,
@@ -197,12 +191,16 @@ pub async fn get_all_reservations(
     State(state): State<Arc<AppState>>,
     Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<TableReservationsResponse>, StatusCode> {
-    match table_persistence::get_all_reservations(&state.db_pool, pagination.limit, pagination.offset).await {
+    match table_persistence::get_all_reservations(
+        &state.db_pool,
+        pagination.limit,
+        pagination.offset,
+    )
+    .await
+    {
         Ok(reservations) => {
-            let reservation_responses: Vec<TableReservationResponse> = reservations
-                .into_iter()
-                .map(|r| r.into())
-                .collect();
+            let reservation_responses: Vec<TableReservationResponse> =
+                reservations.into_iter().map(|r| r.into()).collect();
 
             Ok(Json(TableReservationsResponse {
                 reservations: reservation_responses,
@@ -219,9 +217,28 @@ pub async fn get_user_reservations_with_details(
 ) -> Result<Json<TableReservationsWithDetailsResponse>, StatusCode> {
     let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let reservations = table_persistence::list_user_reservations_with_details(&state.read_db_pool, user_uuid)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let reservations =
+        table_persistence::list_user_reservations_with_details(&state.read_db_pool, user_uuid)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if let Err(error) = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "user_reservations_viewed",
+        Some(&user_id),
+        Some("reservation"),
+        None,
+        serde_json::json!({
+            "user_id": user_uuid,
+            "reservation_count": reservations.len(),
+            "outcome": "success",
+        }),
+    )
+    .await
+    {
+        warn!(error = %error, user_id = %user_uuid, "Failed to enqueue user reservations analytics event");
+    }
 
     Ok(Json(TableReservationsWithDetailsResponse { reservations }))
 }
@@ -235,10 +252,8 @@ pub async fn get_reservations_by_table(
 
     match table_persistence::get_reservations_by_table_id(&state.db_pool, table_uuid).await {
         Ok(reservations) => {
-            let reservation_responses: Vec<TableReservationResponse> = reservations
-                .into_iter()
-                .map(|r| r.into())
-                .collect();
+            let reservation_responses: Vec<TableReservationResponse> =
+                reservations.into_iter().map(|r| r.into()).collect();
 
             Ok(Json(TableReservationsResponse {
                 reservations: reservation_responses,
@@ -270,6 +285,21 @@ pub async fn get_reservation_by_code(
     match table_persistence::get_reservation_with_details_by_code(&state.db_pool, &code).await {
         Ok((reservation, table, (event_id, event_title, event_venue, event_date, event_image))) => {
             let amount_remaining = reservation.total_amount - reservation.amount_paid;
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "reservation_lookup_succeeded",
+                Some(&code),
+                Some("reservation"),
+                Some(reservation.id),
+                serde_json::json!({
+                    "reservation_id": reservation.id,
+                    "event_id": event_id,
+                    "table_id": table.id,
+                    "outcome": "success",
+                }),
+            )
+            .await;
 
             Ok(Json(TableReservationWithDetailsResponse {
                 id: reservation.id.to_string(),
@@ -303,8 +333,38 @@ pub async fn get_reservation_by_code(
                 },
             }))
         }
-        Err(sqlx::Error::RowNotFound) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(sqlx::Error::RowNotFound) => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "reservation_lookup_failed",
+                Some(&code),
+                Some("reservation"),
+                None,
+                serde_json::json!({
+                    "reservation_code": code,
+                    "outcome": "not_found",
+                }),
+            )
+            .await;
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(error) => {
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "reservation_lookup_failed",
+                Some(&code),
+                Some("reservation"),
+                None,
+                &error.to_string(),
+                serde_json::json!({
+                    "reservation_code": code,
+                }),
+            )
+            .await;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
@@ -398,7 +458,14 @@ pub async fn add_payment_to_reservation(
     let payment_id = Uuid::parse_str(&req.payment_id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let amount = Decimal::from_f64_retain(req.amount).ok_or(StatusCode::BAD_REQUEST)?;
 
-    match table_persistence::add_payment_to_reservation(&state.db_pool, reservation_uuid, payment_id, amount).await {
+    match table_persistence::add_payment_to_reservation(
+        &state.db_pool,
+        reservation_uuid,
+        payment_id,
+        amount,
+    )
+    .await
+    {
         Ok(_) => Ok(StatusCode::OK),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
@@ -413,7 +480,9 @@ pub async fn link_ticket_to_reservation(
     let reservation_uuid = Uuid::parse_str(&reservation_id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let ticket_id = Uuid::parse_str(&req.ticket_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    match table_persistence::add_ticket_to_reservation(&state.db_pool, reservation_uuid, ticket_id).await {
+    match table_persistence::add_ticket_to_reservation(&state.db_pool, reservation_uuid, ticket_id)
+        .await
+    {
         Ok(_) => Ok(StatusCode::OK),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
@@ -429,7 +498,8 @@ pub async fn get_tickets_for_reservation(
     // Get the reservation which contains ticket_ids array
     match table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid).await {
         Ok(reservation) => {
-            let ticket_id_strings: Vec<String> = reservation.ticket_ids
+            let ticket_id_strings: Vec<String> = reservation
+                .ticket_ids
                 .unwrap_or_default()
                 .iter()
                 .map(|id| id.to_string())
@@ -450,9 +520,12 @@ pub async fn create_payment_intent(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSplitPaymentIntentRequest>,
 ) -> Result<Json<CreatePaymentIntentResponse>, (StatusCode, String)> {
-    let table_id = Uuid::parse_str(&req.table_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
-    let event_id = Uuid::parse_str(&req.event_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
-    let owner_user_id = Uuid::parse_str(&req.owner_user_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
+    let table_id = Uuid::parse_str(&req.table_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
+    let event_id = Uuid::parse_str(&req.event_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
+    let owner_user_id = Uuid::parse_str(&req.owner_user_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
 
     // Get table — capacity drives the per-person split
     let table = match table_persistence::get_table_by_id(&state.db_pool, table_id).await {
@@ -471,7 +544,12 @@ pub async fn create_payment_intent(
     let owner_user = match user_persistence::find_user_by_id(&state.db_pool, owner_user_id).await {
         Ok(Some(u)) => u,
         Ok(None) => return Err((StatusCode::NOT_FOUND, "Utente non trovato".to_string())),
-        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())),
+        Err(_) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore del database".to_string(),
+            ))
+        }
     };
 
     let mut customer_params = CreateCustomer::new();
@@ -485,15 +563,20 @@ pub async fn create_payment_intent(
         .await
         .map_err(|e| {
             tracing::error!(error = ?e, "Stripe Customer create error");
-            (StatusCode::BAD_GATEWAY, "Errore creazione cliente".to_string())
+            (
+                StatusCode::BAD_GATEWAY,
+                "Errore creazione cliente".to_string(),
+            )
         })?;
 
     // Create Stripe PaymentIntent for owner's share with manual capture + saved payment method
-    let amount_in_cents = owner_share.to_f64()
-        .ok_or_else(|| {
-            tracing::error!(owner_share = %owner_share, "Invalid owner_share amount");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Importo non valido".to_string())
-        })? * 100.0;
+    let amount_in_cents = owner_share.to_f64().ok_or_else(|| {
+        tracing::error!(owner_share = %owner_share, "Invalid owner_share amount");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Importo non valido".to_string(),
+        )
+    })? * 100.0;
 
     let mut params = CreatePaymentIntent::new(amount_in_cents as i64, Currency::EUR);
 
@@ -506,12 +589,10 @@ pub async fn create_payment_intent(
     // Attach the Stripe customer
     params.customer = Some(stripe_customer.id.clone());
 
-    params.automatic_payment_methods = Some(
-        stripe::CreatePaymentIntentAutomaticPaymentMethods {
-            enabled: true,
-            allow_redirects: None,
-        },
-    );
+    params.automatic_payment_methods = Some(stripe::CreatePaymentIntentAutomaticPaymentMethods {
+        enabled: true,
+        allow_redirects: None,
+    });
 
     params.metadata = Some(
         [
@@ -530,16 +611,39 @@ pub async fn create_payment_intent(
         .await
         .map_err(|e| {
             tracing::error!(error = ?e, "Stripe API error creating PaymentIntent");
-            (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
+            (
+                StatusCode::BAD_GATEWAY,
+                "Errore del servizio di pagamento".to_string(),
+            )
         })?;
 
     tracing::info!(payment_intent_id = %payment_intent.id, owner_share_cents = amount_in_cents as i64, total_cost = %total_cost, stripe_customer_id = %stripe_customer.id, "Split PaymentIntent created");
 
-    let client_secret = payment_intent.client_secret
-        .ok_or_else(|| {
-            tracing::error!("No client_secret in PaymentIntent response");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Risposta di pagamento non valida".to_string())
-        })?;
+    let client_secret = payment_intent.client_secret.ok_or_else(|| {
+        tracing::error!("No client_secret in PaymentIntent response");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Risposta di pagamento non valida".to_string(),
+        )
+    })?;
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "split_payment_intent_created",
+        Some(&owner_user_id.to_string()),
+        Some("payment"),
+        None,
+        serde_json::json!({
+            "owner_user_id": owner_user_id,
+            "table_id": table_id,
+            "event_id": event_id,
+            "owner_share": owner_share,
+            "per_person": per_person,
+            "outcome": "success",
+        }),
+    )
+    .await;
 
     Ok(Json(CreatePaymentIntentResponse {
         client_secret,
@@ -560,9 +664,12 @@ pub async fn create_reservation_with_payment(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSplitReservationRequest>,
 ) -> Result<Json<CreateSplitReservationResponse>, (StatusCode, String)> {
-    let table_id = Uuid::parse_str(&req.table_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
-    let event_id = Uuid::parse_str(&req.event_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
-    let owner_user_id = Uuid::parse_str(&req.owner_user_id).map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
+    let table_id = Uuid::parse_str(&req.table_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
+    let event_id = Uuid::parse_str(&req.event_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
+    let owner_user_id = Uuid::parse_str(&req.owner_user_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
 
     tracing::info!(
         owner_user_id = %owner_user_id,
@@ -584,8 +691,12 @@ pub async fn create_reservation_with_payment(
     let owner_share = total_cost - (per_person * Decimal::from(capacity - 1));
 
     // Verify owner's PaymentIntent with Stripe
-    let pi_id: stripe::PaymentIntentId = req.stripe_payment_intent_id.parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "ID PaymentIntent non valido".to_string()))?;
+    let pi_id: stripe::PaymentIntentId = req.stripe_payment_intent_id.parse().map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "ID PaymentIntent non valido".to_string(),
+        )
+    })?;
 
     // Run the rest; on any failure, cancel the Stripe authorization hold immediately.
     let result: Result<Json<CreateSplitReservationResponse>, (StatusCode, String)> = async {
@@ -787,6 +898,24 @@ pub async fn create_reservation_with_payment(
         "Split reservation created successfully"
     );
 
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "split_reservation_created",
+        Some(&owner_user_id.to_string()),
+        Some("reservation"),
+        Some(reservation_id),
+        serde_json::json!({
+            "reservation_id": reservation_id,
+            "table_id": table_id,
+            "event_id": event_id,
+            "payment_id": payment_id,
+            "owner_share": owner_share,
+            "share_link_present": true,
+            "outcome": "success",
+        }),
+    ).await;
+
     Ok(Json(CreateSplitReservationResponse {
         reservation: final_reservation.into(),
         payment_shares: vec![owner_share_row.into()],
@@ -795,13 +924,33 @@ pub async fn create_reservation_with_payment(
 
     }.await; // end of cancellation-guarded block
 
+    if let Err((status, error_message)) = &result {
+        let _ = outbox_service::enqueue_analytics_error(
+            &state.db_pool,
+            &state.config,
+            "split_reservation_create_failed",
+            Some(&owner_user_id.to_string()),
+            Some("reservation"),
+            None,
+            error_message,
+            serde_json::json!({
+                "owner_user_id": owner_user_id,
+                "table_id": table_id,
+                "event_id": event_id,
+                "status_code": status.as_u16(),
+            }),
+        )
+        .await;
+    }
+
     if result.is_err() {
         tracing::error!(owner_user_id = %owner_user_id, table_id = %table_id, "Split reservation failed — cancelling Stripe authorization");
         let _ = PaymentIntent::cancel(
             &state.stripe_client,
             &pi_id,
             stripe::CancelPaymentIntent::default(),
-        ).await;
+        )
+        .await;
     }
 
     result
@@ -813,7 +962,11 @@ fn generate_alphanumeric_code(prefix: &str) -> String {
     let random_part: String = (0..8)
         .map(|_| {
             let idx = rng.gen_range(0..36);
-            if idx < 26 { (b'A' + idx) as char } else { (b'0' + (idx - 26)) as char }
+            if idx < 26 {
+                (b'A' + idx) as char
+            } else {
+                (b'0' + (idx - 26)) as char
+            }
         })
         .collect();
     format!("{}{}", prefix, random_part)
@@ -825,7 +978,11 @@ fn generate_payment_link_token() -> String {
     let random_part: String = (0..32)
         .map(|_| {
             let idx = rng.gen_range(0..36);
-            if idx < 26 { (b'a' + idx) as char } else { (b'0' + (idx - 26)) as char }
+            if idx < 26 {
+                (b'a' + idx) as char
+            } else {
+                (b'0' + (idx - 26)) as char
+            }
         })
         .collect();
     format!("pay_{}", random_part)
@@ -840,9 +997,10 @@ pub async fn get_payment_link_preview(
     State(state): State<Arc<AppState>>,
     Path(token): Path<String>,
 ) -> Result<Json<PaymentLinkPreviewResponse>, StatusCode> {
-    let reservation = table_persistence::get_reservation_by_payment_link_token(&state.db_pool, &token)
-        .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let reservation =
+        table_persistence::get_reservation_by_payment_link_token(&state.db_pool, &token)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
 
     let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
         .await
@@ -865,7 +1023,29 @@ pub async fn get_payment_link_preview(
 
     let slots_total = table.capacity;
     let per_person = (table.total_cost / Decimal::from(table.capacity)).round_dp(2);
-    let status = if slots_filled >= slots_total as i64 { "full" } else { "open" };
+    let status = if slots_filled >= slots_total as i64 {
+        "full"
+    } else {
+        "open"
+    };
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "payment_link_preview_viewed",
+        Some(&token),
+        Some("reservation"),
+        Some(reservation.id),
+        serde_json::json!({
+            "reservation_id": reservation.id,
+            "table_id": table.id,
+            "slots_filled": slots_filled,
+            "slots_total": slots_total,
+            "status": status,
+            "outcome": "success",
+        }),
+    )
+    .await;
 
     Ok(Json(PaymentLinkPreviewResponse {
         amount: format!("{:.2} €", per_person),
@@ -887,52 +1067,64 @@ pub async fn create_payment_link_checkout(
     // Begin transaction with row-level lock to prevent race conditions
     let mut tx = state.db_pool.begin().await.map_err(|e| {
         tracing::error!(error = %e, "Failed to begin transaction");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Errore del database".to_string(),
+        )
     })?;
 
     // Lock the reservation row
     let reservation_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM table_reservations WHERE payment_link_token = $1 FOR UPDATE"
+        "SELECT id FROM table_reservations WHERE payment_link_token = $1 FOR UPDATE",
     )
     .bind(&token)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Failed to lock reservation");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Errore del database".to_string(),
+        )
     })?;
 
-    let reservation_id = reservation_id.ok_or_else(|| (StatusCode::NOT_FOUND, "Link di pagamento non trovato".to_string()))?;
+    let reservation_id = reservation_id.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            "Link di pagamento non trovato".to_string(),
+        )
+    })?;
 
     // Fetch reservation and table for capacity/amount
-    let reservation_event_id: Uuid = sqlx::query_scalar("SELECT event_id FROM table_reservations WHERE id = $1")
-        .bind(reservation_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to fetch reservation event_id");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
-        })?;
+    let reservation_event_id: Uuid =
+        sqlx::query_scalar("SELECT event_id FROM table_reservations WHERE id = $1")
+            .bind(reservation_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to fetch reservation event_id");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+            })?;
 
-    let reservation_table_id: Uuid = sqlx::query_scalar("SELECT table_id FROM table_reservations WHERE id = $1")
-        .bind(reservation_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to fetch reservation table_id");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
-        })?;
+    let reservation_table_id: Uuid =
+        sqlx::query_scalar("SELECT table_id FROM table_reservations WHERE id = $1")
+            .bind(reservation_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to fetch reservation table_id");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+            })?;
 
-    let (table_capacity, table_total_cost): (i32, rust_decimal::Decimal) = sqlx::query_as(
-        "SELECT capacity, total_cost FROM tables WHERE id = $1"
-    )
-    .bind(reservation_table_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "Failed to fetch table");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
-    })?;
+    let (table_capacity, table_total_cost): (i32, rust_decimal::Decimal) =
+        sqlx::query_as("SELECT capacity, total_cost FROM tables WHERE id = $1")
+            .bind(reservation_table_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to fetch table");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Errore".to_string())
+            })?;
 
     // Count current non-owner slots already taken (paid or in-flight)
     let slots_filled: i64 = sqlx::query_scalar(
@@ -949,6 +1141,20 @@ pub async fn create_payment_link_checkout(
     let guest_slots = (table_capacity - 1) as i64; // capacity minus owner
     if slots_filled >= guest_slots {
         let _ = tx.rollback().await;
+        let _ = outbox_service::enqueue_analytics_event(
+            &state.db_pool,
+            &state.config,
+            "payment_link_checkout_rejected",
+            Some(&token),
+            Some("reservation"),
+            Some(reservation_id),
+            serde_json::json!({
+                "reservation_id": reservation_id,
+                "reason": "table_full",
+                "outcome": "rejected",
+            }),
+        )
+        .await;
         return Err((StatusCode::CONFLICT, "Tavolo al completo".to_string()));
     }
 
@@ -960,7 +1166,7 @@ pub async fn create_payment_link_checkout(
               AND phone_number = $2
               AND is_owner = false
               AND status IN ('paid', 'checkout_pending')
-        )"
+        )",
     )
     .bind(reservation_id)
     .bind(&req.phone)
@@ -968,12 +1174,32 @@ pub async fn create_payment_link_checkout(
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Failed to check duplicate phone on reservation");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Errore del database".to_string(),
+        )
     })?;
 
     if already_exists {
         let _ = tx.rollback().await;
-        return Err((StatusCode::CONFLICT, "Hai già pagato per questo tavolo".to_string()));
+        let _ = outbox_service::enqueue_analytics_event(
+            &state.db_pool,
+            &state.config,
+            "payment_link_checkout_rejected",
+            Some(&token),
+            Some("reservation"),
+            Some(reservation_id),
+            serde_json::json!({
+                "reservation_id": reservation_id,
+                "reason": "duplicate_phone",
+                "outcome": "rejected",
+            }),
+        )
+        .await;
+        return Err((
+            StatusCode::CONFLICT,
+            "Hai già pagato per questo tavolo".to_string(),
+        ));
     }
 
     let per_person = (table_total_cost / Decimal::from(table_capacity)).round_dp(2);
@@ -986,7 +1212,7 @@ pub async fn create_payment_link_checkout(
         )
         VALUES ($1, $2, $3, $4, $5, 'checkout_pending', false)
         RETURNING id
-        "#
+        "#,
     )
     .bind(reservation_id)
     .bind(&req.phone)
@@ -1002,7 +1228,10 @@ pub async fn create_payment_link_checkout(
 
     tx.commit().await.map_err(|e| {
         tracing::error!(error = %e, "Failed to commit transaction");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Errore del database".to_string(),
+        )
     })?;
 
     // Fetch event name for Stripe product description
@@ -1016,24 +1245,25 @@ pub async fn create_payment_link_checkout(
 
     let mut checkout_params = stripe::CreateCheckoutSession::new();
     checkout_params.mode = Some(stripe::CheckoutSessionMode::Payment);
-    checkout_params.line_items = Some(vec![
-        stripe::CreateCheckoutSessionLineItems {
-            price_data: Some(stripe::CreateCheckoutSessionLineItemsPriceData {
-                currency: Currency::EUR,
-                product_data: Some(stripe::CreateCheckoutSessionLineItemsPriceDataProductData {
-                    name: format!("Tavolo - {}", event_name),
-                    ..Default::default()
-                }),
-                unit_amount: Some(amount_in_cents),
+    checkout_params.line_items = Some(vec![stripe::CreateCheckoutSessionLineItems {
+        price_data: Some(stripe::CreateCheckoutSessionLineItemsPriceData {
+            currency: Currency::EUR,
+            product_data: Some(stripe::CreateCheckoutSessionLineItemsPriceDataProductData {
+                name: format!("Tavolo - {}", event_name),
                 ..Default::default()
             }),
-            quantity: Some(1),
+            unit_amount: Some(amount_in_cents),
             ..Default::default()
-        }
-    ]);
+        }),
+        quantity: Some(1),
+        ..Default::default()
+    }]);
 
     let app_base_url = state.config.app_base_url.clone();
-    let success_url = format!("{}/payment/success?session_id={{CHECKOUT_SESSION_ID}}", app_base_url);
+    let success_url = format!(
+        "{}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+        app_base_url
+    );
     let cancel_url = format!("{}/payment/cancel/{}", app_base_url, token);
     checkout_params.success_url = Some(&success_url);
     checkout_params.cancel_url = Some(&cancel_url);
@@ -1055,7 +1285,10 @@ pub async fn create_payment_link_checkout(
         .await
         .map_err(|e| {
             tracing::error!(error = ?e, "Stripe Checkout session creation error");
-            (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string())
+            (
+                StatusCode::BAD_GATEWAY,
+                "Errore del servizio di pagamento".to_string(),
+            )
         })?;
 
     // Store checkout session ID on the share
@@ -1073,10 +1306,29 @@ pub async fn create_payment_link_checkout(
     })?;
 
     let checkout_url = session.url.ok_or_else(|| {
-        (StatusCode::INTERNAL_SERVER_ERROR, "URL di checkout non disponibile".to_string())
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "URL di checkout non disponibile".to_string(),
+        )
     })?;
 
     tracing::info!(share_id = %share_id, checkout_session_id = %session.id, reservation_id = %reservation_id, "Stripe Checkout Session created for guest");
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "payment_link_checkout_started",
+        Some(&token),
+        Some("reservation"),
+        Some(reservation_id),
+        serde_json::json!({
+            "reservation_id": reservation_id,
+            "share_id": share_id,
+            "event_id": reservation_event_id,
+            "outcome": "success",
+        }),
+    )
+    .await;
 
     Ok(Json(CreateCheckoutResponse { checkout_url }))
 }
@@ -1100,18 +1352,41 @@ pub async fn get_reservation_payment_status(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let shares = table_persistence::get_payment_shares_by_reservation(&state.db_pool, reservation_uuid)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let shares =
+        table_persistence::get_payment_shares_by_reservation(&state.db_pool, reservation_uuid)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let slots_filled = shares.iter().filter(|s| !s.is_owner && (s.status == "paid" || s.status == "checkout_pending")).count() as i32;
+    let slots_filled = shares
+        .iter()
+        .filter(|s| !s.is_owner && (s.status == "paid" || s.status == "checkout_pending"))
+        .count() as i32;
     let slots_total = table.capacity;
 
     let amount_remaining = reservation.total_amount - reservation.amount_paid;
 
     let app_base_url = state.config.app_base_url.clone();
-    let share_link = reservation.payment_link_token.as_ref()
+    let share_link = reservation
+        .payment_link_token
+        .as_ref()
         .map(|token| format!("{}/pay/{}", app_base_url, token));
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "reservation_payment_status_viewed",
+        Some(&reservation_uuid.to_string()),
+        Some("reservation"),
+        Some(reservation_uuid),
+        serde_json::json!({
+            "reservation_id": reservation_uuid,
+            "slots_filled": slots_filled,
+            "slots_total": slots_total,
+            "share_count": shares.len(),
+            "outcome": "success",
+        }),
+    )
+    .await;
 
     Ok(Json(ReservationPaymentStatusResponse {
         reservation_id: reservation.id.to_string(),
@@ -1139,7 +1414,8 @@ pub async fn guest_payment_page(
     let base_url = state.config.app_base_url.clone();
     let api_base = base_url.clone();
 
-    let html = format!(r#"<!DOCTYPE html>
+    let html = format!(
+        r#"<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8"/>
@@ -1310,7 +1586,10 @@ pub async fn guest_payment_page(
   }}
 </script>
 </body>
-</html>"#, token = token, api_base = api_base);
+</html>"#,
+        token = token,
+        api_base = api_base
+    );
 
     axum::response::Response::builder()
         .status(200)
@@ -1361,7 +1640,8 @@ pub async fn payment_cancel_page(
     let base_url = state.config.app_base_url.clone();
     let pay_url = format!("{}/pay/{}", base_url, token);
 
-    let html = format!(r#"<!DOCTYPE html>
+    let html = format!(
+        r#"<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8"/>
@@ -1384,7 +1664,9 @@ pub async fn payment_cancel_page(
     <a href="{pay_url}">Riprova</a>
   </div>
 </body>
-</html>"#, pay_url = pay_url);
+</html>"#,
+        pay_url = pay_url
+    );
 
     axum::response::Response::builder()
         .status(200)

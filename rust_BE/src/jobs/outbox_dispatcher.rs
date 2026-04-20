@@ -75,7 +75,11 @@ pub async fn run(state: Arc<AppState>) {
         crate::jobs::record_job_run(
             &state,
             "outbox_dispatcher",
-            if failed == 0 { "success" } else { "partial_failure" },
+            if failed == 0 {
+                "success"
+            } else {
+                "partial_failure"
+            },
             json!({
                 "claimed": delivered + failed,
                 "delivered": delivered,
@@ -124,7 +128,10 @@ async fn dispatch_alert_webhook(state: &AppState, payload: &Value) -> Result<(),
     if response.status().is_success() {
         Ok(())
     } else {
-        Err(format!("Alert webhook returned status {}", response.status()))
+        Err(format!(
+            "Alert webhook returned status {}",
+            response.status()
+        ))
     }
 }
 

@@ -34,7 +34,10 @@ impl AppError {
         }
     }
 
-    pub fn response(status: StatusCode, message: impl Into<String>) -> (StatusCode, Json<ApiError>) {
+    pub fn response(
+        status: StatusCode,
+        message: impl Into<String>,
+    ) -> (StatusCode, Json<ApiError>) {
         let err = Self::new(status, message);
         (
             err.status,
@@ -89,7 +92,10 @@ impl IntoResponse for AppError {
 
 impl From<StatusCode> for AppError {
     fn from(status: StatusCode) -> Self {
-        Self::new(status, status.canonical_reason().unwrap_or("Request failed"))
+        Self::new(
+            status,
+            status.canonical_reason().unwrap_or("Request failed"),
+        )
     }
 }
 

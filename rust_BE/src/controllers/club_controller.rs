@@ -1,6 +1,6 @@
-use crate::models::{AppState, CreateClubRequest, UpdateClubRequest, ClubResponse};
 use crate::application::club_service as club_persistence;
 use crate::middleware::auth::ClubOwnerUser;
+use crate::models::{AppState, ClubResponse, CreateClubRequest, UpdateClubRequest};
 use axum::{
     extract::{Path, State},
     http::StatusCode,

@@ -1,21 +1,17 @@
+use crate::application::{
+    club_owner_service as club_owner_persistence, club_service as club_persistence,
+    event_service as event_persistence, outbox_service, reservation_service as table_persistence,
+};
 use crate::middleware::auth::ClubOwnerUser;
+use crate::models::club_owner::{
+    AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
+    ClubOwnerRegisterRequest, ClubOwnerResponse, CreateManualReservationRequest, OwnerStats,
+    OwnerUpdateClubRequest, ScanResult, TableImageRow, UpdateReservationStatusRequest,
+};
+use crate::models::table::TableReservationResponse;
 use crate::models::{
     AppState, ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest,
     EventResponse, TableResponse, TablesResponse, UpdateClubRequest,
-};
-use crate::models::club_owner::{
-    AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
-    ClubOwnerRegisterRequest, ClubOwnerResponse, CreateManualReservationRequest,
-    OwnerUpdateClubRequest, ScanResult, TableImageRow, UpdateReservationStatusRequest,
-    OwnerStats,
-};
-use crate::models::table::TableReservationResponse;
-use crate::application::{
-    club_owner_service as club_owner_persistence,
-    club_service as club_persistence,
-    event_service as event_persistence,
-    outbox_service,
-    reservation_service as table_persistence,
 };
 use crate::utils::jwt;
 use axum::{
@@ -52,8 +48,8 @@ pub async fn register_club_owner(
     }
 
     // Hash the password
-    let password_hash = hash(payload.password, DEFAULT_COST)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let password_hash =
+        hash(payload.password, DEFAULT_COST).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Create the club owner
     let owner = club_owner_persistence::create_club_owner(
@@ -82,8 +78,13 @@ pub async fn register_club_owner(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Generate JWT token with club_owner role
-    let token = jwt::generate_token(owner.id, owner.email.clone(), "club_owner".to_string(), &state.jwt_secret)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token = jwt::generate_token(
+        owner.id,
+        owner.email.clone(),
+        "club_owner".to_string(),
+        &state.jwt_secret,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let response = ClubOwnerAuthResponse {
         owner: ClubOwnerResponse::from(owner),
@@ -100,7 +101,12 @@ pub async fn login_club_owner(
     Json(payload): Json<ClubOwnerLoginRequest>,
 ) -> Result<Json<ClubOwnerAuthResponse>, StatusCode> {
     // Find club owner by email
-    let owner = match club_owner_persistence::find_club_owner_by_email(&state.db_pool, &payload.email).await {
+    let owner = match club_owner_persistence::find_club_owner_by_email(
+        &state.db_pool,
+        &payload.email,
+    )
+    .await
+    {
         Ok(Some(owner)) => owner,
         Ok(None) => return Err(StatusCode::UNAUTHORIZED),
         Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -120,14 +126,36 @@ pub async fn login_club_owner(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Generate JWT token
-    let token = jwt::generate_token(owner.id, owner.email.clone(), "club_owner".to_string(), &state.jwt_secret)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token = jwt::generate_token(
+        owner.id,
+        owner.email.clone(),
+        "club_owner".to_string(),
+        &state.jwt_secret,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let owner_id = owner.id;
+    let club_id = club.as_ref().map(|club| club.id);
     let response = ClubOwnerAuthResponse {
         owner: ClubOwnerResponse::from(owner),
         club: club.map(ClubResponse::from),
         token,
     };
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_logged_in",
+        Some(&owner_id.to_string()),
+        Some("club_owner"),
+        Some(owner_id),
+        serde_json::json!({
+            "owner_id": owner_id,
+            "club_id": club_id,
+            "outcome": "success",
+        }),
+    )
+    .await;
 
     Ok(Json(response))
 }
@@ -187,6 +215,22 @@ pub async fn create_club_event(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_event_created",
+        Some(&claims.sub),
+        Some("event"),
+        Some(event.id),
+        serde_json::json!({
+            "owner_id": claims.sub,
+            "club_id": club.id,
+            "event_id": event.id,
+            "outcome": "success",
+        }),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(EventResponse::from(event))))
 }
 
@@ -219,7 +263,9 @@ pub async fn get_my_club_tables(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let table_responses: Vec<TableResponse> = tables.into_iter().map(|t| t.into()).collect();
-    Ok(Json(TablesResponse { tables: table_responses }))
+    Ok(Json(TablesResponse {
+        tables: table_responses,
+    }))
 }
 
 /// Create a table for an event owned by the club owner
@@ -263,6 +309,23 @@ pub async fn create_club_table(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_table_created",
+        Some(&claims.sub),
+        Some("table"),
+        Some(table.id),
+        serde_json::json!({
+            "owner_id": claims.sub,
+            "event_id": event_uuid,
+            "table_id": table.id,
+            "capacity": table.capacity,
+            "outcome": "success",
+        }),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(TableResponse::from(table))))
 }
 
@@ -293,6 +356,21 @@ pub async fn update_my_club(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_club_updated",
+        Some(&claims.sub),
+        Some("club"),
+        Some(updated.id),
+        serde_json::json!({
+            "owner_id": claims.sub,
+            "club_id": updated.id,
+            "outcome": "success",
+        }),
+    )
+    .await;
 
     Ok(Json(ClubResponse::from(updated)))
 }
@@ -486,9 +564,10 @@ pub async fn get_event_reservations_handler(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let reservations = club_owner_persistence::list_event_reservations(&state.read_db_pool, event_uuid)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let reservations =
+        club_owner_persistence::list_event_reservations(&state.read_db_pool, event_uuid)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(reservations))
 }
@@ -545,11 +624,16 @@ pub async fn create_manual_reservation_handler(
             "reservation_id": reservation.id,
             "outcome": "success",
         }),
-    ).await {
+    )
+    .await
+    {
         warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue manual reservation analytics event");
     }
 
-    Ok((StatusCode::CREATED, Json(TableReservationResponse::from(reservation))))
+    Ok((
+        StatusCode::CREATED,
+        Json(TableReservationResponse::from(reservation)),
+    ))
 }
 
 /// Update the status of a reservation
@@ -561,6 +645,9 @@ pub async fn update_reservation_status_handler(
 ) -> Result<Json<TableReservationResponse>, StatusCode> {
     let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
     let reservation_uuid = Uuid::parse_str(&reservation_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let previous_reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
 
     let reservation = club_owner_persistence::update_reservation_status(
         &state.db_pool,
@@ -584,11 +671,82 @@ pub async fn update_reservation_status_handler(
             "owner_id": claims.sub,
             "outcome": "success",
         }),
-    ).await {
+    )
+    .await
+    {
         warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue reservation status analytics event");
     }
 
+    if previous_reservation.status != reservation.status {
+        let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let event = event_persistence::get_event_by_id(&state.db_pool, reservation.event_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        let (title, body) =
+            build_reservation_status_notification(&reservation.status, &event.title, &table.name);
+
+        if let Err(error) = outbox_service::enqueue_push_notification_for_user(
+            &state.db_pool,
+            reservation.user_id,
+            &title,
+            &body,
+            Some("reservation"),
+            Some(reservation.id),
+        )
+        .await
+        {
+            warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue reservation status push notification");
+        }
+    }
+
     Ok(Json(TableReservationResponse::from(reservation)))
+}
+
+fn build_reservation_status_notification(
+    status: &str,
+    event_title: &str,
+    table_name: &str,
+) -> (String, String) {
+    match status {
+        "confirmed" => (
+            "Prenotazione confermata".to_string(),
+            format!(
+                "Il tuo tavolo {} per {} e' stato confermato.",
+                table_name, event_title
+            ),
+        ),
+        "cancelled" => (
+            "Prenotazione annullata".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) e' stata annullata dal locale.",
+                event_title, table_name
+            ),
+        ),
+        "completed" => (
+            "Prenotazione aggiornata".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) e' stata segnata come completata.",
+                event_title, table_name
+            ),
+        ),
+        "pending" => (
+            "Prenotazione aggiornata".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) e' tornata in attesa di conferma.",
+                event_title, table_name
+            ),
+        ),
+        _ => (
+            "Stato prenotazione aggiornato".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) ora e' {}.",
+                event_title, table_name, status
+            ),
+        ),
+    }
 }
 
 /// Scan a QR code (ticket or reservation) — read-only lookup
@@ -605,35 +763,56 @@ pub async fn scan_code_handler(
 
     match result {
         Some(scan) => {
-            if scan.valid {
-                let _ = outbox_service::enqueue_analytics_event(
-                    &state.db_pool,
-                    &state.config,
-                    "ticket_checked_in",
-                    Some(&claims.sub),
-                    Some("checkin"),
-                    None,
-                    serde_json::json!({
-                        "owner_id": claims.sub,
-                        "code": code,
-                        "scan_type": scan.scan_type,
-                        "event_title": scan.event_title,
-                        "outcome": "success",
-                    }),
-                ).await;
-            }
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "owner_code_scan_resolved",
+                Some(&claims.sub),
+                Some("checkin"),
+                None,
+                serde_json::json!({
+                    "owner_id": claims.sub,
+                    "code": code,
+                    "scan_type": scan.scan_type,
+                    "event_title": scan.event_title,
+                    "valid": scan.valid,
+                    "already_used": scan.already_used,
+                    "outcome": "success",
+                }),
+            )
+            .await;
             Ok(Json(scan))
         }
-        None => Ok(Json(ScanResult {
-            valid: false,
-            already_used: false,
-            scan_type: "unknown".to_string(),
-            guest_name: None,
-            num_people: None,
-            event_title: None,
-            table_name: None,
-            code,
-        })),
+        None => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "owner_code_scan_resolved",
+                Some(&claims.sub),
+                Some("checkin"),
+                None,
+                serde_json::json!({
+                    "owner_id": claims.sub,
+                    "code": code,
+                    "scan_type": "unknown",
+                    "valid": false,
+                    "already_used": false,
+                    "outcome": "not_found",
+                }),
+            )
+            .await;
+
+            Ok(Json(ScanResult {
+                valid: false,
+                already_used: false,
+                scan_type: "unknown".to_string(),
+                guest_name: None,
+                num_people: None,
+                event_title: None,
+                table_name: None,
+                code,
+            }))
+        }
     }
 }
 
@@ -650,17 +829,52 @@ pub async fn checkin_handler(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match result {
-        Some(scan) => Ok(Json(scan)),
-        None => Ok(Json(ScanResult {
-            valid: false,
-            already_used: false,
-            scan_type: "unknown".to_string(),
-            guest_name: None,
-            num_people: None,
-            event_title: None,
-            table_name: None,
-            code,
-        })),
+        Some(scan) => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "owner_checkin_completed",
+                Some(&claims.sub),
+                Some("checkin"),
+                None,
+                serde_json::json!({
+                    "owner_id": claims.sub,
+                    "code": code,
+                    "scan_type": scan.scan_type,
+                    "event_title": scan.event_title,
+                    "outcome": "success",
+                }),
+            )
+            .await;
+            Ok(Json(scan))
+        }
+        None => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "owner_checkin_failed",
+                Some(&claims.sub),
+                Some("checkin"),
+                None,
+                serde_json::json!({
+                    "owner_id": claims.sub,
+                    "code": code,
+                    "outcome": "not_found",
+                }),
+            )
+            .await;
+
+            Ok(Json(ScanResult {
+                valid: false,
+                already_used: false,
+                scan_type: "unknown".to_string(),
+                guest_name: None,
+                num_people: None,
+                event_title: None,
+                table_name: None,
+                code,
+            }))
+        }
     }
 }
 

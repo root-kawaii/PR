@@ -50,10 +50,7 @@ pub async fn get_club_by_owner_id(pool: &PgPool, owner_id: Uuid) -> Result<Optio
 }
 
 /// Create a new club
-pub async fn create_club(
-    pool: &PgPool,
-    request: CreateClubRequest,
-) -> Result<Club> {
+pub async fn create_club(pool: &PgPool, request: CreateClubRequest) -> Result<Club> {
     let club = sqlx::query_as::<_, Club>(
         r#"
         INSERT INTO clubs (id, name, subtitle, image, address, phone_number, website, owner_id, created_at, updated_at)

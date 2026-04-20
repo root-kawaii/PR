@@ -1,8 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use uuid::Uuid;
@@ -15,14 +11,9 @@ use uuid::Uuid;
 /// - Added to the response headers as `x-request-id`
 /// - Included in all log messages within the request's span
 pub fn request_id_layer() -> (SetRequestIdLayer<MakeRequestUuid>, PropagateRequestIdLayer) {
-    let set_request_id = SetRequestIdLayer::new(
-        "x-request-id".parse().unwrap(),
-        MakeRequestUuid,
-    );
+    let set_request_id = SetRequestIdLayer::new("x-request-id".parse().unwrap(), MakeRequestUuid);
 
-    let propagate_request_id = PropagateRequestIdLayer::new(
-        "x-request-id".parse().unwrap(),
-    );
+    let propagate_request_id = PropagateRequestIdLayer::new("x-request-id".parse().unwrap());
 
     (set_request_id, propagate_request_id)
 }
@@ -43,11 +34,7 @@ pub async fn trace_request(request: Request, next: Next) -> Response {
     let route = uri.path().to_string();
     let started_at = Instant::now();
 
-    crate::infrastructure::logging::log_request_start(
-        &request_id,
-        method.as_str(),
-        &route,
-    );
+    crate::infrastructure::logging::log_request_start(&request_id, method.as_str(), &route);
 
     // Create a span that will be attached to all logs within this request
     let span = tracing::info_span!(

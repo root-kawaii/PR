@@ -1,10 +1,10 @@
 use crate::models::club_owner::{
-    ClubOwner, ClubImageRow, TableImageRow, ScanResult, OwnerStats, EventStatRow,
+    ClubImageRow, ClubOwner, EventStatRow, OwnerStats, ScanResult, TableImageRow,
 };
 use crate::models::table::TableReservation;
+use rust_decimal::Decimal;
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
-use rust_decimal::Decimal;
 
 /// Create a new club owner
 pub async fn create_club_owner(
@@ -109,13 +109,11 @@ pub async fn add_club_image(
 }
 
 pub async fn delete_club_image(pool: &PgPool, image_id: Uuid, club_id: Uuid) -> Result<bool> {
-    let result = sqlx::query(
-        r#"DELETE FROM club_images WHERE id = $1 AND club_id = $2"#,
-    )
-    .bind(image_id)
-    .bind(club_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query(r#"DELETE FROM club_images WHERE id = $1 AND club_id = $2"#)
+        .bind(image_id)
+        .bind(club_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -212,16 +210,17 @@ pub async fn create_manual_reservation(
     num_people: i32,
     manual_notes: Option<String>,
 ) -> Result<TableReservation> {
-    let total_amount: Decimal = sqlx::query_scalar(
-        "SELECT total_cost FROM tables WHERE id = $1",
-    )
-    .bind(table_id)
-    .fetch_one(pool)
-    .await?;
+    let total_amount: Decimal = sqlx::query_scalar("SELECT total_cost FROM tables WHERE id = $1")
+        .bind(table_id)
+        .fetch_one(pool)
+        .await?;
 
     let reservation_code = format!(
         "RES-{}",
-        &uuid::Uuid::new_v4().to_string().replace('-', "").to_uppercase()[..8]
+        &uuid::Uuid::new_v4()
+            .to_string()
+            .replace('-', "")
+            .to_uppercase()[..8]
     );
 
     let email = contact_email.unwrap_or_default();

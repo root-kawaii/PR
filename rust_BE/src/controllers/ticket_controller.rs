@@ -1,6 +1,9 @@
-use crate::models::{AppState, CreateTicketRequest, UpdateTicketRequest, TicketResponse, TicketWithEventResponse, PaginationParams};
 use crate::application::ticket_service as ticket_persistence;
 use crate::middleware::auth::ClubOwnerUser;
+use crate::models::{
+    AppState, CreateTicketRequest, PaginationParams, TicketResponse, TicketWithEventResponse,
+    UpdateTicketRequest,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -26,7 +29,13 @@ pub async fn get_all_tickets(
     State(state): State<Arc<AppState>>,
     Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<TicketsResponse>, StatusCode> {
-    match ticket_persistence::get_all_tickets(&state.read_db_pool, pagination.limit, pagination.offset).await {
+    match ticket_persistence::get_all_tickets(
+        &state.read_db_pool,
+        pagination.limit,
+        pagination.offset,
+    )
+    .await
+    {
         Ok(tickets) => {
             let responses: Vec<TicketResponse> = tickets.into_iter().map(|t| t.into()).collect();
             Ok(Json(TicketsResponse { tickets: responses }))
@@ -42,9 +51,10 @@ pub async fn get_user_tickets_with_events(
 ) -> Result<Json<TicketsWithEventsResponse>, StatusCode> {
     let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let tickets = ticket_persistence::list_user_tickets_with_event_details(&state.read_db_pool, user_uuid)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let tickets =
+        ticket_persistence::list_user_tickets_with_event_details(&state.read_db_pool, user_uuid)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(TicketsWithEventsResponse { tickets }))
 }

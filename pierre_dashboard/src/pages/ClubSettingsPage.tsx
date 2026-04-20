@@ -4,6 +4,7 @@ import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type { Club, ClubImage } from '../types';
+import { trackEvent } from '../config/analytics';
 
 interface ClubImagesData {
   images: ClubImage[];
@@ -37,10 +38,25 @@ export default function ClubSettingsPage() {
     }
   }, [club]);
 
+  useEffect(() => {
+    if (clubLoading || !club) {
+      return;
+    }
+
+    trackEvent('owner_club_settings_viewed', {
+      club_id: club.id,
+      image_count: imagesData?.images.length ?? 0,
+    });
+  }, [club, clubLoading, imagesData?.images.length]);
+
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setSaveSuccess(false);
+    trackEvent('owner_club_update_submitted', {
+      has_phone: Boolean(phone),
+      has_website: Boolean(website),
+    });
     try {
       const res = await fetch(`${API_URL}/owner/club`, {
         method: 'PUT',
@@ -57,10 +73,17 @@ export default function ClubSettingsPage() {
         }),
       });
       if (!res.ok) throw new Error('Errore nel salvataggio');
+      trackEvent('owner_club_updated', {
+        club_id: club?.id ?? null,
+      });
       setSaveSuccess(true);
       refetchClub();
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
+      trackEvent('owner_club_update_failed', {
+        club_id: club?.id ?? null,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
       setSaving(false);
@@ -70,6 +93,9 @@ export default function ClubSettingsPage() {
   const handleAddImage = async (e: FormEvent) => {
     e.preventDefault();
     setAddingImage(true);
+    trackEvent('owner_club_image_add_submitted', {
+      club_id: club?.id ?? null,
+    });
     try {
       const res = await fetch(`${API_URL}/owner/club/images`, {
         method: 'POST',
@@ -84,11 +110,18 @@ export default function ClubSettingsPage() {
         }),
       });
       if (!res.ok) throw new Error('Errore nel caricamento');
+      trackEvent('owner_club_image_added', {
+        club_id: club?.id ?? null,
+      });
       setNewImageUrl('');
       setNewImageAlt('');
       setShowAddImage(false);
       refetchImages();
     } catch (err) {
+      trackEvent('owner_club_image_add_failed', {
+        club_id: club?.id ?? null,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
       setAddingImage(false);
@@ -103,8 +136,17 @@ export default function ClubSettingsPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Errore nella rimozione');
+      trackEvent('owner_club_image_deleted', {
+        club_id: club?.id ?? null,
+        image_id: imageId,
+      });
       refetchImages();
     } catch (err) {
+      trackEvent('owner_club_image_delete_failed', {
+        club_id: club?.id ?? null,
+        image_id: imageId,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     }
   };
