@@ -1,4 +1,4 @@
-use crate::models::{Ticket, CreateTicketRequest, UpdateTicketRequest};
+use crate::models::{CreateTicketRequest, Ticket, UpdateTicketRequest};
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
@@ -73,7 +73,26 @@ pub async fn get_ticket_by_code(pool: &PgPool, ticket_code: &str) -> Result<Opti
 pub async fn get_tickets_with_events_by_user_id(
     pool: &PgPool,
     user_id: Uuid,
-) -> Result<Vec<(Uuid, Uuid, Uuid, String, String, rust_decimal::Decimal, String, chrono::DateTime<chrono::Utc>, Option<String>, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>, String, String, String, String, Option<String>)>> {
+) -> Result<
+    Vec<(
+        Uuid,
+        Uuid,
+        Uuid,
+        String,
+        String,
+        rust_decimal::Decimal,
+        String,
+        chrono::DateTime<chrono::Utc>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+    )>,
+> {
     let results = sqlx::query_as::<_, (Uuid, Uuid, Uuid, String, String, rust_decimal::Decimal, String, chrono::DateTime<chrono::Utc>, Option<String>, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>, String, String, String, String, Option<String>)>(
         r#"
         SELECT
@@ -110,10 +129,7 @@ fn generate_ticket_code() -> String {
 }
 
 /// Create a new ticket
-pub async fn create_ticket(
-    pool: &PgPool,
-    request: CreateTicketRequest,
-) -> Result<Ticket> {
+pub async fn create_ticket(pool: &PgPool, request: CreateTicketRequest) -> Result<Ticket> {
     // Generate unique ticket code
     let mut ticket_code = generate_ticket_code();
 

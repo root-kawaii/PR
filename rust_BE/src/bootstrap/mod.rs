@@ -40,17 +40,18 @@ pub async fn build_state(config: Arc<AppConfig>) -> Arc<AppState> {
     let stripe_client = stripe::Client::new(config.stripe.api_key.clone());
     info!("Stripe API key loaded");
 
-    let idempotency_service = IdempotencyService::new(
-        db_pool.clone(),
-        IdempotencyConfig::default(),
-    );
+    let idempotency_service =
+        IdempotencyService::new(db_pool.clone(), IdempotencyConfig::default());
     info!("Idempotency service initialized");
 
     if config.notifications.alert_webhook_url.is_some() {
         info!("Alert webhook configured — scheduler failures will be reported");
     }
     info!(app_base_url = %config.app_base_url, "APP_BASE_URL configured");
-    info!(ttl_hours = config.payment_share_ttl_hours, "Payment share TTL configured");
+    info!(
+        ttl_hours = config.payment_share_ttl_hours,
+        "Payment share TTL configured"
+    );
     info!(
         cache_ttl_seconds = config.database.public_cache_ttl_seconds,
         feature_flag_provider = %config.feature_flags.provider,

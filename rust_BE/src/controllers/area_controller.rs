@@ -1,10 +1,10 @@
-use crate::middleware::auth::ClubOwnerUser;
-use crate::models::{AppState, AreaResponse, AssignAreaRequest, CreateAreaRequest, UpdateAreaRequest};
 use crate::application::{
-    area_service as area_persistence,
-    club_service as club_persistence,
-    event_service as event_persistence,
-    reservation_service as table_persistence,
+    area_service as area_persistence, club_service as club_persistence,
+    event_service as event_persistence, reservation_service as table_persistence,
+};
+use crate::middleware::auth::ClubOwnerUser;
+use crate::models::{
+    AppState, AreaResponse, AssignAreaRequest, CreateAreaRequest, UpdateAreaRequest,
 };
 use axum::{
     extract::{Path, State},
@@ -134,7 +134,8 @@ pub async fn delete_area(
         return StatusCode::BAD_REQUEST;
     };
 
-    let Ok(Some(club)) = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id).await else {
+    let Ok(Some(club)) = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id).await
+    else {
         return StatusCode::NOT_FOUND;
     };
 
@@ -144,6 +145,18 @@ pub async fn delete_area(
     if existing.club_id != club.id {
         return StatusCode::FORBIDDEN;
     }
+    if existing.name.trim().eq_ignore_ascii_case("A") {
+        return StatusCode::CONFLICT;
+    }
+
+    let Ok(assigned_tables) =
+        area_persistence::count_tables_by_area(&state.db_pool, area_uuid).await
+    else {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    };
+    if assigned_tables > 0 {
+        return StatusCode::CONFLICT;
+    }
 
     match area_persistence::delete_area(&state.db_pool, area_uuid).await {
         Ok(true) => StatusCode::NO_CONTENT,
@@ -152,10 +165,12 @@ pub async fn delete_area(
     }
 }
 
-/// PATCH /owner/tables/:table_id/area — assign (or unassign) an area to a table.
+/// PATCH /owner/tables/:table_id/area — assign an area to a table.
 ///
-/// Body: `{ "area_id": "<uuid>" }` to assign, `{ "area_id": null }` to unassign.
-/// When assigning, the table's min_spend and total_cost are updated to match the area price.
+/// Body: `{ "area_id": "<uuid>" }` to assign a specific area.
+/// Body: `{ "area_id": null }` to move the table to the default `"A"` area.
+/// When assigning a specific area, the table's min_spend and total_cost are updated
+/// to match the area price. The default `"A"` fallback preserves the current pricing.
 pub async fn assign_table_area(
     State(state): State<Arc<AppState>>,
     ClubOwnerUser(claims): ClubOwnerUser,
@@ -196,7 +211,22 @@ pub async fn assign_table_area(
             }
             area_persistence::assign_area_to_table(&state.db_pool, table_uuid, area_uuid).await
         }
-        None => area_persistence::unassign_area_from_table(&state.db_pool, table_uuid).await,
+        None => {
+            let default_area = area_persistence::get_or_create_default_area(
+                &state.db_pool,
+                club.id,
+                table.min_spend,
+            )
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+            area_persistence::assign_default_area_to_table(
+                &state.db_pool,
+                table_uuid,
+                default_area.id,
+            )
+            .await
+        }
     }
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

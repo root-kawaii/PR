@@ -11,7 +11,10 @@ use crate::controllers::ticket_controller::{
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/tickets", get(get_all_tickets).post(create_ticket))
-        .route("/tickets/:id", get(get_ticket).put(update_ticket).delete(delete_ticket))
+        .route(
+            "/tickets/:id",
+            get(get_ticket).put(update_ticket).delete(delete_ticket),
+        )
         .route("/tickets/code/:code", get(get_ticket_by_code))
         .route("/tickets/user/:user_id", get(get_user_tickets_with_events))
 }

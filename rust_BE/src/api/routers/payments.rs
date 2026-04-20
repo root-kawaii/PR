@@ -11,8 +11,14 @@ use crate::controllers::payment_controller::{
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/payments", get(get_all_payments).post(post_payment))
-        .route("/payments/authorize", axum::routing::post(post_authorized_payment))
+        .route(
+            "/payments/authorize",
+            axum::routing::post(post_authorized_payment),
+        )
         .route("/payments/:id", get(get_payment).delete(delete_payment))
-        .route("/payments/:id/capture", axum::routing::post(capture_payment))
+        .route(
+            "/payments/:id/capture",
+            axum::routing::post(capture_payment),
+        )
         .route("/payments/:id/cancel", axum::routing::post(cancel_payment))
 }

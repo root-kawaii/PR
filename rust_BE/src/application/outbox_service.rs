@@ -45,6 +45,31 @@ pub async fn enqueue_push_notification(
     .await
 }
 
+pub async fn enqueue_push_notification_for_user(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    title: &str,
+    body: &str,
+    aggregate_type: Option<&str>,
+    aggregate_id: Option<Uuid>,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    let push_token = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT expo_push_token FROM users WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .flatten()
+    .filter(|token| !token.is_empty());
+
+    match push_token {
+        Some(token) => enqueue_push_notification(pool, &token, title, body, aggregate_type, aggregate_id)
+            .await
+            .map(Some),
+        None => Ok(None),
+    }
+}
+
 pub async fn enqueue_sms_notification(
     pool: &sqlx::PgPool,
     to: &str,
@@ -74,12 +99,8 @@ pub async fn enqueue_analytics_event(
     aggregate_id: Option<Uuid>,
     properties: serde_json::Value,
 ) -> Result<Uuid, sqlx::Error> {
-    let properties = analytics_service::build_properties(
-        config,
-        aggregate_type,
-        aggregate_id,
-        properties,
-    );
+    let properties =
+        analytics_service::build_properties(config, aggregate_type, aggregate_id, properties);
 
     outbox::enqueue_event(
         pool,

@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::Deserialize;
+use tracing::{info, warn};
 
 use crate::bootstrap::config::AppConfig;
 
@@ -15,19 +16,36 @@ struct TwilioVerifyCheckResponse {
     valid: bool,
 }
 
+fn is_app_review_bypass_target(config: &AppConfig, phone_number: &str) -> bool {
+    config.notifications.app_review_bypass_enabled
+        && config
+            .notifications
+            .app_review_bypass_phone_numbers
+            .iter()
+            .any(|allowed| allowed == phone_number)
+}
+
 /// Send verification SMS using Twilio Verify API
 /// This function initiates the verification - Twilio generates and sends the code
 pub async fn send_verification_sms(
     config: &AppConfig,
     phone_number: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if is_app_review_bypass_target(config, phone_number) {
+        info!(%phone_number, "App Review SMS bypass active; skipping Twilio send");
+        return Ok(());
+    }
+
     let account_sid = config.notifications.twilio_account_sid.clone();
     let auth_token = config.notifications.twilio_auth_token.clone();
     let verify_service_sid = config.notifications.twilio_verify_service_sid.clone();
 
     // If Twilio is not configured, just log (for development)
     if account_sid.is_none() || auth_token.is_none() || verify_service_sid.is_none() {
-        println!("⚠️  Twilio Verify not configured. Would send verification to: {}", phone_number);
+        println!(
+            "⚠️  Twilio Verify not configured. Would send verification to: {}",
+            phone_number
+        );
         println!("   To enable SMS, set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_VERIFY_SERVICE_SID");
         println!("   📱 Development mode: Use code '123456' for testing");
         return Ok(());
@@ -43,10 +61,7 @@ pub async fn send_verification_sms(
         verify_service_sid
     );
 
-    let params = [
-        ("To", phone_number),
-        ("Channel", "sms"),
-    ];
+    let params = [("To", phone_number), ("Channel", "sms")];
 
     let response = client
         .post(&url)
@@ -72,6 +87,16 @@ pub async fn verify_code(
     phone_number: &str,
     code: &str,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    if is_app_review_bypass_target(config, phone_number) {
+        let Some(expected_code) = config.notifications.app_review_bypass_code.as_deref() else {
+            warn!(%phone_number, "App Review SMS bypass matched but APP_REVIEW_BYPASS_CODE is missing");
+            return Ok(false);
+        };
+
+        info!(%phone_number, "App Review SMS bypass verification attempted");
+        return Ok(code == expected_code);
+    }
+
     let account_sid = config.notifications.twilio_account_sid.clone();
     let auth_token = config.notifications.twilio_auth_token.clone();
     let verify_service_sid = config.notifications.twilio_verify_service_sid.clone();
@@ -93,10 +118,7 @@ pub async fn verify_code(
         verify_service_sid
     );
 
-    let params = [
-        ("To", phone_number),
-        ("Code", code),
-    ];
+    let params = [("To", phone_number), ("Code", code)];
 
     let response = client
         .post(&url)

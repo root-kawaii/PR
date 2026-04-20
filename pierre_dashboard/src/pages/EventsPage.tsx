@@ -1,10 +1,11 @@
-import { useState, useMemo, type FormEvent } from 'react';
+import { useEffect, useState, useMemo, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, ChevronRight, X } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type { EventResponse } from '../types';
+import { trackEvent } from '../config/analytics';
 
 const MONTH_MAP: Record<string, number> = {
   'GEN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAG': 4, 'GIU': 5,
@@ -62,6 +63,18 @@ export default function EventsPage() {
     });
   }, [events, filterDate]);
 
+  useEffect(() => {
+    if (loading || !events) {
+      return;
+    }
+
+    trackEvent('owner_events_list_viewed', {
+      event_count: events.length,
+      filtered_count: filteredEvents.length,
+      filter_date: filterDate,
+    });
+  }, [events, filteredEvents.length, filterDate, loading]);
+
   const [title, setTitle] = useState('');
   const [venue, setVenue] = useState('');
   const [date, setDate] = useState('');
@@ -72,6 +85,10 @@ export default function EventsPage() {
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    trackEvent('owner_event_create_submitted', {
+      has_price: Boolean(price),
+      has_description: Boolean(description),
+    });
     try {
       const res = await fetch(`${API_URL}/owner/events`, {
         method: 'POST',
@@ -82,10 +99,17 @@ export default function EventsPage() {
         body: JSON.stringify({ title, venue, date, image, price, description }),
       });
       if (!res.ok) throw new Error('Failed to create event');
+      trackEvent('owner_event_created', {
+        title,
+        venue,
+      });
       setShowForm(false);
       setTitle(''); setVenue(''); setDate(''); setImage(''); setPrice(''); setDescription('');
       refetch();
     } catch (err) {
+      trackEvent('owner_event_create_failed', {
+        error_message: err instanceof Error ? err.message : 'Error',
+      });
       alert(err instanceof Error ? err.message : 'Error');
     } finally {
       setSubmitting(false);
@@ -184,6 +208,12 @@ export default function EventsPage() {
             <Link
               key={event.id}
               to={`/dashboard/events/${event.id}/tables`}
+              onClick={() => {
+                trackEvent('owner_event_selected', {
+                  event_id: event.id,
+                  event_title: event.title,
+                });
+              }}
               className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow group"
             >
               {event.image && (

@@ -9,7 +9,10 @@ pub async fn capture_event(
     properties: Value,
 ) -> Result<(), String> {
     let Some(api_key) = &config.posthog_api_key else {
-        tracing::info!(event = event_name, "PostHog not configured, analytics event kept local");
+        tracing::info!(
+            event = event_name,
+            "PostHog not configured, analytics event kept local"
+        );
         return Ok(());
     };
 

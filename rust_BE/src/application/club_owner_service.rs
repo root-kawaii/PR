@@ -11,5 +11,8 @@ pub async fn list_event_reservations(
     event_id: Uuid,
 ) -> Result<Vec<TableReservationResponse>, sqlx::Error> {
     let reservations = club_owner_repository::get_event_reservations(pool, event_id).await?;
-    Ok(reservations.into_iter().map(TableReservationResponse::from).collect())
+    Ok(reservations
+        .into_iter()
+        .map(TableReservationResponse::from)
+        .collect())
 }

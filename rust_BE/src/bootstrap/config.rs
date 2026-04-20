@@ -25,6 +25,9 @@ pub struct NotificationsConfig {
     pub twilio_auth_token: Option<String>,
     pub twilio_verify_service_sid: Option<String>,
     pub twilio_phone_number: Option<String>,
+    pub app_review_bypass_enabled: bool,
+    pub app_review_bypass_code: Option<String>,
+    pub app_review_bypass_phone_numbers: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -77,8 +80,7 @@ impl AppConfig {
             .or_else(|_| env::var("STRIPE_API_KEY"))
             .expect("STRIPE_SECRET_KEY or STRIPE_API_KEY must be set in .env");
 
-        let jwt_secret = env::var("JWT_SECRET")
-            .expect("JWT_SECRET env var must be set");
+        let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET env var must be set");
         if jwt_secret.len() < 32 {
             panic!("JWT_SECRET must be at least 32 characters long");
         }
@@ -96,10 +98,34 @@ impl AppConfig {
         }
 
         let alert_webhook_url = env::var("ALERT_WEBHOOK_URL").ok().filter(|s| !s.is_empty());
-        let twilio_account_sid = env::var("TWILIO_ACCOUNT_SID").ok().filter(|s| !s.is_empty());
+        let twilio_account_sid = env::var("TWILIO_ACCOUNT_SID")
+            .ok()
+            .filter(|s| !s.is_empty());
         let twilio_auth_token = env::var("TWILIO_AUTH_TOKEN").ok().filter(|s| !s.is_empty());
-        let twilio_verify_service_sid = env::var("TWILIO_VERIFY_SERVICE_SID").ok().filter(|s| !s.is_empty());
-        let twilio_phone_number = env::var("TWILIO_PHONE_NUMBER").ok().filter(|s| !s.is_empty());
+        let twilio_verify_service_sid = env::var("TWILIO_VERIFY_SERVICE_SID")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let twilio_phone_number = env::var("TWILIO_PHONE_NUMBER")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let app_review_bypass_enabled = env::var("APP_REVIEW_BYPASS_ENABLED")
+            .ok()
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        let app_review_bypass_code = env::var("APP_REVIEW_BYPASS_CODE")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let app_review_bypass_phone_numbers = env::var("APP_REVIEW_BYPASS_PHONE_NUMBERS")
+            .ok()
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
         let payment_share_ttl_hours = env::var("PAYMENT_SHARE_TTL_HOURS")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -113,15 +139,15 @@ impl AppConfig {
             .and_then(|v| v.parse().ok())
             .unwrap_or(50);
         let posthog_api_key = env::var("POSTHOG_API_KEY").ok().filter(|s| !s.is_empty());
-        let posthog_host = env::var("POSTHOG_HOST")
-            .unwrap_or_else(|_| "https://eu.i.posthog.com".to_string());
+        let posthog_host =
+            env::var("POSTHOG_HOST").unwrap_or_else(|_| "https://eu.i.posthog.com".to_string());
         let analytics_environment = env::var("APP_ENV")
             .or_else(|_| env::var("RUST_ENV"))
             .unwrap_or_else(|_| "development".to_string());
-        let analytics_service_name = env::var("SERVICE_NAME")
-            .unwrap_or_else(|_| "rust_BE".to_string());
-        let feature_flag_provider = env::var("FEATURE_FLAG_PROVIDER")
-            .unwrap_or_else(|_| "posthog".to_string());
+        let analytics_service_name =
+            env::var("SERVICE_NAME").unwrap_or_else(|_| "rust_BE".to_string());
+        let feature_flag_provider =
+            env::var("FEATURE_FLAG_PROVIDER").unwrap_or_else(|_| "posthog".to_string());
         let bootstrap_flags_from_env = env::var("FEATURE_FLAGS_BOOTSTRAP_FROM_ENV")
             .ok()
             .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -145,9 +171,7 @@ impl AppConfig {
                 read_url: read_database_url,
                 public_cache_ttl_seconds,
             },
-            auth: AuthConfig {
-                jwt_secret,
-            },
+            auth: AuthConfig { jwt_secret },
             stripe: StripeConfig {
                 api_key: stripe_api_key,
                 webhook_secret: stripe_webhook_secret,
@@ -158,6 +182,9 @@ impl AppConfig {
                 twilio_auth_token,
                 twilio_verify_service_sid,
                 twilio_phone_number,
+                app_review_bypass_enabled,
+                app_review_bypass_code,
+                app_review_bypass_phone_numbers,
             },
             analytics: AnalyticsConfig {
                 outbox_poll_interval_seconds,

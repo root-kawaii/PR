@@ -16,8 +16,14 @@ pub fn build_properties(
     };
 
     props.insert("source".to_string(), json!("backend"));
-    props.insert("service_name".to_string(), json!(config.analytics.service_name));
-    props.insert("environment".to_string(), json!(config.analytics.environment));
+    props.insert(
+        "service_name".to_string(),
+        json!(config.analytics.service_name),
+    );
+    props.insert(
+        "environment".to_string(),
+        json!(config.analytics.environment),
+    );
     props.insert("emitted_at".to_string(), json!(Utc::now().to_rfc3339()));
     if let Some(kind) = aggregate_type {
         props.insert("aggregate_type".to_string(), json!(kind));

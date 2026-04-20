@@ -6,7 +6,12 @@ use uuid::Uuid;
 const TOKEN_EXPIRATION_HOURS: u64 = 24; // 24 hours
 
 /// Generate a JWT token for a user or club owner
-pub fn generate_token(user_id: Uuid, email: String, role: String, secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
+pub fn generate_token(
+    user_id: Uuid,
+    email: String,
+    role: String,
+    secret: &str,
+) -> Result<String, jsonwebtoken::errors::Error> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
@@ -64,7 +69,8 @@ mod tests {
         let owner_id = Uuid::new_v4();
         let email = "owner@club.com".to_string();
 
-        let token = generate_token(owner_id, email.clone(), "club_owner".to_string(), secret).unwrap();
+        let token =
+            generate_token(owner_id, email.clone(), "club_owner".to_string(), secret).unwrap();
         let claims = validate_token(&token, secret).unwrap();
 
         assert_eq!(claims.sub, owner_id.to_string());

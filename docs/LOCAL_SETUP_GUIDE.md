@@ -58,6 +58,13 @@ STRIPE_SECRET_KEY=sk_test_<ask-team-lead>
 TWILIO_ACCOUNT_SID=<ask-team-lead>
 TWILIO_AUTH_TOKEN=<ask-team-lead>
 TWILIO_VERIFY_SERVICE_SID=<ask-team-lead>
+TWILIO_PHONE_NUMBER=<ask-team-lead>
+
+# Optional: Apple App Review-only SMS bypass.
+# Keep this disabled unless you're actively preparing an App Store review build.
+APP_REVIEW_BYPASS_ENABLED=false
+APP_REVIEW_BYPASS_CODE=
+APP_REVIEW_BYPASS_PHONE_NUMBERS=
 ```
 
 > **The simplest option**: Ask the team lead to send you the `rust_BE/.env` file directly. Copy it into `rust_BE/` and you're done with this step.

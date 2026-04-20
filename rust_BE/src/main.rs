@@ -2,17 +2,17 @@ use dotenv::dotenv;
 use std::sync::Arc;
 use tracing::info;
 
-mod models;
 mod api;
 mod application;
 mod bootstrap;
 mod controllers;
+mod idempotency;
 mod infrastructure;
 mod jobs;
-mod utils;
-mod services;
-mod idempotency;
 mod middleware;
+mod models;
+mod services;
+mod utils;
 
 #[tokio::main]
 async fn main() {

@@ -1,9 +1,9 @@
+use super::club::ClubResponse;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use super::club::ClubResponse;
 
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct ClubOwner {

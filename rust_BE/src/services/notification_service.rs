@@ -93,7 +93,11 @@ pub async fn send_push_notification(
         }
         Ok(resp) => {
             warn!(status = %resp.status(), "Push notification returned non-success status");
-            Err(format!("Push notification returned non-success status {}", resp.status()).into())
+            Err(format!(
+                "Push notification returned non-success status {}",
+                resp.status()
+            )
+            .into())
         }
         Err(e) => {
             error!(error = %e, "Failed to send push notification");
