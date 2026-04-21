@@ -121,12 +121,18 @@ pub async fn login_club_owner(
     {
         Ok(Some(owner)) => owner,
         Ok(None) => return Err(StatusCode::UNAUTHORIZED),
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            tracing::error!("login_club_owner: DB error: {:?}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
     };
 
     // Verify password
     let is_valid = verify(payload.password, &owner.password_hash)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("login_club_owner: bcrypt error: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if !is_valid {
         return Err(StatusCode::UNAUTHORIZED);

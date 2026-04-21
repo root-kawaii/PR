@@ -28,6 +28,8 @@ async fn health_check(
 fn cors_layer(config: &AppConfig) -> CorsLayer {
     let mut allowed_origins: Vec<HeaderValue> = vec![
         "http://localhost:3000".parse().unwrap(),
+        "http://localhost:5173".parse().unwrap(),
+        "https://localhost:5173".parse().unwrap(),
         "http://localhost:8081".parse().unwrap(),
         "https://pierre-two-backend.fly.dev".parse().unwrap(),
     ];

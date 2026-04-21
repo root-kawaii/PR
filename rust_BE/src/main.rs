@@ -1,4 +1,5 @@
 use dotenv::dotenv;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
@@ -34,5 +35,5 @@ async fn main() {
     info!(port = config.port, "Server starting");
     info!(local = %format!("http://127.0.0.1:{}", config.port), "Local address");
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
 }

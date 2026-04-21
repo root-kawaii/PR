@@ -96,10 +96,10 @@ export default function ClubSettingsPage() {
 
     trackEvent('owner_club_settings_viewed', {
       club_id: club.id,
-      image_count: imagesData?.images.length ?? 0,
+      image_count: imagesData?.images?.length ?? 0,
       stripe_connected: Boolean(stripeStatus?.connected_account_id),
     });
-  }, [club, clubLoading, imagesData?.images.length, stripeStatus?.connected_account_id]);
+  }, [club, clubLoading, imagesData?.images?.length, stripeStatus?.connected_account_id]);
 
   const stripeToneClasses: Record<StripeTone, string> = {
     slate: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -250,7 +250,7 @@ export default function ClubSettingsPage() {
         body: JSON.stringify({
           url: newImageUrl,
           alt_text: newImageAlt || undefined,
-          display_order: imagesData?.images.length ?? 0,
+          display_order: imagesData?.images?.length ?? 0,
         }),
       });
 
@@ -598,7 +598,7 @@ export default function ClubSettingsPage() {
 
         {imagesLoading ? (
           <p className="text-gray-500 text-sm">Caricamento...</p>
-        ) : !imagesData?.images.length ? (
+        ) : !imagesData?.images?.length ? (
           <p className="text-gray-500 text-sm">
             Nessuna immagine. Aggiungi la prima immagine del locale.
           </p>
