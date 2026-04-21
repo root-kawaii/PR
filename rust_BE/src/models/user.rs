@@ -11,6 +11,7 @@ pub struct User {
     pub password_hash: String,
     pub name: String,
     pub phone_number: Option<String>,
+    pub phone_verified: bool,
     pub avatar_url: Option<String>,
     pub date_of_birth: Option<NaiveDate>,
     pub created_at: DateTime<Utc>,
@@ -23,6 +24,7 @@ pub struct UserResponse {
     pub email: String,
     pub name: String,
     pub phone_number: Option<String>,
+    pub phone_verified: bool,
     pub avatar_url: Option<String>,
     pub date_of_birth: Option<NaiveDate>,
     pub created_at: DateTime<Utc>,
@@ -36,6 +38,7 @@ impl From<User> for UserResponse {
             email: user.email,
             name: user.name,
             phone_number: user.phone_number,
+            phone_verified: user.phone_verified,
             avatar_url: user.avatar_url,
             date_of_birth: user.date_of_birth,
             created_at: user.created_at,
@@ -49,7 +52,7 @@ pub struct RegisterRequest {
     pub email: String,
     pub password: String,
     pub name: String,
-    pub phone_number: Option<String>,
+    pub phone_number: String,
     pub date_of_birth: NaiveDate,
 }
 
@@ -67,9 +70,9 @@ pub struct AuthResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,   // User ID or ClubOwner ID
+    pub sub: String, // User ID or ClubOwner ID
     pub email: String,
-    pub role: String,  // "user" or "club_owner"
-    pub exp: usize,    // Expiration time
-    pub iat: usize,    // Issued at
+    pub role: String, // "user" or "club_owner"
+    pub exp: usize,   // Expiration time
+    pub iat: usize,   // Issued at
 }

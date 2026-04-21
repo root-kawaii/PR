@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Plus, X, Search, User, Phone, Mail, FileText, ChevronDown } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
-import type { TableResponse } from '../types';
+import type { TableReservation, TableResponse } from '../types';
+import { trackEvent } from '../config/analytics';
 
 // Matches the flat TableReservationResponse from the backend
 interface OwnerReservation {
@@ -72,6 +73,17 @@ export default function EventReservationsPage() {
 
   const getTable = (tableId: string) => tables.find(t => t.id === tableId);
 
+  useEffect(() => {
+    if (loading || !eventId) {
+      return;
+    }
+
+    trackEvent('owner_event_reservations_viewed', {
+      event_id: eventId,
+      reservation_count: reservations.length,
+    });
+  }, [eventId, loading, reservations.length]);
+
   const filtered = reservations.filter((r) => {
     const table = getTable(r.tableId);
     const matchesSearch =
@@ -86,6 +98,11 @@ export default function EventReservationsPage() {
   const handleCreateManual = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    trackEvent('owner_manual_reservation_create_submitted', {
+      event_id: eventId ?? null,
+      table_id: formTableId || null,
+      num_people: parseInt(formNumPeople, 10),
+    });
     try {
       const res = await fetch(`${API_URL}/owner/events/${eventId}/reservations/manual`, {
         method: 'POST',
@@ -104,10 +121,18 @@ export default function EventReservationsPage() {
         }),
       });
       if (!res.ok) throw new Error('Errore nella creazione');
+      trackEvent('owner_manual_reservation_created', {
+        event_id: eventId ?? null,
+        table_id: formTableId || null,
+      });
       resetForm();
       setShowForm(false);
       refetch();
     } catch (err) {
+      trackEvent('owner_manual_reservation_create_failed', {
+        event_id: eventId ?? null,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
       setSubmitting(false);
@@ -116,6 +141,10 @@ export default function EventReservationsPage() {
 
   const handleStatusChange = async (reservationId: string, newStatus: string) => {
     setUpdatingId(reservationId);
+    trackEvent('owner_reservation_status_update_submitted', {
+      reservation_id: reservationId,
+      status: newStatus,
+    });
     try {
       const res = await fetch(`${API_URL}/owner/reservations/${reservationId}/status`, {
         method: 'PATCH',
@@ -126,8 +155,17 @@ export default function EventReservationsPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error('Errore aggiornamento');
+      trackEvent('owner_reservation_status_updated', {
+        reservation_id: reservationId,
+        status: newStatus,
+      });
       refetch();
     } catch (err) {
+      trackEvent('owner_reservation_status_update_failed', {
+        reservation_id: reservationId,
+        status: newStatus,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
       setUpdatingId(null);

@@ -1,16 +1,19 @@
+use crate::application::{
+    club_owner_service as club_owner_persistence, club_service as club_persistence,
+    event_service as event_persistence, outbox_service, reservation_service as table_persistence,
+};
 use crate::middleware::auth::ClubOwnerUser;
+use crate::models::club_owner::{
+    AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
+    ClubOwnerRegisterRequest, ClubOwnerResponse, CreateManualReservationRequest, OwnerStats,
+    OwnerUpdateClubRequest, ScanResult, StripeConnectStatusResponse,
+    StripeOnboardingLinkResponse, TableImageRow, UpdateReservationStatusRequest,
+};
+use crate::models::table::TableReservationResponse;
 use crate::models::{
     AppState, ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest,
     EventResponse, TableResponse, TablesResponse, UpdateClubRequest, UpdateEventRequest,
 };
-use crate::models::club_owner::{
-    AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
-    ClubOwnerRegisterRequest, ClubOwnerResponse, CreateManualReservationRequest,
-    OwnerUpdateClubRequest, ScanResult, TableImageRow, UpdateReservationStatusRequest,
-    OwnerStats,
-};
-use crate::models::table::TableReservationResponse;
-use crate::persistences::{club_owner_persistence, club_persistence, event_persistence, table_persistence};
 use crate::utils::jwt;
 use axum::{
     extract::{Path, State},
@@ -19,7 +22,13 @@ use axum::{
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rust_decimal::Decimal;
+use stripe::{
+    Account, AccountBusinessType, AccountLink, AccountLinkType, AccountType, CreateAccount,
+    CreateAccountCapabilities, CreateAccountCapabilitiesCardPayments,
+    CreateAccountCapabilitiesTransfers, CreateAccountLink,
+};
 use std::sync::Arc;
+use tracing::warn;
 use uuid::Uuid;
 
 /// Register a new club owner and create their club
@@ -45,8 +54,8 @@ pub async fn register_club_owner(
     }
 
     // Hash the password
-    let password_hash = hash(payload.password, DEFAULT_COST)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let password_hash =
+        hash(payload.password, DEFAULT_COST).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Create the club owner
     let owner = club_owner_persistence::create_club_owner(
@@ -68,6 +77,12 @@ pub async fn register_club_owner(
         phone_number: None,
         website: None,
         owner_id: Some(owner.id),
+        stripe_connected_account_id: None,
+        stripe_onboarding_complete: Some(false),
+        stripe_charges_enabled: Some(false),
+        stripe_payouts_enabled: Some(false),
+        platform_commission_percent: Some(Decimal::ZERO),
+        platform_commission_fixed_fee: Some(Decimal::ZERO),
     };
 
     let club = club_persistence::create_club(&state.db_pool, club_request)
@@ -75,8 +90,13 @@ pub async fn register_club_owner(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Generate JWT token with club_owner role
-    let token = jwt::generate_token(owner.id, owner.email.clone(), "club_owner".to_string(), &state.jwt_secret)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token = jwt::generate_token(
+        owner.id,
+        owner.email.clone(),
+        "club_owner".to_string(),
+        &state.jwt_secret,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let response = ClubOwnerAuthResponse {
         owner: ClubOwnerResponse::from(owner),
@@ -93,7 +113,12 @@ pub async fn login_club_owner(
     Json(payload): Json<ClubOwnerLoginRequest>,
 ) -> Result<Json<ClubOwnerAuthResponse>, StatusCode> {
     // Find club owner by email
-    let owner = match club_owner_persistence::find_club_owner_by_email(&state.db_pool, &payload.email).await {
+    let owner = match club_owner_persistence::find_club_owner_by_email(
+        &state.db_pool,
+        &payload.email,
+    )
+    .await
+    {
         Ok(Some(owner)) => owner,
         Ok(None) => return Err(StatusCode::UNAUTHORIZED),
         Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -113,14 +138,36 @@ pub async fn login_club_owner(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Generate JWT token
-    let token = jwt::generate_token(owner.id, owner.email.clone(), "club_owner".to_string(), &state.jwt_secret)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token = jwt::generate_token(
+        owner.id,
+        owner.email.clone(),
+        "club_owner".to_string(),
+        &state.jwt_secret,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let owner_id = owner.id;
+    let club_id = club.as_ref().map(|club| club.id);
     let response = ClubOwnerAuthResponse {
         owner: ClubOwnerResponse::from(owner),
         club: club.map(ClubResponse::from),
         token,
     };
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_logged_in",
+        Some(&owner_id.to_string()),
+        Some("club_owner"),
+        Some(owner_id),
+        serde_json::json!({
+            "owner_id": owner_id,
+            "club_id": club_id,
+            "outcome": "success",
+        }),
+    )
+    .await;
 
     Ok(Json(response))
 }
@@ -180,6 +227,22 @@ pub async fn create_club_event(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_event_created",
+        Some(&claims.sub),
+        Some("event"),
+        Some(event.id),
+        serde_json::json!({
+            "owner_id": claims.sub,
+            "club_id": club.id,
+            "event_id": event.id,
+            "outcome": "success",
+        }),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(EventResponse::from(event))))
 }
 
@@ -212,7 +275,9 @@ pub async fn get_my_club_tables(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let table_responses: Vec<TableResponse> = tables.into_iter().map(|t| t.into()).collect();
-    Ok(Json(TablesResponse { tables: table_responses }))
+    Ok(Json(TablesResponse {
+        tables: table_responses,
+    }))
 }
 
 /// Create a table for an event owned by the club owner
@@ -256,6 +321,23 @@ pub async fn create_club_table(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_table_created",
+        Some(&claims.sub),
+        Some("table"),
+        Some(table.id),
+        serde_json::json!({
+            "owner_id": claims.sub,
+            "event_id": event_uuid,
+            "table_id": table.id,
+            "capacity": table.capacity,
+            "outcome": "success",
+        }),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(TableResponse::from(table))))
 }
 
@@ -280,6 +362,12 @@ pub async fn update_my_club(
         phone_number: payload.phone_number,
         website: payload.website,
         owner_id: None,
+        stripe_connected_account_id: None,
+        stripe_onboarding_complete: None,
+        stripe_charges_enabled: None,
+        stripe_payouts_enabled: None,
+        platform_commission_percent: payload.platform_commission_percent,
+        platform_commission_fixed_fee: payload.platform_commission_fixed_fee,
     };
 
     let updated = club_persistence::update_club(&state.db_pool, club.id, update_req)
@@ -287,7 +375,188 @@ pub async fn update_my_club(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_club_updated",
+        Some(&claims.sub),
+        Some("club"),
+        Some(updated.id),
+        serde_json::json!({
+            "owner_id": claims.sub,
+            "club_id": updated.id,
+            "outcome": "success",
+        }),
+    )
+    .await;
+
     Ok(Json(ClubResponse::from(updated)))
+}
+
+/// Get the authenticated club owner's current Stripe Connect status.
+pub async fn get_my_club_stripe_status(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+) -> Result<Json<StripeConnectStatusResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let connected_account_id = club.stripe_connected_account_id.clone();
+    if let Some(ref account_id) = connected_account_id {
+        let account_id = account_id.parse().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let account = Account::retrieve(&state.stripe_client, &account_id, &[])
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+        let updated = club_persistence::update_club(
+            &state.db_pool,
+            club.id,
+            UpdateClubRequest {
+                name: None,
+                subtitle: None,
+                image: None,
+                address: None,
+                phone_number: None,
+                website: None,
+                owner_id: None,
+                stripe_connected_account_id: Some(account.id.to_string()),
+                stripe_onboarding_complete: Some(account.details_submitted.unwrap_or(false)),
+                stripe_charges_enabled: Some(account.charges_enabled.unwrap_or(false)),
+                stripe_payouts_enabled: Some(account.payouts_enabled.unwrap_or(false)),
+                platform_commission_percent: None,
+                platform_commission_fixed_fee: None,
+            },
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+        return Ok(Json(StripeConnectStatusResponse {
+            connected_account_id: updated.stripe_connected_account_id,
+            onboarding_complete: updated.stripe_onboarding_complete.unwrap_or(false),
+            charges_enabled: updated.stripe_charges_enabled.unwrap_or(false),
+            payouts_enabled: updated.stripe_payouts_enabled.unwrap_or(false),
+            details_submitted: updated.stripe_onboarding_complete.unwrap_or(false),
+            platform_commission_percent: updated.platform_commission_percent,
+            platform_commission_fixed_fee: updated.platform_commission_fixed_fee,
+        }));
+    }
+
+    Ok(Json(StripeConnectStatusResponse {
+        connected_account_id,
+        onboarding_complete: club.stripe_onboarding_complete.unwrap_or(false),
+        charges_enabled: club.stripe_charges_enabled.unwrap_or(false),
+        payouts_enabled: club.stripe_payouts_enabled.unwrap_or(false),
+        details_submitted: club.stripe_onboarding_complete.unwrap_or(false),
+        platform_commission_percent: club.platform_commission_percent,
+        platform_commission_fixed_fee: club.platform_commission_fixed_fee,
+    }))
+}
+
+/// Create or reuse a Stripe Connect Express account and return an onboarding link.
+pub async fn create_my_club_stripe_onboarding_link(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+) -> Result<Json<StripeOnboardingLinkResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let owner = club_owner_persistence::find_club_owner_by_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let account = if let Some(existing_id) = &club.stripe_connected_account_id {
+        let parsed = existing_id
+            .parse()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        Account::retrieve(&state.stripe_client, &parsed, &[])
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?
+    } else {
+        let mut params = CreateAccount::new();
+        params.type_ = Some(AccountType::Express);
+        params.country = Some("IT");
+        params.default_currency = Some(stripe::Currency::EUR);
+        params.email = Some(&owner.email);
+        params.business_type = Some(AccountBusinessType::Company);
+        params.capabilities = Some(CreateAccountCapabilities {
+            card_payments: Some(CreateAccountCapabilitiesCardPayments {
+                requested: Some(true),
+            }),
+            transfers: Some(CreateAccountCapabilitiesTransfers {
+                requested: Some(true),
+            }),
+            ..Default::default()
+        });
+
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert("club_id".to_string(), club.id.to_string());
+        metadata.insert("owner_id".to_string(), owner.id.to_string());
+        params.metadata = Some(metadata);
+
+        Account::create(&state.stripe_client, params)
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?
+    };
+
+    let updated = club_persistence::update_club(
+        &state.db_pool,
+        club.id,
+        UpdateClubRequest {
+            name: None,
+            subtitle: None,
+            image: None,
+            address: None,
+            phone_number: None,
+            website: None,
+            owner_id: None,
+            stripe_connected_account_id: Some(account.id.to_string()),
+            stripe_onboarding_complete: Some(account.details_submitted.unwrap_or(false)),
+            stripe_charges_enabled: Some(account.charges_enabled.unwrap_or(false)),
+            stripe_payouts_enabled: Some(account.payouts_enabled.unwrap_or(false)),
+            platform_commission_percent: None,
+            platform_commission_fixed_fee: None,
+        },
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    let mut link_params =
+        CreateAccountLink::new(account.id.clone(), AccountLinkType::AccountOnboarding);
+    let refresh_url = format!(
+        "{}/dashboard/club?stripe=refresh",
+        state.config.owner_app_base_url
+    );
+    let return_url = format!(
+        "{}/dashboard/club?stripe=connected",
+        state.config.owner_app_base_url
+    );
+    link_params.refresh_url = Some(&refresh_url);
+    link_params.return_url = Some(&return_url);
+
+    let onboarding_link = AccountLink::create(&state.stripe_client, link_params)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    Ok(Json(StripeOnboardingLinkResponse {
+        connected_account_id: updated
+            .stripe_connected_account_id
+            .unwrap_or_else(|| account.id.to_string()),
+        onboarding_url: onboarding_link.url,
+        onboarding_complete: updated.stripe_onboarding_complete.unwrap_or(false),
+        charges_enabled: updated.stripe_charges_enabled.unwrap_or(false),
+        payouts_enabled: updated.stripe_payouts_enabled.unwrap_or(false),
+    }))
 }
 
 /// Get images for the authenticated club owner's club
@@ -484,16 +753,12 @@ pub async fn get_event_reservations_handler(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let reservations = club_owner_persistence::get_event_reservations(&state.db_pool, event_uuid)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let reservations =
+        club_owner_persistence::list_event_reservations(&state.read_db_pool, event_uuid)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let responses: Vec<TableReservationResponse> = reservations
-        .into_iter()
-        .map(TableReservationResponse::from)
-        .collect();
-
-    Ok(Json(responses))
+    Ok(Json(reservations))
 }
 
 /// Create a manual reservation (no Stripe, no user account needed)
@@ -534,7 +799,30 @@ pub async fn create_manual_reservation_handler(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok((StatusCode::CREATED, Json(TableReservationResponse::from(reservation))))
+    if let Err(error) = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "owner_manual_reservation_created",
+        Some(&claims.sub),
+        Some("reservation"),
+        Some(reservation.id),
+        serde_json::json!({
+            "event_id": event_uuid,
+            "table_id": table_uuid,
+            "owner_id": claims.sub,
+            "reservation_id": reservation.id,
+            "outcome": "success",
+        }),
+    )
+    .await
+    {
+        warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue manual reservation analytics event");
+    }
+
+    Ok((
+        StatusCode::CREATED,
+        Json(TableReservationResponse::from(reservation)),
+    ))
 }
 
 /// Update the status of a reservation
@@ -546,6 +834,9 @@ pub async fn update_reservation_status_handler(
 ) -> Result<Json<TableReservationResponse>, StatusCode> {
     let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
     let reservation_uuid = Uuid::parse_str(&reservation_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let previous_reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
 
     let reservation = club_owner_persistence::update_reservation_status(
         &state.db_pool,
@@ -556,7 +847,95 @@ pub async fn update_reservation_status_handler(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
+    if let Err(error) = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "reservation_status_updated",
+        Some(&claims.sub),
+        Some("reservation"),
+        Some(reservation.id),
+        serde_json::json!({
+            "reservation_id": reservation.id,
+            "status": reservation.status,
+            "owner_id": claims.sub,
+            "outcome": "success",
+        }),
+    )
+    .await
+    {
+        warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue reservation status analytics event");
+    }
+
+    if previous_reservation.status != reservation.status {
+        let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let event = event_persistence::get_event_by_id(&state.db_pool, reservation.event_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        let (title, body) =
+            build_reservation_status_notification(&reservation.status, &event.title, &table.name);
+
+        if let Err(error) = outbox_service::enqueue_push_notification_for_user(
+            &state.db_pool,
+            reservation.user_id,
+            &title,
+            &body,
+            Some("reservation"),
+            Some(reservation.id),
+        )
+        .await
+        {
+            warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue reservation status push notification");
+        }
+    }
+
     Ok(Json(TableReservationResponse::from(reservation)))
+}
+
+fn build_reservation_status_notification(
+    status: &str,
+    event_title: &str,
+    table_name: &str,
+) -> (String, String) {
+    match status {
+        "confirmed" => (
+            "Prenotazione confermata".to_string(),
+            format!(
+                "Il tuo tavolo {} per {} e' stato confermato.",
+                table_name, event_title
+            ),
+        ),
+        "cancelled" => (
+            "Prenotazione annullata".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) e' stata annullata dal locale.",
+                event_title, table_name
+            ),
+        ),
+        "completed" => (
+            "Prenotazione aggiornata".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) e' stata segnata come completata.",
+                event_title, table_name
+            ),
+        ),
+        "pending" => (
+            "Prenotazione aggiornata".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) e' tornata in attesa di conferma.",
+                event_title, table_name
+            ),
+        ),
+        _ => (
+            "Stato prenotazione aggiornato".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) ora e' {}.",
+                event_title, table_name, status
+            ),
+        ),
+    }
 }
 
 /// Scan a QR code (ticket or reservation) — read-only lookup
@@ -572,17 +951,57 @@ pub async fn scan_code_handler(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match result {
-        Some(scan) => Ok(Json(scan)),
-        None => Ok(Json(ScanResult {
-            valid: false,
-            already_used: false,
-            scan_type: "unknown".to_string(),
-            guest_name: None,
-            num_people: None,
-            event_title: None,
-            table_name: None,
-            code,
-        })),
+        Some(scan) => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "owner_code_scan_resolved",
+                Some(&claims.sub),
+                Some("checkin"),
+                None,
+                serde_json::json!({
+                    "owner_id": claims.sub,
+                    "code": code,
+                    "scan_type": scan.scan_type,
+                    "event_title": scan.event_title,
+                    "valid": scan.valid,
+                    "already_used": scan.already_used,
+                    "outcome": "success",
+                }),
+            )
+            .await;
+            Ok(Json(scan))
+        }
+        None => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "owner_code_scan_resolved",
+                Some(&claims.sub),
+                Some("checkin"),
+                None,
+                serde_json::json!({
+                    "owner_id": claims.sub,
+                    "code": code,
+                    "scan_type": "unknown",
+                    "valid": false,
+                    "already_used": false,
+                    "outcome": "not_found",
+                }),
+            )
+            .await;
+
+            Ok(Json(ScanResult {
+                valid: false,
+                already_used: false,
+                scan_type: "unknown".to_string(),
+                guest_name: None,
+                num_people: None,
+                event_title: None,
+                table_name: None,
+                code,
+            }))
+        }
     }
 }
 
@@ -599,17 +1018,52 @@ pub async fn checkin_handler(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match result {
-        Some(scan) => Ok(Json(scan)),
-        None => Ok(Json(ScanResult {
-            valid: false,
-            already_used: false,
-            scan_type: "unknown".to_string(),
-            guest_name: None,
-            num_people: None,
-            event_title: None,
-            table_name: None,
-            code,
-        })),
+        Some(scan) => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "owner_checkin_completed",
+                Some(&claims.sub),
+                Some("checkin"),
+                None,
+                serde_json::json!({
+                    "owner_id": claims.sub,
+                    "code": code,
+                    "scan_type": scan.scan_type,
+                    "event_title": scan.event_title,
+                    "outcome": "success",
+                }),
+            )
+            .await;
+            Ok(Json(scan))
+        }
+        None => {
+            let _ = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "owner_checkin_failed",
+                Some(&claims.sub),
+                Some("checkin"),
+                None,
+                serde_json::json!({
+                    "owner_id": claims.sub,
+                    "code": code,
+                    "outcome": "not_found",
+                }),
+            )
+            .await;
+
+            Ok(Json(ScanResult {
+                valid: false,
+                already_used: false,
+                scan_type: "unknown".to_string(),
+                guest_name: None,
+                num_people: None,
+                event_title: None,
+                table_name: None,
+                code,
+            }))
+        }
     }
 }
 

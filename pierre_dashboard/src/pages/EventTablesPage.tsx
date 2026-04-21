@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Plus, ArrowLeft, X, Search, ListOrdered, Image, Trash2 } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type { TableResponse, TableImage } from '../types';
+import { trackEvent } from '../config/analytics';
 
 interface TablesData {
   tables: TableResponse[];
@@ -43,6 +44,11 @@ export default function EventTablesPage() {
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    trackEvent('owner_table_create_submitted', {
+      event_id: eventId ?? null,
+      zone: zone || null,
+      capacity: capacity ? parseInt(capacity, 10) : null,
+    });
     try {
       const res = await fetch(`${API_URL}/owner/events/${eventId}/tables`, {
         method: 'POST',
@@ -60,10 +66,19 @@ export default function EventTablesPage() {
         }),
       });
       if (!res.ok) throw new Error('Failed to create table');
+      trackEvent('owner_table_created', {
+        event_id: eventId ?? null,
+        table_name: name,
+        zone: zone || null,
+      });
       setShowForm(false);
       setName(''); setZone(''); setCapacity(''); setMinSpend(''); setLocationDescription('');
       refetch();
     } catch (err) {
+      trackEvent('owner_table_create_failed', {
+        event_id: eventId ?? null,
+        error_message: err instanceof Error ? err.message : 'Error',
+      });
       alert(err instanceof Error ? err.message : 'Error');
     } finally {
       setSubmitting(false);
@@ -74,6 +89,9 @@ export default function EventTablesPage() {
     e.preventDefault();
     if (!imageTableId) return;
     setAddingImage(true);
+    trackEvent('owner_table_image_add_submitted', {
+      table_id: imageTableId,
+    });
     try {
       const res = await fetch(`${API_URL}/owner/tables/${imageTableId}/images`, {
         method: 'POST',
@@ -88,10 +106,17 @@ export default function EventTablesPage() {
         }),
       });
       if (!res.ok) throw new Error('Errore nel caricamento');
+      trackEvent('owner_table_image_added', {
+        table_id: imageTableId,
+      });
       setNewImageUrl('');
       setNewImageAlt('');
       refetchImages();
     } catch (err) {
+      trackEvent('owner_table_image_add_failed', {
+        table_id: imageTableId,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
       setAddingImage(false);
@@ -105,13 +130,33 @@ export default function EventTablesPage() {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
+      trackEvent('owner_table_image_deleted', {
+        table_id: imageTableId,
+        image_id: imageId,
+      });
       refetchImages();
     } catch (err) {
+      trackEvent('owner_table_image_delete_failed', {
+        table_id: imageTableId,
+        image_id: imageId,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     }
   };
 
   const tables = data?.tables ?? [];
+
+  useEffect(() => {
+    if (loading || !eventId) {
+      return;
+    }
+
+    trackEvent('owner_event_tables_viewed', {
+      event_id: eventId,
+      table_count: tables.length,
+    });
+  }, [eventId, loading, tables.length]);
 
   const zones = ['all', ...Array.from(new Set(tables.map(t => t.zone).filter(Boolean) as string[]))];
 
@@ -338,7 +383,14 @@ export default function EventTablesPage() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => setImageTableId(table.id)}
+                        onClick={() => {
+                          trackEvent('owner_table_images_opened', {
+                            event_id: eventId ?? null,
+                            table_id: table.id,
+                            table_name: table.name,
+                          });
+                          setImageTableId(table.id);
+                        }}
                         className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 transition-colors"
                       >
                         <Image size={14} />

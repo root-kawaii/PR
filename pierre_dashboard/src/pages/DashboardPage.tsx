@@ -1,13 +1,27 @@
+import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useFetch } from '../hooks/useFetch';
 import { Link } from 'react-router-dom';
 import { CalendarDays, Users, TrendingUp } from 'lucide-react';
 import type { Club, OwnerStats } from '../types';
+import { trackEvent } from '../config/analytics';
 
 export default function DashboardPage() {
   const { owner } = useAuth();
   const { data: club, loading } = useFetch<Club>('/owner/club');
   const { data: stats } = useFetch<OwnerStats>('/owner/stats');
+
+  useEffect(() => {
+    if (loading || !owner) {
+      return;
+    }
+
+    trackEvent('owner_dashboard_loaded', {
+      owner_id: owner.id,
+      club_id: club?.id ?? null,
+      has_club_image: Boolean(club?.image),
+    });
+  }, [club?.id, club?.image, loading, owner]);
 
   if (loading) {
     return <div className="text-gray-500">Loading...</div>;

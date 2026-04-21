@@ -1,9 +1,9 @@
+use super::club::ClubResponse;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use super::club::ClubResponse;
 
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct ClubOwner {
@@ -74,6 +74,30 @@ pub struct OwnerUpdateClubRequest {
     pub address: Option<String>,
     pub phone_number: Option<String>,
     pub website: Option<String>,
+    pub platform_commission_percent: Option<Decimal>,
+    pub platform_commission_fixed_fee: Option<Decimal>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StripeConnectStatusResponse {
+    pub connected_account_id: Option<String>,
+    pub onboarding_complete: bool,
+    pub charges_enabled: bool,
+    pub payouts_enabled: bool,
+    pub details_submitted: bool,
+    pub platform_commission_percent: Option<Decimal>,
+    pub platform_commission_fixed_fee: Option<Decimal>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StripeOnboardingLinkResponse {
+    pub connected_account_id: String,
+    pub onboarding_url: String,
+    pub onboarding_complete: bool,
+    pub charges_enabled: bool,
+    pub payouts_enabled: bool,
 }
 
 // ── Club / Table images ──────────────────────────────────────────────────────

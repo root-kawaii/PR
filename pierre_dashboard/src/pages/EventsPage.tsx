@@ -1,10 +1,11 @@
-import { useState, useMemo, type FormEvent } from 'react';
+import { useEffect, useState, useMemo, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, ChevronRight, X, Pencil, Trash2 } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type { EventResponse } from '../types';
+import { trackEvent } from '../config/analytics';
 
 const MONTH_MAP: Record<string, number> = {
   'GEN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAG': 4, 'GIU': 5,
@@ -93,6 +94,18 @@ export default function EventsPage() {
     setForm(emptyForm);
   };
 
+  useEffect(() => {
+    if (loading || !events) {
+      return;
+    }
+
+    trackEvent('owner_events_list_viewed', {
+      event_count: events.length,
+      filtered_count: filteredEvents.length,
+      filter_date: filterDate,
+    });
+  }, [events, filteredEvents.length, filterDate, loading]);
+
   const openCreate = () => {
     setEditingEvent(null);
     setForm(emptyForm);
@@ -137,6 +150,10 @@ export default function EventsPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    trackEvent('owner_event_create_submitted', {
+      has_price: Boolean(price),
+      has_description: Boolean(description),
+    });
     try {
       const dateToSend = form.time ? `${form.date}T${form.time}:00` : form.date;
       const body = {
@@ -162,9 +179,16 @@ export default function EventsPage() {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(editingEvent ? 'Impossibile aggiornare l\'evento' : 'Impossibile creare l\'evento');
+      trackEvent('owner_event_created', {
+        title: form.title,
+        venue: form.venue,
+      });
       closeForm();
       refetch();
     } catch (err) {
+      trackEvent('owner_event_create_failed', {
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
       setSubmitting(false);

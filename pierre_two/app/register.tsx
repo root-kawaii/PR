@@ -13,6 +13,7 @@ import {
 import { useRouter } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { trackEvent } from "../config/analytics";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Constants from "expo-constants";
 
@@ -37,6 +38,7 @@ export default function RegisterScreen() {
   const [verificationCode, setVerificationCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [tempUserId, setTempUserId] = useState<string | null>(null);
+  const [tempAuthToken, setTempAuthToken] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -64,8 +66,8 @@ export default function RegisterScreen() {
       Alert.alert("Errore", "Inserisci un numero di cellulare italiano valido (es. 3331234567)");
       return;
     }
-    if (password.length < 6) {
-      Alert.alert("Errore", "La password deve contenere almeno 6 caratteri");
+    if (password.length < 8) {
+      Alert.alert("Errore", "La password deve contenere almeno 8 caratteri");
       return;
     }
     if (password !== confirmPassword) {
@@ -75,6 +77,7 @@ export default function RegisterScreen() {
 
     setIsLoading(true);
     try {
+      trackEvent("registration_account_create_submitted");
       const response = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,6 +85,7 @@ export default function RegisterScreen() {
           name: name.trim(),
           email: email.trim().toLowerCase(),
           password,
+          phone_number: `+39${phone.trim()}`,
           date_of_birth: dateOfBirth.toISOString().split("T")[0],
         }),
       });
@@ -111,8 +115,15 @@ export default function RegisterScreen() {
       }
 
       setTempUserId(data.user.id);
+      setTempAuthToken(data.token);
+      trackEvent("registration_account_created", {
+        user_id: data.user.id,
+      });
       setStep("phone-verification");
     } catch (error: any) {
+      trackEvent("registration_account_create_failed", {
+        error_message: error.message || "unknown_error",
+      });
       Alert.alert("Registrazione fallita", error.message || "Impossibile creare l'account");
     } finally {
       setIsLoading(false);
@@ -121,15 +132,20 @@ export default function RegisterScreen() {
 
   // Step 2: Send verification code
   const handleSendVerificationCode = async () => {
-    if (!tempUserId || !phone) return;
+    if (!tempAuthToken || !phone) return;
 
     setIsLoading(true);
     try {
+      trackEvent("registration_phone_verification_requested", {
+        user_id: tempUserId,
+      });
       const response = await fetch(`${API_URL}/auth/send-sms-verification`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tempAuthToken}`,
+        },
         body: JSON.stringify({
-          user_id: tempUserId,
           phone_number: `+39${phone.trim()}`,
         }),
       });
@@ -147,8 +163,15 @@ export default function RegisterScreen() {
       }
 
       setCodeSent(true);
+      trackEvent("registration_phone_verification_sent", {
+        user_id: tempUserId,
+      });
       Alert.alert("Codice inviato", `Codice di verifica inviato al +39${phone.trim()}`);
     } catch (error: any) {
+      trackEvent("registration_phone_verification_send_failed", {
+        user_id: tempUserId,
+        error_message: error.message || "unknown_error",
+      });
       Alert.alert("Errore", error.message || "Impossibile inviare il codice. Riprova.");
     } finally {
       setIsLoading(false);
@@ -161,7 +184,7 @@ export default function RegisterScreen() {
       Alert.alert("Errore", "Inserisci il codice a 6 cifre");
       return;
     }
-    if (!tempUserId || !phone) {
+    if (!tempAuthToken || !phone) {
       Alert.alert("Errore", "Dati di registrazione mancanti. Ricomincia dall'inizio.");
       return;
     }
@@ -172,11 +195,16 @@ export default function RegisterScreen() {
 
     setIsVerifying(true);
     try {
+      trackEvent("registration_phone_verification_submitted", {
+        user_id: tempUserId,
+      });
       const response = await fetch(`${API_URL}/auth/verify-sms-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tempAuthToken}`,
+        },
         body: JSON.stringify({
-          user_id: tempUserId,
           phone_number: `+39${phone.trim()}`,
           verification_code: verificationCode.trim(),
         }),
@@ -203,8 +231,16 @@ export default function RegisterScreen() {
           email: email.trim().toLowerCase(),
           password,
         });
+        setTempAuthToken(null);
+        trackEvent("registration_completed", {
+          user_id: tempUserId,
+        });
         router.replace("/(tabs)");
       } catch (err: any) {
+        trackEvent("registration_auto_login_failed", {
+          user_id: tempUserId,
+          error_message: err.message || "unknown_error",
+        });
         Alert.alert(
           "Errore di accesso",
           err.message || "Account creato ma accesso fallito. Effettua il login manualmente.",
@@ -212,6 +248,10 @@ export default function RegisterScreen() {
         router.replace("/login");
       }
     } catch (error: any) {
+      trackEvent("registration_phone_verification_failed", {
+        user_id: tempUserId,
+        error_message: error.message || "unknown_error",
+      });
       Alert.alert("Verifica fallita", error.message || "Codice non valido. Riprova.");
       setIsVerifying(false);
     }
@@ -359,7 +399,7 @@ export default function RegisterScreen() {
                     disabled={isLoading}
                   >
                     <Text style={[styles.resendText, { color: theme.primary }]}>
-                      Didn't receive the code? Resend
+                      Didn&apos;t receive the code? Resend
                     </Text>
                   </TouchableOpacity>
                 </>

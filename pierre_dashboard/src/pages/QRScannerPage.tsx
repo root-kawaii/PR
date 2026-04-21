@@ -4,6 +4,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type { ScanResult } from '../types';
+import { trackEvent } from '../config/analytics';
 
 type ScanStatus = 'idle' | 'loading' | 'valid' | 'used' | 'invalid';
 
@@ -21,9 +22,13 @@ export default function QRScannerPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const html5QrRef = useRef<any>(null);
 
-  const handleScan = async (code: string) => {
+  const handleScan = async (code: string, source: 'manual' | 'camera') => {
     const trimmed = code.trim();
     if (!trimmed) return;
+    trackEvent('owner_scan_submitted', {
+      source,
+      code_length: trimmed.length,
+    });
     setScanStatus('loading');
     setResult(null);
     setCheckinDone(false);
@@ -33,6 +38,12 @@ export default function QRScannerPage() {
       });
       const data: ScanResult = await res.json();
       setResult(data);
+      trackEvent('owner_scan_resolved', {
+        source,
+        valid: data.valid,
+        already_used: data.alreadyUsed,
+        scan_type: data.scanType,
+      });
       if (!data.valid || data.scanType === 'unknown') {
         setScanStatus('invalid');
       } else if (data.alreadyUsed) {
@@ -41,6 +52,9 @@ export default function QRScannerPage() {
         setScanStatus('valid');
       }
     } catch {
+      trackEvent('owner_scan_failed', {
+        source,
+      });
       setScanStatus('invalid');
       setResult({ valid: false, alreadyUsed: false, scanType: 'unknown', code: trimmed });
     }
@@ -49,15 +63,28 @@ export default function QRScannerPage() {
   const handleCheckin = async () => {
     if (!result) return;
     setCheckinLoading(true);
+    trackEvent('owner_checkin_submitted', {
+      code: result.code,
+      scan_type: result.type,
+    });
     try {
       const res = await fetch(`${API_URL}/owner/checkin/${encodeURIComponent(result.code)}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Errore check-in');
+      trackEvent('owner_checkin_completed', {
+        code: result.code,
+        scan_type: result.type,
+      });
       setCheckinDone(true);
       setScanStatus('used');
     } catch (err) {
+      trackEvent('owner_checkin_failed', {
+        code: result.code,
+        scan_type: result.type,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
       setCheckinLoading(false);
@@ -85,16 +112,17 @@ export default function QRScannerPage() {
     try {
       const scanner = new Html5Qrcode(elementId);
       html5QrRef.current = scanner;
+      trackEvent('owner_camera_scan_started');
 
       await scanner.start(
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
+        (decodedText: string) => {
           scanner.stop().catch(() => {});
           html5QrRef.current = null;
           setCameraActive(false);
           setShowCameraModal(false);
-          handleScan(decodedText);
+          handleScan(decodedText, 'camera');
         },
         undefined,
       );
@@ -103,6 +131,7 @@ export default function QRScannerPage() {
       setCameraError(`Impossibile accedere alla fotocamera: ${msg}`);
       setCameraActive(false);
       setShowCameraModal(false);
+      trackEvent('owner_camera_scan_failed');
     }
   };
 
@@ -169,7 +198,7 @@ export default function QRScannerPage() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4">
         <h2 className="text-base font-semibold text-gray-900 mb-3">Inserimento manuale</h2>
         <form
-          onSubmit={(e) => { e.preventDefault(); handleScan(manualCode); }}
+          onSubmit={(e) => { e.preventDefault(); handleScan(manualCode, 'manual'); }}
           className="flex gap-2"
         >
           <input

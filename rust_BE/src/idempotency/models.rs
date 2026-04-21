@@ -1,7 +1,7 @@
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
 #[sqlx(type_name = "VARCHAR", rename_all = "lowercase")]
@@ -27,15 +27,15 @@ pub struct IdempotencyRecord {
 
 #[derive(Debug, Clone)]
 pub struct IdempotencyConfig {
-    pub ttl_seconds: i64,  // Default: 24 hours
-    pub max_retries: u32,  // Maximum retry attempts for in_progress state
-    pub retry_delay_ms: u64,  // Delay between retries
+    pub ttl_seconds: i64,    // Default: 24 hours
+    pub max_retries: u32,    // Maximum retry attempts for in_progress state
+    pub retry_delay_ms: u64, // Delay between retries
 }
 
 impl Default for IdempotencyConfig {
     fn default() -> Self {
         Self {
-            ttl_seconds: 86400,  // 24 hours
+            ttl_seconds: 86400, // 24 hours
             max_retries: 10,
             retry_delay_ms: 100,
         }
@@ -49,7 +49,7 @@ pub enum IdempotencyCheckResult {
     Proceed,
 
     /// Duplicate request - payment already exists
-    AlreadyCompleted(Uuid),  // payment_id
+    AlreadyCompleted(Uuid), // payment_id
 
     /// Another request is in progress - wait and retry
     InProgress,

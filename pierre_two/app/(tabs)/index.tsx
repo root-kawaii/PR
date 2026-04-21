@@ -4,12 +4,12 @@ import {
   View,
   StyleSheet,
   RefreshControl,
-  Alert,
   Text,
   Modal,
   ActivityIndicator,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Pressable,
   TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,28 +17,24 @@ import { Calendar } from "react-native-calendars";
 import { EventCard } from "@/components/home/EventCard";
 import { EventDetailModal } from "@/components/event/EventDetailModal";
 import { TableReservationModal } from "@/components/reservation/TableReservationModal";
-import { TableReservationDetailModal } from "@/components/reservation/TableReservationDetailModal";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useEvents } from "@/hooks/useEvents";
 import { useModal } from "@/hooks/useModal";
 import { useTheme } from "@/context/ThemeContext";
-import { Event, Table, TableReservation } from "@/types";
-import { useLocalSearchParams, useFocusEffect, useRouter } from "expo-router";
-
-type QuickFilterKey = "tonight" | "week" | "dates" | "venues" | "new";
+import { Event, Table } from "@/types";
+import { useLocalSearchParams, useFocusEffect } from "expo-router";
+import { trackEvent } from "@/config/analytics";
 
 export default function HomeScreen() {
   const { theme } = useTheme();
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
-  const [selectedReservation, setSelectedReservation] =
-    useState<TableReservation | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<QuickFilterKey | null>(null);
   const {
     events,
+    loading,
     refetch: refetchEvents,
     loadMore,
     loadingMore,
@@ -46,29 +42,26 @@ export default function HomeScreen() {
   } = useEvents();
   const eventModal = useModal();
   const reservationModal = useModal();
-  const reservationDetailModal = useModal();
   const params = useLocalSearchParams();
-  const router = useRouter();
-  const quickFilters: ReadonlyArray<{
-    key: QuickFilterKey;
-    label: string;
-    icon: "clock.fill" | "calendar" | "mappin" | "ticket.fill";
-  }> = [
-    { key: "tonight", label: "Stasera", icon: "clock.fill" as const },
-    { key: "week", label: "Settimana", icon: "clock.fill" as const },
-    { key: "dates", label: "Date", icon: "calendar" as const },
-    { key: "venues", label: "Locali", icon: "mappin" as const },
-    { key: "new", label: "Novita", icon: "ticket.fill" as const },
-  ];
 
-  // Silently refetch events whenever this tab comes into focus
+  const toDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseDateKey = (dateStr: string) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   useFocusEffect(
     useCallback(() => {
       refetchEvents(true);
-    }, []),
+    }, [refetchEvents]),
   );
 
-  // Handle navigation from search page
   useEffect(() => {
     if (params.eventId && events.length > 0) {
       const event = events.find((e) => e.id === params.eventId);
@@ -78,7 +71,22 @@ export default function HomeScreen() {
     }
   }, [params.eventId, events]);
 
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    trackEvent("home_events_loaded", {
+      result_count: events.length,
+      selected_date: toDateKey(selectedDate),
+      has_more: hasMore,
+    });
+  }, [events.length, hasMore, loading, selectedDate]);
+
   const onRefresh = async () => {
+    trackEvent("home_events_refresh_requested", {
+      selected_date: toDateKey(selectedDate),
+    });
     setRefreshing(true);
     await refetchEvents(true);
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -86,6 +94,11 @@ export default function HomeScreen() {
   };
 
   const handleEventPress = (event: Event) => {
+    trackEvent("event_card_selected", {
+      event_id: event.id,
+      event_title: event.title,
+      venue: event.venue,
+    });
     setSelectedEvent(event);
     eventModal.open();
   };
@@ -97,40 +110,31 @@ export default function HomeScreen() {
     setTimeout(() => reservationModal.open(), 300);
   };
 
-  const handleCalendarPress = () => {
-    setShowCalendar(true);
-  };
-
   const handleDateSelect = (day: any) => {
-    setSelectedDate(new Date(day.dateString));
+    trackEvent("home_date_selected", {
+      selected_date: day.dateString,
+    });
+    setSelectedDate(parseDateKey(day.dateString));
     setShowCalendar(false);
   };
 
-  // Extract date portion from event date string
   const extractEventDate = (dateStr: string): string | null => {
     try {
-      // Handle ISO format: '2024-12-27T23:00:00' or '2024-12-27'
       if (dateStr.includes("T")) {
         return dateStr.split("T")[0];
       }
 
-      // Handle date with space separator: '2024-12-27 23:00:00'
       if (dateStr.includes(" ") && !dateStr.includes("|")) {
         const datePart = dateStr.split(" ")[0];
-        // Verify it's in YYYY-MM-DD format
         if (datePart.match(/^\d{4}-\d{2}-\d{2}$/)) {
           return datePart;
         }
       }
 
-      // If already in YYYY-MM-DD format
       if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
         return dateStr;
       }
 
-      // Handle Italian format: '15 GEN | 23:30' or '27 DIC'
-      // This is a legacy format that should not be in the database
-      // Just skip these events for now
       if (dateStr.match(/^\d{1,2}\s+[A-Z]{3}/)) {
         console.warn(
           "Skipping event with legacy Italian date format:",
@@ -147,37 +151,16 @@ export default function HomeScreen() {
     }
   };
 
-  // Group events by date
   const groupEventsByDate = (startDate: Date) => {
-    const dateStr = startDate.toISOString().split("T")[0];
-    const todayDate = new Date();
-    todayDate.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(todayDate);
-    weekEnd.setDate(todayDate.getDate() + 6);
+    const dateStr = toDateKey(startDate);
 
-    // Filter events from selected date onwards
     const filteredEvents = events.filter((event) => {
       const eventDate = extractEventDate(event.date);
       if (!eventDate) return false;
 
-      const parsedDate = new Date(`${eventDate}T00:00:00`);
-
-      if (activeFilter === "tonight") {
-        return eventDate === todayDate.toISOString().split("T")[0];
-      }
-
-      if (activeFilter === "week") {
-        return parsedDate >= todayDate && parsedDate <= weekEnd;
-      }
-
-      if (activeFilter === "new") {
-        return parsedDate >= todayDate;
-      }
-
       return eventDate >= dateStr;
     });
 
-    // Group by date
     const grouped: { [key: string]: Event[] } = {};
     filteredEvents.forEach((event) => {
       const eventDate = extractEventDate(event.date);
@@ -189,7 +172,6 @@ export default function HomeScreen() {
       grouped[eventDate].push(event);
     });
 
-    // Sort dates and return array of {date, events}
     return Object.keys(grouped)
       .sort()
       .map((date) => ({
@@ -216,8 +198,6 @@ export default function HomeScreen() {
     ];
 
     try {
-      // Parse date string manually to avoid timezone issues
-      // dateStr format: 'YYYY-MM-DD'
       const parts = dateStr.split("-");
       if (parts.length !== 3) {
         throw new Error("Invalid date format");
@@ -239,7 +219,7 @@ export default function HomeScreen() {
       return `${dayName}, ${day} ${monthName}`;
     } catch (e) {
       console.error("Error formatting date header:", dateStr, e);
-      return dateStr; // Fallback to showing the raw date string
+      return dateStr;
     }
   };
 
@@ -250,46 +230,6 @@ export default function HomeScreen() {
     const nearBottom =
       layoutMeasurement.height + contentOffset.y >= contentSize.height - 300;
     if (nearBottom && hasMore && !loadingMore) loadMore();
-  };
-
-  const handleQuickFilterPress = (filterKey: QuickFilterKey) => {
-    if (filterKey === "dates") {
-      setActiveFilter("dates");
-      handleCalendarPress();
-      return;
-    }
-
-    if (filterKey === "venues") {
-      router.push("/explore");
-      return;
-    }
-
-    setActiveFilter((prev) => (prev === filterKey ? null : filterKey));
-  };
-
-  const handlePaymentSubmit = async (numPeople: number) => {
-    if (!selectedReservation) return;
-
-    const minSpendPerPerson = parseFloat(
-      selectedReservation.table?.minSpend?.replace(" €", "") || "0",
-    );
-    const amount = minSpendPerPerson * numPeople;
-
-    Alert.alert(
-      "Pagamento Simulato",
-      `Pagamento di ${amount.toFixed(2)} € per ${numPeople} ${
-        numPeople === 1 ? "persona" : "persone"
-      } simulato con successo.\n\nIn produzione, qui verrebbe integrato il sistema di pagamento.`,
-      [
-        {
-          text: "OK",
-          onPress: () => {
-            reservationDetailModal.close();
-            setSelectedReservation(null);
-          },
-        },
-      ],
-    );
   };
 
   return (
@@ -335,70 +275,22 @@ export default function HomeScreen() {
                         borderColor: theme.border,
                       },
                     ]}
-                    onPress={handleCalendarPress}
+                    onPress={() => setShowCalendar(true)}
+                    onPressIn={() => {
+                      trackEvent("home_calendar_opened", {
+                        selected_date: toDateKey(selectedDate),
+                      });
+                    }}
                   >
-                    <IconSymbol name="calendar" size={18} color={theme.text} />
+                    <IconSymbol name="calendar" size={21} color={theme.text} />
                   </TouchableOpacity>
                 </View>
               </View>
             </View>
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.quickFilterRow}
-              style={styles.quickFilterScroll}
-            >
-              {quickFilters.map((filter) => (
-                <View key={filter.key} style={styles.quickFilterItem}>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={[
-                      styles.quickFilterButton,
-                      {
-                        backgroundColor:
-                          activeFilter === filter.key
-                            ? `${theme.primary}1E`
-                            : "rgba(255,255,255,0.05)",
-                        borderColor:
-                          activeFilter === filter.key
-                            ? `${theme.primary}55`
-                            : "rgba(255,255,255,0.12)",
-                      },
-                    ]}
-                    onPress={() => handleQuickFilterPress(filter.key)}
-                  >
-                    <IconSymbol
-                      name={filter.icon}
-                      size={30}
-                      color={
-                        activeFilter === filter.key
-                          ? theme.primary
-                          : theme.primaryLight
-                      }
-                    />
-                  </TouchableOpacity>
-                  <Text
-                    style={[
-                      styles.quickFilterLabel,
-                      {
-                        color:
-                          activeFilter === filter.key
-                            ? theme.text
-                            : theme.textSecondary,
-                      },
-                    ]}
-                  >
-                    {filter.label}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-
             {groupedEvents.length > 0 ? (
               groupedEvents.map((group) => (
                 <View key={group.date} style={styles.dateSection}>
-                  {/* Date Header */}
                   <View
                     style={[
                       styles.dateAccent,
@@ -443,7 +335,6 @@ export default function HomeScreen() {
                     </View>
                   </View>
 
-                  {/* Horizontal Scroll of Events for this Date */}
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -489,24 +380,28 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      {/* Calendar Modal */}
       <Modal
         visible={showCalendar}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowCalendar(false)}
       >
-        <View
+        <Pressable
           style={[
             styles.calendarModalOverlay,
             { backgroundColor: theme.overlay },
           ]}
+          onPress={() => setShowCalendar(false)}
         >
-          <View
+          <Pressable
             style={[
               styles.calendarModal,
-              { backgroundColor: theme.backgroundSurface },
+              {
+                backgroundColor: theme.backgroundSurface,
+                borderColor: theme.border,
+              },
             ]}
+            onPress={() => {}}
           >
             <View
               style={[
@@ -514,14 +409,28 @@ export default function HomeScreen() {
                 { borderBottomColor: theme.border },
               ]}
             >
+              <View style={styles.calendarHeaderSpacer} />
               <Text style={[styles.calendarTitle, { color: theme.text }]}>
                 Seleziona una data
               </Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[
+                  styles.calendarCloseButton,
+                  {
+                    backgroundColor: theme.backgroundElevated,
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={() => setShowCalendar(false)}
+              >
+                <IconSymbol name="xmark" size={18} color={theme.text} />
+              </TouchableOpacity>
             </View>
             <Calendar
               onDayPress={handleDateSelect}
               markedDates={{
-                [selectedDate.toISOString().split("T")[0]]: {
+                [toDateKey(selectedDate)]: {
                   selected: true,
                   selectedColor: theme.primary,
                 },
@@ -539,8 +448,8 @@ export default function HomeScreen() {
                 arrowColor: theme.primary,
               }}
             />
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <EventDetailModal
@@ -555,13 +464,6 @@ export default function HomeScreen() {
         table={selectedTable}
         event={selectedEvent}
         onClose={reservationModal.close}
-      />
-
-      <TableReservationDetailModal
-        visible={reservationDetailModal.isVisible}
-        reservation={selectedReservation}
-        onClose={reservationDetailModal.close}
-        onPaymentSubmit={handlePaymentSubmit}
       />
     </SafeAreaView>
   );
@@ -592,50 +494,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topTitle: {
-    fontSize: 24,
+    fontSize: 30,
     fontWeight: "700",
-    marginBottom: 2,
+    marginBottom: 6,
   },
   topSubtitle: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 15,
+    lineHeight: 22,
   },
   topActions: {
     flexDirection: "row",
     gap: 10,
   },
   topActionButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  quickFilterScroll: {
-    marginBottom: 18,
-  },
-  quickFilterRow: {
-    paddingHorizontal: 16,
-    gap: 4,
-  },
-  quickFilterItem: {
-    width: 72,
-    alignItems: "center",
-  },
-  quickFilterButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-  },
-  quickFilterLabel: {
-    fontSize: 11,
-    textAlign: "center",
-    lineHeight: 14,
   },
   dateSection: {
     marginHorizontal: 16,
@@ -694,7 +571,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   eventCardWrapper: {
-    width: 320,
+    width: 336,
     marginRight: 12,
   },
   emptyState: {
@@ -724,18 +601,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   calendarModal: {
-    borderRadius: 16,
+    borderRadius: 18,
     width: "90%",
     maxWidth: 400,
     overflow: "hidden",
+    borderWidth: 1,
   },
   calendarHeader: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  calendarHeaderSpacer: {
+    width: 40,
   },
   calendarTitle: {
     fontSize: 18,
     fontWeight: "600",
     textAlign: "center",
+    flex: 1,
+  },
+  calendarCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

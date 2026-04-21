@@ -60,6 +60,6 @@ impl From<Area> for AreaResponse {
 /// Body for PATCH /owner/tables/:table_id/area
 #[derive(Debug, Deserialize)]
 pub struct AssignAreaRequest {
-    /// Pass null to unlink the table from its area (keeps current min_spend)
+    /// Pass null to move the table into the default "A" area.
     pub area_id: Option<String>,
 }

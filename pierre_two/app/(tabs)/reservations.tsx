@@ -20,6 +20,7 @@ import { useFocusEffect } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { TableReservationDetailModal } from '@/components/reservation/TableReservationDetailModal';
 import * as Clipboard from 'expo-clipboard';
+import { trackEvent } from '@/config/analytics';
 
 type ReservationFilter = 'upcoming' | 'past';
 
@@ -53,6 +54,18 @@ export default function ReservationsScreen() {
   useEffect(() => {
     if (user?.id) fetchReservations();
   }, [user]);
+
+  useEffect(() => {
+    if (loading || !user?.id) {
+      return;
+    }
+
+    trackEvent('reservations_loaded', {
+      user_id: user.id,
+      reservation_count: reservations.length,
+      filter,
+    });
+  }, [filter, loading, reservations.length, user?.id]);
 
   // Refetch whenever this tab comes into focus so data stays fresh
   useFocusEffect(
@@ -96,17 +109,20 @@ export default function ReservationsScreen() {
   });
 
   const handleReservationPress = (reservation: TableReservation) => {
+    trackEvent('reservation_selected', {
+      reservation_id: reservation.id,
+      status: reservation.status,
+    });
     setSelectedReservation(reservation);
     setShowDetailModal(true);
   };
 
   const handleCopyCode = async (code: string) => {
     await Clipboard.setStringAsync(code);
+    trackEvent('reservation_code_copied', {
+      reservation_code: code,
+    });
     Alert.alert('Copiato!', 'Codice prenotazione copiato negli appunti');
-  };
-
-  const handlePaymentSubmit = async (_numPeople: number) => {
-    // Legacy: split payments are now handled via payment links in the detail modal
   };
 
   if (loading) {
@@ -317,7 +333,6 @@ export default function ReservationsScreen() {
           setSelectedReservation(null);
           fetchReservations(true);
         }}
-        onPaymentSubmit={handlePaymentSubmit}
       />
     </SafeAreaView>
   );

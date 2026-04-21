@@ -25,6 +25,7 @@ import { TableReservationDetailModal } from '@/components/reservation/TableReser
 import { ReservationCodeModal } from '@/components/reservation/ReservationCodeModal';
 import * as Clipboard from 'expo-clipboard';
 import { Alert } from 'react-native';
+import { trackEvent } from '@/config/analytics';
 
 type BookingFilter = 'upcoming' | 'past';
 
@@ -145,7 +146,23 @@ export default function BookingsScreen() {
   const hasTickets = filteredTickets.length > 0;
   const upcomingCount = tickets.filter(t => isEventInFuture(t.event.date)).length + reservations.filter(r => isReservationUpcoming(r)).length;
 
+  useEffect(() => {
+    if (loading || !user?.id) {
+      return;
+    }
+
+    trackEvent('tickets_and_reservations_loaded', {
+      user_id: user.id,
+      ticket_count: tickets.length,
+      reservation_count: reservations.length,
+      filter,
+    });
+  }, [filter, loading, reservations.length, tickets.length, user?.id]);
+
   const handleReservationCodeSubmit = async (code: string) => {
+    trackEvent('reservation_code_lookup_submitted', {
+      reservation_code: code,
+    });
     try {
       const response = await apiFetch(`${API_URL}/reservations/code/${code}`);
 
@@ -157,10 +174,18 @@ export default function BookingsScreen() {
       }
 
       const data = await response.json();
+      trackEvent('reservation_code_lookup_succeeded', {
+        reservation_code: code,
+        reservation_id: data.id,
+      });
       setSelectedReservation(data);
       setShowReservationCodeModal(false);
       setShowDetailModal(true);
     } catch (error: any) {
+      trackEvent('reservation_code_lookup_failed', {
+        reservation_code: code,
+        error_message: error.message || 'Prenotazione non trovata',
+      });
       throw error;
     }
   };
@@ -180,7 +205,10 @@ export default function BookingsScreen() {
           <View style={s.headerActions}>
             <TouchableOpacity
               style={[s.addButton, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}
-              onPress={() => setShowReservationCodeModal(true)}
+              onPress={() => {
+                trackEvent('reservation_code_lookup_opened');
+                setShowReservationCodeModal(true);
+              }}
               activeOpacity={0.85}
             >
               <IconSymbol name="plus" size={18} color={theme.primary} />
@@ -399,7 +427,7 @@ export default function BookingsScreen() {
                         {isExpanded && (
                           <View style={s.qrSection}>
                             <View style={[s.qrDivider, { backgroundColor: theme.border }]} />
-                            <Text style={[s.qrLabel, { color: theme.textTertiary }]}>SCANSIONA ALL'INGRESSO</Text>
+                            <Text style={[s.qrLabel, { color: theme.textTertiary }]}>SCANSIONA ALL&apos;INGRESSO</Text>
                             <View style={[s.qrWrap, { backgroundColor: '#ffffff' }]}>
                               <Image source={{ uri: qrImageUrl }} style={s.qrImage} resizeMode="contain" />
                             </View>
@@ -443,7 +471,6 @@ export default function BookingsScreen() {
         visible={showDetailModal}
         reservation={selectedReservation}
         onClose={() => { setShowDetailModal(false); setSelectedReservation(null); fetchReservations(true); }}
-        onPaymentSubmit={async () => {}}
       />
 
       <ReservationCodeModal

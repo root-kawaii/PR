@@ -9,10 +9,9 @@ import {
   View,
   Image,
   ActivityIndicator,
-  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState, useMemo, useDeferredValue, useEffect, useRef } from 'react';
+import { useState, useMemo, useDeferredValue } from 'react';
 import { useEvents } from '@/hooks/useEvents';
 import { useTheme } from '@/context/ThemeContext';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -68,8 +67,6 @@ export default function SearchScreen() {
   const { events, loading } = useEvents();
   const { theme } = useTheme();
   const router = useRouter();
-  const resultsOpacity = useRef(new Animated.Value(1)).current;
-  const resultsTranslateY = useRef(new Animated.Value(0)).current;
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
@@ -90,24 +87,6 @@ export default function SearchScreen() {
       params: { eventId: event.id },
     });
   };
-
-  useEffect(() => {
-    resultsOpacity.setValue(0.82);
-    resultsTranslateY.setValue(10);
-
-    Animated.parallel([
-      Animated.timing(resultsOpacity, {
-        toValue: 1,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-      Animated.timing(resultsTranslateY, {
-        toValue: 0,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [deferredSearchQuery, loading, resultsOpacity, resultsTranslateY]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top']}>
@@ -143,6 +122,7 @@ export default function SearchScreen() {
                 onChangeText={setSearchQuery}
                 autoFocus
                 returnKeyType="search"
+                blurOnSubmit={false}
               />
               {searchQuery.length > 0 ? (
                 <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
@@ -153,13 +133,11 @@ export default function SearchScreen() {
           </View>
         </View>
 
-        <Animated.ScrollView
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          style={{
-            opacity: resultsOpacity,
-            transform: [{ translateY: resultsTranslateY }],
-          }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
           {!loading ? (
             <View style={styles.resultsHeader}>
@@ -235,7 +213,7 @@ export default function SearchScreen() {
               ))}
             </View>
           )}
-        </Animated.ScrollView>
+        </ScrollView>
       </ThemedView>
     </SafeAreaView>
   );

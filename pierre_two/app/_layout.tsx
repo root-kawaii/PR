@@ -1,18 +1,31 @@
 import { ThemeProvider as NavigationThemeProvider, Theme } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import 'react-native-reanimated';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import Constants from 'expo-constants';
+import * as Linking from 'expo-linking';
+import { PostHogProvider } from 'posthog-react-native';
 let Notifications: typeof import('expo-notifications') | null = null;
 try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
 
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import {
+  analyticsEnabled,
+  buildScreenName,
+  posthogClient,
+  trackEvent,
+  trackScreen,
+} from '../config/analytics';
 
 const stripePublishableKey = Constants.expoConfig?.extra?.stripePublishableKey || '';
+const stripeUrlScheme =
+  Constants.appOwnership === 'expo'
+    ? Linking.createURL('/--/')
+    : Linking.createURL('');
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -23,38 +36,48 @@ function RootLayoutNav() {
   const { theme } = useTheme();
   const segments = useSegments();
   const router = useRouter();
+  const previousScreenNameRef = useRef<string | null>(null);
+  const inTabsGroup = segments[0] === '(tabs)';
+  const shouldRedirectToLogin = !isLoading && !isAuthenticated && inTabsGroup;
+  const shouldRedirectToTabs = !isLoading && isAuthenticated && !inTabsGroup;
+  const screenName = useMemo(() => buildScreenName(segments), [segments]);
 
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === '(tabs)';
-
-    if (!isAuthenticated && inAuthGroup) {
+    if (shouldRedirectToLogin) {
       router.replace('/login');
-    } else if (isAuthenticated && !inAuthGroup) {
+    } else if (shouldRedirectToTabs) {
       router.replace('/(tabs)');
     }
-  }, [isAuthenticated, segments, isLoading]);
+  }, [isLoading, router, shouldRedirectToLogin, shouldRedirectToTabs]);
+
+  useEffect(() => {
+    if (isLoading || shouldRedirectToLogin || shouldRedirectToTabs) {
+      return;
+    }
+
+    if (previousScreenNameRef.current === screenName) {
+      return;
+    }
+
+    trackScreen(screenName);
+    previousScreenNameRef.current = screenName;
+  }, [isLoading, screenName, shouldRedirectToLogin, shouldRedirectToTabs]);
 
   // Navigate to reservations tab when user taps a push notification
   useEffect(() => {
     if (!Notifications) return;
     const sub = Notifications.addNotificationResponseReceivedListener(() => {
+      trackEvent('push_notification_opened', {
+        target_screen: '/reservations',
+      });
       if (isAuthenticated) {
         router.push('/(tabs)/reservations');
       }
     });
     return () => sub.remove();
   }, [isAuthenticated]);
-
-  // Block rendering until auth state is resolved — prevents flash of protected screens
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
-    );
-  }
 
   // Create navigation theme from app theme
   const navigationTheme: Theme = useMemo(() => ({
@@ -87,6 +110,15 @@ function RootLayoutNav() {
     },
   }), [theme]);
 
+  // Block rendering until auth state is resolved — prevents flash of protected screens
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
+
   return (
     <NavigationThemeProvider value={navigationTheme}>
       <Stack screenOptions={{ gestureEnabled: true, gestureDirection: 'horizontal' }}>
@@ -100,14 +132,37 @@ function RootLayoutNav() {
   );
 }
 
+function AnalyticsProvider({ children }: { children: ReactNode }) {
+  if (!analyticsEnabled || !posthogClient) {
+    return <>{children}</>;
+  }
+
+  return (
+    <PostHogProvider
+      client={posthogClient}
+      autocapture={{
+        captureTouches: false,
+        captureScreens: false,
+      }}
+    >
+      {children}
+    </PostHogProvider>
+  );
+}
+
 export default function RootLayout() {
   return (
-    <StripeProvider publishableKey={stripePublishableKey}>
-      <ThemeProvider>
-        <AuthProvider>
-          <RootLayoutNav />
-        </AuthProvider>
-      </ThemeProvider>
+    <StripeProvider
+      publishableKey={stripePublishableKey}
+      urlScheme={stripeUrlScheme}
+    >
+      <AnalyticsProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <RootLayoutNav />
+          </AuthProvider>
+        </ThemeProvider>
+      </AnalyticsProvider>
     </StripeProvider>
   );
 }
