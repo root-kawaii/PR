@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use axum::{
     extract::State,
-    http::{header, HeaderValue, Method, StatusCode},
+    http::{header, Method, StatusCode},
     middleware::from_fn,
     routing::get,
     Json, Router,
 };
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::bootstrap::config::AppConfig;
 use crate::bootstrap::state::AppState;
@@ -25,29 +25,19 @@ async fn health_check(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-fn cors_layer(config: &AppConfig) -> CorsLayer {
-    let mut allowed_origins: Vec<HeaderValue> = vec![
-        "http://localhost:3000".parse().unwrap(),
-        "http://localhost:8081".parse().unwrap(),
-        "https://pierre-two-backend.fly.dev".parse().unwrap(),
-    ];
-    if let Ok(origin) = config.app_base_url.parse::<HeaderValue>() {
-        allowed_origins.push(origin);
-    }
-    if config.owner_app_base_url != config.app_base_url {
-        if let Ok(origin) = config.owner_app_base_url.parse::<HeaderValue>() {
-            allowed_origins.push(origin);
-        }
-    }
-
+fn cors_layer(_config: &AppConfig) -> CorsLayer {
     CorsLayer::new()
-        .allow_origin(allowed_origins)
+        // The owner dashboard is served from multiple environments and authenticates with
+        // explicit Bearer tokens instead of cookies, so allowing cross-origin requests here
+        // avoids brittle production failures when the frontend origin changes.
+        .allow_origin(Any)
         .allow_methods([
             Method::GET,
             Method::POST,
             Method::PUT,
             Method::PATCH,
             Method::DELETE,
+            Method::OPTIONS,
         ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
 }
