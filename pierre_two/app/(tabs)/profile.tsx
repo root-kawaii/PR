@@ -23,12 +23,13 @@ import { ThemeSelector } from '@/components/settings/ThemeSelector';
 import { API_URL } from '@/config/api';
 import { useApiFetch } from '@/config/apiFetch';
 import { PRIVACY_POLICY_URL, SUPPORT_URL, TERMS_URL } from '@/config/appLinks';
+import { registerPushToken } from '@/config/pushNotifications';
 
 let Notifications: typeof import('expo-notifications') | null = null;
 try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
 
 export default function ProfileScreen() {
-  const { user, logout, deleteAccount, updateUser } = useAuth();
+  const { user, token, logout, deleteAccount, updateUser } = useAuth();
   const { theme } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -85,12 +86,16 @@ export default function ProfileScreen() {
       Alert.alert('Non disponibile', 'Le notifiche non sono supportate in questa modalità.');
       return;
     }
+    if (!token) {
+      Alert.alert('Sessione scaduta', 'Effettua di nuovo l’accesso per attivare le notifiche.');
+      return;
+    }
 
     setNotifLoading(true);
     try {
-      const { status } = await Notifications.getPermissionsAsync();
+      const result = await registerPushToken(API_URL, token);
 
-      if (status === 'denied') {
+      if (result.status === 'denied') {
         Alert.alert(
           'Notifiche disabilitate',
           'Abilita le notifiche dalle impostazioni del dispositivo.',
@@ -102,23 +107,13 @@ export default function ProfileScreen() {
         return;
       }
 
-      if (status !== 'granted') {
-        const { status: newStatus } = await Notifications.requestPermissionsAsync();
-        if (newStatus !== 'granted') {
-          Alert.alert('Permesso negato', 'Non è stato possibile attivare le notifiche.');
-          return;
-        }
+      if (result.status === 'simulator' || result.status === 'unsupported') {
+        Alert.alert(
+          'Non disponibile',
+          'Le notifiche funzionano solo su un build nativo installato su dispositivo.',
+        );
+        return;
       }
-
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-      const tokenData = await Notifications.getExpoPushTokenAsync(
-        projectId ? { projectId } : undefined,
-      );
-
-      await authenticatedFetch(`${API_URL}/auth/push-token`, {
-        method: 'POST',
-        body: JSON.stringify({ push_token: tokenData.data }),
-      });
 
       Alert.alert('Notifiche attivate', 'Riceverai aggiornamenti su prenotazioni e pagamenti.');
     } catch {
