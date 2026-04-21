@@ -1,13 +1,13 @@
+use crate::idempotency::IdempotencyCheckResult;
 use crate::models::{
     AppState, PaymentCaptureMethod, PaymentEntity, PaymentFilter, PaymentRequest, PaymentStatus,
 };
-use crate::idempotency::IdempotencyCheckResult;
 use axum::http::StatusCode;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use sqlx::{Postgres, QueryBuilder};
+use tracing::{error, info, warn};
 use uuid::Uuid;
-use tracing::{info, warn, error};
 
 pub async fn load_all_payments_service(
     app_state: &AppState,
@@ -33,7 +33,9 @@ pub async fn load_all_payments_service(
         query.push(" AND amount = ").push_bind(amount);
     }
 
-    query.push(" ORDER BY insert_date DESC LIMIT ").push_bind(limit);
+    query
+        .push(" ORDER BY insert_date DESC LIMIT ")
+        .push_bind(limit);
     query.push(" OFFSET ").push_bind(offset);
 
     query
@@ -93,12 +95,23 @@ pub async fn create_payment_service(
         let request_hash = app_state.idempotency_service.calculate_hash(&payload);
 
         // Check for existing idempotency record
-        match app_state.idempotency_service.check_idempotency(idempotency_key, &request_hash).await? {
+        match app_state
+            .idempotency_service
+            .check_idempotency(idempotency_key, &request_hash)
+            .await?
+        {
             IdempotencyCheckResult::Proceed => {
                 // Create idempotency record (acts as distributed lock)
-                if !app_state.idempotency_service.create_idempotency_record(idempotency_key, request_hash).await? {
+                if !app_state
+                    .idempotency_service
+                    .create_idempotency_record(idempotency_key, request_hash)
+                    .await?
+                {
                     // Another request won the race - wait for completion
-                    let payment_id = app_state.idempotency_service.wait_for_completion(idempotency_key).await?;
+                    let payment_id = app_state
+                        .idempotency_service
+                        .wait_for_completion(idempotency_key)
+                        .await?;
                     return load_payment_service(payment_id, app_state).await;
                 }
 
@@ -106,12 +119,19 @@ pub async fn create_payment_service(
                 match create_payment_internal(payload.clone(), app_state).await {
                     Ok(payment) => {
                         // Mark as completed
-                        app_state.idempotency_service.mark_completed(idempotency_key, payment.id).await?;
+                        app_state
+                            .idempotency_service
+                            .mark_completed(idempotency_key, payment.id)
+                            .await?;
                         Ok(payment)
                     }
                     Err(e) => {
                         // Mark as failed
-                        app_state.idempotency_service.mark_failed(idempotency_key, format!("{:?}", e)).await.ok();
+                        app_state
+                            .idempotency_service
+                            .mark_failed(idempotency_key, format!("{:?}", e))
+                            .await
+                            .ok();
                         Err(e)
                     }
                 }
@@ -126,7 +146,10 @@ pub async fn create_payment_service(
             IdempotencyCheckResult::InProgress => {
                 // Wait for in-progress operation to complete
                 info!(idempotency_key = %idempotency_key, "Payment already in progress - waiting for completion");
-                let payment_id = app_state.idempotency_service.wait_for_completion(idempotency_key).await?;
+                let payment_id = app_state
+                    .idempotency_service
+                    .wait_for_completion(idempotency_key)
+                    .await?;
                 load_payment_service(payment_id, app_state).await
             }
 
@@ -232,20 +255,38 @@ pub async fn create_authorized_payment_service(
     if let Some(idempotency_key) = payload.idempotency_key {
         let request_hash = app_state.idempotency_service.calculate_hash(&payload);
 
-        match app_state.idempotency_service.check_idempotency(idempotency_key, &request_hash).await? {
+        match app_state
+            .idempotency_service
+            .check_idempotency(idempotency_key, &request_hash)
+            .await?
+        {
             IdempotencyCheckResult::Proceed => {
-                if !app_state.idempotency_service.create_idempotency_record(idempotency_key, request_hash).await? {
-                    let payment_id = app_state.idempotency_service.wait_for_completion(idempotency_key).await?;
+                if !app_state
+                    .idempotency_service
+                    .create_idempotency_record(idempotency_key, request_hash)
+                    .await?
+                {
+                    let payment_id = app_state
+                        .idempotency_service
+                        .wait_for_completion(idempotency_key)
+                        .await?;
                     return load_payment_service(payment_id, app_state).await;
                 }
 
                 match create_authorized_payment_internal(payload.clone(), app_state).await {
                     Ok(payment) => {
-                        app_state.idempotency_service.mark_completed(idempotency_key, payment.id).await?;
+                        app_state
+                            .idempotency_service
+                            .mark_completed(idempotency_key, payment.id)
+                            .await?;
                         Ok(payment)
                     }
                     Err(e) => {
-                        app_state.idempotency_service.mark_failed(idempotency_key, format!("{:?}", e)).await.ok();
+                        app_state
+                            .idempotency_service
+                            .mark_failed(idempotency_key, format!("{:?}", e))
+                            .await
+                            .ok();
                         Err(e)
                     }
                 }
@@ -258,7 +299,10 @@ pub async fn create_authorized_payment_service(
 
             IdempotencyCheckResult::InProgress => {
                 info!(idempotency_key = %idempotency_key, "Authorized payment already in progress - waiting");
-                let payment_id = app_state.idempotency_service.wait_for_completion(idempotency_key).await?;
+                let payment_id = app_state
+                    .idempotency_service
+                    .wait_for_completion(idempotency_key)
+                    .await?;
                 load_payment_service(payment_id, app_state).await
             }
 
@@ -368,19 +412,37 @@ pub async fn capture_payment_service(
         });
         let request_hash = app_state.idempotency_service.calculate_hash(&hash_payload);
 
-        match app_state.idempotency_service.check_idempotency(key, &request_hash).await? {
+        match app_state
+            .idempotency_service
+            .check_idempotency(key, &request_hash)
+            .await?
+        {
             IdempotencyCheckResult::Proceed => {
-                if !app_state.idempotency_service.create_idempotency_record(key, request_hash).await? {
-                    let result_id = app_state.idempotency_service.wait_for_completion(key).await?;
+                if !app_state
+                    .idempotency_service
+                    .create_idempotency_record(key, request_hash)
+                    .await?
+                {
+                    let result_id = app_state
+                        .idempotency_service
+                        .wait_for_completion(key)
+                        .await?;
                     return load_payment_service(result_id, app_state).await;
                 }
                 match capture_payment_internal(payment_id, capture_amount, app_state).await {
                     Ok(payment) => {
-                        app_state.idempotency_service.mark_completed(key, payment.id).await?;
+                        app_state
+                            .idempotency_service
+                            .mark_completed(key, payment.id)
+                            .await?;
                         Ok(payment)
                     }
                     Err(e) => {
-                        app_state.idempotency_service.mark_failed(key, format!("{:?}", e)).await.ok();
+                        app_state
+                            .idempotency_service
+                            .mark_failed(key, format!("{:?}", e))
+                            .await
+                            .ok();
                         Err(e)
                     }
                 }
@@ -391,7 +453,10 @@ pub async fn capture_payment_service(
             }
             IdempotencyCheckResult::InProgress => {
                 info!(idempotency_key = %key, "Capture already in progress - waiting");
-                let result_id = app_state.idempotency_service.wait_for_completion(key).await?;
+                let result_id = app_state
+                    .idempotency_service
+                    .wait_for_completion(key)
+                    .await?;
                 load_payment_service(result_id, app_state).await
             }
             IdempotencyCheckResult::PreviouslyFailed(error) => {
@@ -494,19 +559,37 @@ pub async fn cancel_payment_authorization_service(
         });
         let request_hash = app_state.idempotency_service.calculate_hash(&hash_payload);
 
-        match app_state.idempotency_service.check_idempotency(key, &request_hash).await? {
+        match app_state
+            .idempotency_service
+            .check_idempotency(key, &request_hash)
+            .await?
+        {
             IdempotencyCheckResult::Proceed => {
-                if !app_state.idempotency_service.create_idempotency_record(key, request_hash).await? {
-                    let result_id = app_state.idempotency_service.wait_for_completion(key).await?;
+                if !app_state
+                    .idempotency_service
+                    .create_idempotency_record(key, request_hash)
+                    .await?
+                {
+                    let result_id = app_state
+                        .idempotency_service
+                        .wait_for_completion(key)
+                        .await?;
                     return load_payment_service(result_id, app_state).await;
                 }
                 match cancel_payment_internal(payment_id, app_state).await {
                     Ok(payment) => {
-                        app_state.idempotency_service.mark_completed(key, payment.id).await?;
+                        app_state
+                            .idempotency_service
+                            .mark_completed(key, payment.id)
+                            .await?;
                         Ok(payment)
                     }
                     Err(e) => {
-                        app_state.idempotency_service.mark_failed(key, format!("{:?}", e)).await.ok();
+                        app_state
+                            .idempotency_service
+                            .mark_failed(key, format!("{:?}", e))
+                            .await
+                            .ok();
                         Err(e)
                     }
                 }
@@ -517,7 +600,10 @@ pub async fn cancel_payment_authorization_service(
             }
             IdempotencyCheckResult::InProgress => {
                 info!(idempotency_key = %key, "Cancel already in progress - waiting");
-                let result_id = app_state.idempotency_service.wait_for_completion(key).await?;
+                let result_id = app_state
+                    .idempotency_service
+                    .wait_for_completion(key)
+                    .await?;
                 load_payment_service(result_id, app_state).await
             }
             IdempotencyCheckResult::PreviouslyFailed(error) => {

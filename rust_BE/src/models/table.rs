@@ -1,10 +1,10 @@
+use super::ticket::EventSummary;
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
-use super::ticket::EventSummary;
 
 // ============================================================================
 // Table Model (represents physical tables at events)
@@ -24,6 +24,8 @@ pub struct Table {
     pub features: Option<Vec<String>>,
     pub marzipano_position: Option<JsonValue>,
     pub area_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub area_name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -60,13 +62,14 @@ pub struct TableResponse {
     pub name: String,
     pub zone: Option<String>,
     pub capacity: i32,
-    pub min_spend: String, // Formatted as "X.XX €"
+    pub min_spend: String,  // Formatted as "X.XX €"
     pub total_cost: String, // Formatted as "X.XX €"
     pub available: bool,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
     pub marzipano_position: Option<JsonValue>,
     pub area_id: Option<String>,
+    pub area_name: Option<String>,
 }
 
 impl From<Table> for TableResponse {
@@ -84,6 +87,7 @@ impl From<Table> for TableResponse {
             features: table.features,
             marzipano_position: table.marzipano_position,
             area_id: table.area_id.map(|id| id.to_string()),
+            area_name: table.area_name,
         }
     }
 }
@@ -167,8 +171,8 @@ pub struct TableReservationResponse {
     pub event_id: String,
     pub status: String,
     pub num_people: i32,
-    pub total_amount: String, // Formatted as "X.XX €"
-    pub amount_paid: String, // Formatted as "X.XX €"
+    pub total_amount: String,     // Formatted as "X.XX €"
+    pub amount_paid: String,      // Formatted as "X.XX €"
     pub amount_remaining: String, // Calculated
     pub contact_name: String,
     pub contact_email: String,
@@ -373,7 +377,6 @@ pub struct CreateSplitReservationRequest {
     pub idempotency_key: Option<Uuid>,
 }
 
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentShareResponse {
@@ -416,7 +419,7 @@ pub struct PaymentLinkPreviewResponse {
     pub amount: String,
     pub event_name: String,
     pub table_name: String,
-    pub status: String,   // "open" | "full"
+    pub status: String, // "open" | "full"
     pub slots_filled: i32,
     pub slots_total: i32,
 }
@@ -433,7 +436,6 @@ pub struct CreateCheckoutRequest {
 pub struct CreateCheckoutResponse {
     pub checkout_url: String,
 }
-
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,4 +1,4 @@
-use crate::models::{Genre, CreateGenreRequest, UpdateGenreRequest};
+use crate::models::{CreateGenreRequest, Genre, UpdateGenreRequest};
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
@@ -34,10 +34,7 @@ pub async fn get_genre_by_id(pool: &PgPool, genre_id: Uuid) -> Result<Option<Gen
 }
 
 /// Create a new genre
-pub async fn create_genre(
-    pool: &PgPool,
-    request: CreateGenreRequest,
-) -> Result<Genre> {
+pub async fn create_genre(pool: &PgPool, request: CreateGenreRequest) -> Result<Genre> {
     let genre = sqlx::query_as::<_, Genre>(
         r#"
         INSERT INTO genres (id, name, color, created_at, updated_at)
@@ -77,7 +74,10 @@ pub async fn update_genre(
         param_count += 1;
     }
 
-    query.push_str(&format!(" WHERE id = ${} RETURNING id, name, color, created_at, updated_at", param_count));
+    query.push_str(&format!(
+        " WHERE id = ${} RETURNING id, name, color, created_at, updated_at",
+        param_count
+    ));
 
     let mut q = sqlx::query_as::<_, Genre>(&query);
 

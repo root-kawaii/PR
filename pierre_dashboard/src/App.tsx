@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
@@ -9,10 +10,29 @@ import EventTablesPage from './pages/EventTablesPage';
 import EventReservationsPage from './pages/EventReservationsPage';
 import ClubSettingsPage from './pages/ClubSettingsPage';
 import QRScannerPage from './pages/QRScannerPage';
+import { trackScreen } from './config/analytics';
+
+function RouteAnalyticsTracker() {
+  const location = useLocation();
+  const lastTrackedPathRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const path = `${location.pathname}${location.search}`;
+    if (lastTrackedPathRef.current === path) {
+      return;
+    }
+
+    trackScreen(path);
+    lastTrackedPathRef.current = path;
+  }, [location.pathname, location.search]);
+
+  return null;
+}
 
 export default function App() {
   return (
     <BrowserRouter>
+      <RouteAnalyticsTracker />
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />

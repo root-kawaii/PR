@@ -1,8 +1,8 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 import { API_URL } from '../config/api';
+import { identifyAnalyticsUser, resetAnalytics, trackEvent } from '../config/analytics';
+import { configureNotificationHandler, registerPushToken } from '../config/pushNotifications';
 
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
@@ -13,68 +13,7 @@ let SecureStore: typeof import('expo-secure-store') | null = null;
 try { SecureStore = require('expo-secure-store'); } catch { /* Expo Go */ }
 const _memStore: Record<string, string> = {};
 
-let Notifications: typeof import('expo-notifications') | null = null;
-try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
-
-if (Notifications) {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-}
-
-async function registerPushToken(authToken: string): Promise<void> {
-  if (!Notifications) {
-    console.log('[PushToken] Skipped: expo-notifications not available (Expo Go)');
-    return;
-  }
-  if (!Constants.isDevice) {
-    console.log('[PushToken] Skipped: not a physical device');
-    return;
-  }
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-  console.log('[PushToken] Permission status:', existingStatus);
-
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-    console.log('[PushToken] Permission after request:', status);
-  }
-
-  if (finalStatus !== 'granted') {
-    console.log('[PushToken] Permission denied — token not registered');
-    return;
-  }
-
-  try {
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    console.log('[PushToken] Using projectId:', projectId);
-    const tokenData = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
-    console.log('[PushToken] Token obtained:', tokenData.data);
-    const res = await fetch(`${API_URL}/auth/push-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ push_token: tokenData.data }),
-    });
-    console.log('[PushToken] Server response:', res.status);
-  } catch (e) {
-    console.error('[PushToken] Failed to register push token:', e);
-  }
-
-  if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-    });
-  }
-}
+configureNotificationHandler();
 
 /** Extract a human-readable message from a failed response (handles JSON or plain text). */
 async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
@@ -144,7 +83,9 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (nextUser: User) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -153,10 +94,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const previousAnalyticsUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     loadAuthData();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      if (previousAnalyticsUserIdRef.current) {
+        resetAnalytics();
+        previousAnalyticsUserIdRef.current = null;
+      }
+      return;
+    }
+
+    identifyAnalyticsUser(user);
+    previousAnalyticsUserIdRef.current = user.id;
+  }, [user]);
 
   const loadAuthData = async () => {
     try {
@@ -187,12 +142,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = useCallback(async () => {
+    if (user) {
+      trackEvent('auth_logout', {
+        user_id: user.id,
+      });
+    }
     setUser(null);
     setToken(null);
     await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+  }, [user]);
+
+  const updateUser = useCallback(async (nextUser: User) => {
+    setUser(nextUser);
+    await secureSet(USER_KEY, JSON.stringify(nextUser));
   }, []);
 
   const login = async (credentials: LoginRequest) => {
+    trackEvent('auth_login_submitted');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     let response: Response;
@@ -204,14 +170,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signal: controller.signal,
       });
     } catch (e: any) {
-      if (e.name === 'AbortError') throw new Error('Connessione scaduta. Controlla la tua rete e riprova.');
+      if (e.name === 'AbortError') {
+        trackEvent('auth_login_failed', {
+          error_type: 'timeout',
+        });
+        throw new Error('Connessione scaduta. Controlla la tua rete e riprova.');
+      }
+      trackEvent('auth_login_failed', {
+        error_type: 'network',
+      });
       throw e;
     } finally {
       clearTimeout(timeout);
     }
 
     if (!response.ok) {
-      throw new Error(await extractErrorMessage(response, 'Login failed'));
+      const errorMessage = await extractErrorMessage(response, 'Login failed');
+      trackEvent('auth_login_failed', {
+        status_code: response.status,
+        error_message: errorMessage,
+      });
+      throw new Error(errorMessage);
     }
 
     const data: AuthResponse = await safeJson(response, 'Login failed');
@@ -222,10 +201,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       secureSet(TOKEN_KEY, data.token),
       secureSet(USER_KEY, JSON.stringify(data.user)),
     ]);
-    registerPushToken(data.token);
+    trackEvent('auth_login_succeeded', {
+      user_id: data.user.id,
+    });
+    registerPushToken(API_URL, data.token).catch((e) => {
+      console.error('[PushToken] Failed to register push token:', e);
+    });
   };
 
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      if (!token || !user) {
+        throw new Error('Devi effettuare il login per eliminare l’account.');
+      }
+
+      trackEvent('account_deletion_submitted', {
+        user_id: user.id,
+      });
+
+      const response = await fetch(`${API_URL}/auth/account`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ password }),
+      });
+
+      if (!response.ok) {
+        const errorMessage = await extractErrorMessage(
+          response,
+          'Impossibile eliminare l’account.',
+        );
+        trackEvent('account_deletion_failed', {
+          user_id: user.id,
+          status_code: response.status,
+          error_message: errorMessage,
+        });
+        throw new Error(errorMessage);
+      }
+
+      trackEvent('account_deletion_succeeded', {
+        user_id: user.id,
+      });
+
+      setUser(null);
+      setToken(null);
+      await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+    },
+    [token, user],
+  );
+
   const register = async (data: RegisterRequest) => {
+    trackEvent('auth_register_submitted');
     const response = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -233,10 +261,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (!response.ok) {
-      throw new Error(await extractErrorMessage(response, 'Registration failed'));
+      const errorMessage = await extractErrorMessage(response, 'Registration failed');
+      trackEvent('auth_register_failed', {
+        status_code: response.status,
+        error_message: errorMessage,
+      });
+      throw new Error(errorMessage);
     }
 
     const authData: AuthResponse = await safeJson(response, 'Registration failed');
+
+    if (!authData.user.phone_verified) {
+      trackEvent('auth_register_pending_phone_verification', {
+        user_id: authData.user.id,
+      });
+      return;
+    }
 
     setUser(authData.user);
     setToken(authData.token);
@@ -244,7 +284,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       secureSet(TOKEN_KEY, authData.token),
       secureSet(USER_KEY, JSON.stringify(authData.user)),
     ]);
-    registerPushToken(authData.token);
+    trackEvent('auth_register_succeeded', {
+      user_id: authData.user.id,
+    });
+    registerPushToken(API_URL, authData.token).catch((e) => {
+      console.error('[PushToken] Failed to register push token:', e);
+    });
   };
 
   const value = {
@@ -254,7 +299,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: !!user && !!token,
     login,
     register,
+    deleteAccount,
     logout,
+    updateUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

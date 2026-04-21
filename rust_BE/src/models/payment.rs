@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow};
-use uuid::Uuid;
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Clone, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "VARCHAR", rename_all = "lowercase")]
@@ -57,7 +57,7 @@ pub struct PaymentRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PaymentResponse{
+pub struct PaymentResponse {
     pub id: Uuid,
     pub sender_id: Uuid,
     pub receiver_id: Uuid,
@@ -80,7 +80,7 @@ pub struct PaymentFilter {
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct CapturePaymentRequest {
-    pub amount: Option<Decimal>,  // Optional: for partial capture
+    pub amount: Option<Decimal>, // Optional: for partial capture
     pub idempotency_key: Option<Uuid>,
 }
 

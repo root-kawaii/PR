@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use chrono::{Duration, Utc};
+use std::sync::Arc;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -9,14 +9,22 @@ use stripe::{
     PaymentIntentOffSession,
 };
 
-use crate::models::AppState;
-use crate::persistences::payment_persistence::capture_payment_service;
+use crate::application::{
+    outbox_service, payment_service::capture_payment_service,
+    reservation_service::check_and_confirm_reservation,
+};
+use crate::bootstrap::state::AppState;
 
 // Row returned by the scheduler query
 #[derive(sqlx::FromRow)]
 #[allow(dead_code)]
 struct AuthorizedPaymentRow {
     payment_id: Uuid,
+    reservation_id: Uuid,
+    owner_user_id: Uuid,
+    owner_push_token: Option<String>,
+    event_name: String,
+    table_name: String,
     stripe_payment_intent_id: Option<String>,
     stripe_customer_id: Option<String>,
     stripe_payment_method_id: Option<String>,
@@ -51,6 +59,15 @@ struct ExpiredShareRow {
     table_name: String,
 }
 
+#[derive(sqlx::FromRow)]
+struct UpcomingReservationReminderRow {
+    reservation_id: Uuid,
+    user_id: Uuid,
+    event_name: String,
+    table_name: String,
+    reservation_status: String,
+}
+
 /// Starts the payment scheduler.
 ///
 /// Two loops run concurrently:
@@ -71,7 +88,9 @@ pub async fn run(state: Arc<AppState>) {
 
 /// Runs capture + reconciliation every 30 minutes.
 async fn run_frequent_loop(state: Arc<AppState>) {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+        state.config.jobs.payment_frequent_interval_seconds,
+    ));
 
     loop {
         interval.tick().await;
@@ -86,6 +105,14 @@ async fn run_frequent_loop(state: Arc<AppState>) {
         run_checkout_reconciliation(&state).await;
 
         info!("Scheduler: frequent job complete");
+        crate::jobs::record_job_run(
+            &state,
+            "payment_maintenance_frequent",
+            "success",
+            serde_json::json!({ "date": today.to_string() }),
+            None,
+        )
+        .await;
     }
 }
 
@@ -105,7 +132,18 @@ async fn run_daily_loop(state: Arc<AppState>) {
         // Expire stale payment shares
         run_payment_share_expiry(&state).await;
 
+        // Remind users about reservations happening tomorrow
+        run_upcoming_reservation_reminders(&state, today + Duration::days(1)).await;
+
         info!("Scheduler: daily job complete");
+        crate::jobs::record_job_run(
+            &state,
+            "payment_maintenance_daily",
+            "success",
+            serde_json::json!({ "date": today.to_string() }),
+            None,
+        )
+        .await;
     }
 }
 
@@ -118,6 +156,11 @@ async fn run_capture(state: &Arc<AppState>, tomorrow: chrono::NaiveDate) {
         r#"
         SELECT
             p.id                        AS payment_id,
+            tr.id                       AS reservation_id,
+            tr.user_id                  AS owner_user_id,
+            u.expo_push_token           AS owner_push_token,
+            e.title                     AS event_name,
+            t.name                      AS table_name,
             p.stripe_payment_intent_id,
             p.stripe_customer_id,
             p.stripe_payment_method_id,
@@ -127,6 +170,8 @@ async fn run_capture(state: &Arc<AppState>, tomorrow: chrono::NaiveDate) {
         FROM payments p
         JOIN table_reservations tr ON p.id = ANY(tr.payment_ids)
         JOIN events e ON e.id = tr.event_id
+        JOIN tables t ON t.id = tr.table_id
+        LEFT JOIN users u ON u.id = tr.user_id
         WHERE p.authorization_status = 'authorized'
           AND p.capture_method       = 'manual'
           AND e.event_date IS NOT NULL
@@ -150,7 +195,10 @@ async fn run_capture(state: &Arc<AppState>, tomorrow: chrono::NaiveDate) {
         return;
     }
 
-    info!(count = rows.len(), "Scheduler: capturing payments (event is tomorrow)");
+    info!(
+        count = rows.len(),
+        "Scheduler: capturing payments (event is tomorrow)"
+    );
 
     for row in rows {
         let payment_id = row.payment_id;
@@ -161,6 +209,16 @@ async fn run_capture(state: &Arc<AppState>, tomorrow: chrono::NaiveDate) {
                 let msg = format!("Scheduler: capture FAILED for payment {payment_id}: {e:?}");
                 error!("{}", msg);
                 send_alert(state, &msg).await;
+                notify_payment_action_required(
+                    state,
+                    &row,
+                    "Pagamento da verificare",
+                    &format!(
+                        "Non siamo riusciti a finalizzare il pagamento per {} ({}). Controlla la prenotazione nell'app.",
+                        row.event_name, row.table_name
+                    ),
+                )
+                .await;
             }
         }
     }
@@ -175,6 +233,11 @@ async fn run_reauth(state: &Arc<AppState>, reauth_threshold: chrono::NaiveDate) 
         r#"
         SELECT
             p.id                        AS payment_id,
+            tr.id                       AS reservation_id,
+            tr.user_id                  AS owner_user_id,
+            u.expo_push_token           AS owner_push_token,
+            e.title                     AS event_name,
+            t.name                      AS table_name,
             p.stripe_payment_intent_id,
             p.stripe_customer_id,
             p.stripe_payment_method_id,
@@ -184,6 +247,8 @@ async fn run_reauth(state: &Arc<AppState>, reauth_threshold: chrono::NaiveDate) 
         FROM payments p
         JOIN table_reservations tr ON p.id = ANY(tr.payment_ids)
         JOIN events e ON e.id = tr.event_id
+        JOIN tables t ON t.id = tr.table_id
+        LEFT JOIN users u ON u.id = tr.user_id
         WHERE p.authorization_status = 'authorized'
           AND p.capture_method       = 'manual'
           AND e.event_date IS NOT NULL
@@ -208,26 +273,29 @@ async fn run_reauth(state: &Arc<AppState>, reauth_threshold: chrono::NaiveDate) 
         return;
     }
 
-    info!(count = rows.len(), "Scheduler: re-authorizing payments (hold 6+ days old)");
+    info!(
+        count = rows.len(),
+        "Scheduler: re-authorizing payments (hold 6+ days old)"
+    );
 
     for row in rows {
         let payment_id = row.payment_id;
 
-        let stripe_pi_id = match row.stripe_payment_intent_id {
+        let stripe_pi_id = match row.stripe_payment_intent_id.as_deref() {
             Some(id) => id,
             None => {
                 warn!(payment_id = %payment_id, "Scheduler: missing stripe_payment_intent_id, skipping");
                 continue;
             }
         };
-        let customer_id = match row.stripe_customer_id {
+        let customer_id = match row.stripe_customer_id.as_deref() {
             Some(id) => id,
             None => {
                 warn!(payment_id = %payment_id, "Scheduler: missing stripe_customer_id, skipping re-auth");
                 continue;
             }
         };
-        let payment_method_id = match row.stripe_payment_method_id {
+        let payment_method_id = match row.stripe_payment_method_id.as_deref() {
             Some(id) => id,
             None => {
                 warn!(payment_id = %payment_id, "Scheduler: missing stripe_payment_method_id, skipping re-auth");
@@ -240,9 +308,9 @@ async fn run_reauth(state: &Arc<AppState>, reauth_threshold: chrono::NaiveDate) 
         if let Err(e) = reauthorize(
             state,
             payment_id,
-            &stripe_pi_id,
-            &customer_id,
-            &payment_method_id,
+            stripe_pi_id,
+            customer_id,
+            payment_method_id,
             row.amount,
         )
         .await
@@ -250,6 +318,16 @@ async fn run_reauth(state: &Arc<AppState>, reauth_threshold: chrono::NaiveDate) 
             let msg = format!("Scheduler: re-authorization FAILED for payment {payment_id}: {e}");
             error!("{}", msg);
             send_alert(state, &msg).await;
+            notify_payment_action_required(
+                state,
+                &row,
+                "Metodo di pagamento da aggiornare",
+                &format!(
+                    "Non siamo riusciti a rinnovare l'autorizzazione per {} ({}). Controlla la prenotazione nell'app.",
+                    row.event_name, row.table_name
+                ),
+            )
+            .await;
         }
     }
 }
@@ -291,7 +369,10 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
         return;
     }
 
-    info!(count = stale_shares.len(), "Reconciliation: checking stale checkout sessions against Stripe");
+    info!(
+        count = stale_shares.len(),
+        "Reconciliation: checking stale checkout sessions against Stripe"
+    );
 
     for share in stale_shares {
         let session_id: stripe::CheckoutSessionId = match share.stripe_checkout_session_id.parse() {
@@ -302,7 +383,13 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
             }
         };
 
-        let session = match stripe::CheckoutSession::retrieve(&state.stripe_client, &session_id, &[]).await {
+        let session = match stripe::CheckoutSession::retrieve(
+            &state.stripe_client,
+            &session_id,
+            &[],
+        )
+        .await
+        {
             Ok(s) => s,
             Err(e) => {
                 warn!(share_id = %share.share_id, error = %e, "Reconciliation: failed to retrieve checkout session from Stripe");
@@ -320,7 +407,8 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
         info!(share_id = %share.share_id, "Reconciliation: session is complete on Stripe — reconciling");
 
         // Extract the payment intent ID from the session
-        let stripe_pi_id = session.payment_intent
+        let stripe_pi_id = session
+            .payment_intent
             .map(|pi| match pi {
                 stripe::Expandable::Id(id) => id.to_string(),
                 stripe::Expandable::Object(obj) => obj.id.to_string(),
@@ -381,12 +469,11 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
         .await;
 
         // Create ticket for guest
-        if let Ok(reservation) = sqlx::query_scalar::<_, Uuid>(
-            "SELECT event_id FROM table_reservations WHERE id = $1"
-        )
-        .bind(share.reservation_id)
-        .fetch_one(&state.db_pool)
-        .await
+        if let Ok(reservation) =
+            sqlx::query_scalar::<_, Uuid>("SELECT event_id FROM table_reservations WHERE id = $1")
+                .bind(share.reservation_id)
+                .fetch_one(&state.db_pool)
+                .await
         {
             let ticket_id = Uuid::new_v4();
             let ticket_code = generate_ticket_code();
@@ -414,14 +501,17 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
         }
 
         // Check if all shares paid -> confirm reservation
-        let _ = crate::persistences::table_persistence::check_and_confirm_reservation(
-            &state.db_pool,
-            share.reservation_id,
-        )
-        .await;
+        let _ = check_and_confirm_reservation(&state.db_pool, share.reservation_id).await;
 
         info!(share_id = %share.share_id, payment_id = %payment_id, "Reconciliation: share reconciled successfully");
-        send_alert(state, &format!("Reconciliation: recovered missed payment for share {}", share.share_id)).await;
+        send_alert(
+            state,
+            &format!(
+                "Reconciliation: recovered missed payment for share {}",
+                share.share_id
+            ),
+        )
+        .await;
     }
 }
 
@@ -473,7 +563,11 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
         return;
     }
 
-    info!(count = expired.len(), ttl_hours = ttl_hours, "Share expiry: processing expired payment shares");
+    info!(
+        count = expired.len(),
+        ttl_hours = ttl_hours,
+        "Share expiry: processing expired payment shares"
+    );
 
     for share in &expired {
         // Mark share as expired
@@ -509,10 +603,17 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
                 "Un ospite ({}) non ha pagato la sua parte di €{:.2} per {} a {}. Puoi riassegnare il posto.",
                 guest_phone, share.amount, share.event_name, share.table_name,
             );
-            let owner_phone = owner_phone.clone();
-            tokio::spawn(async move {
-                crate::services::notification_service::send_sms(&owner_phone, &sms).await;
-            });
+            if let Err(error) = outbox_service::enqueue_sms_notification(
+                &state.db_pool,
+                owner_phone,
+                &sms,
+                Some("reservation"),
+                Some(share.reservation_id),
+            )
+            .await
+            {
+                error!(reservation_id = %share.reservation_id, error = %error, "Failed to enqueue owner SMS notification");
+            }
         }
 
         // Push notification to owner if they have a push token
@@ -522,10 +623,77 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
                 "L'ospite {} non ha pagato la sua parte (€{:.2}) per {}.",
                 guest_phone, share.amount, share.event_name,
             );
-            let push_token = push_token.clone();
-            tokio::spawn(async move {
-                crate::services::notification_service::send_push_notification(&push_token, &title, &body).await;
-            });
+            if let Err(error) = outbox_service::enqueue_push_notification(
+                &state.db_pool,
+                push_token,
+                &title,
+                &body,
+                Some("reservation"),
+                Some(share.reservation_id),
+            )
+            .await
+            {
+                error!(reservation_id = %share.reservation_id, error = %error, "Failed to enqueue owner push notification");
+            }
+        }
+    }
+}
+
+async fn run_upcoming_reservation_reminders(
+    state: &Arc<AppState>,
+    reminder_date: chrono::NaiveDate,
+) {
+    let rows: Vec<UpcomingReservationReminderRow> = match sqlx::query_as(
+        r#"
+        SELECT
+            tr.id        AS reservation_id,
+            tr.user_id,
+            e.title      AS event_name,
+            t.name       AS table_name,
+            tr.status    AS reservation_status
+        FROM table_reservations tr
+        JOIN events e ON e.id = tr.event_id
+        JOIN tables t ON t.id = tr.table_id
+        JOIN users u ON u.id = tr.user_id
+        WHERE e.event_date = $1
+          AND tr.status IN ('confirmed', 'pending')
+          AND u.expo_push_token IS NOT NULL
+          AND u.deleted_at IS NULL
+        "#,
+    )
+    .bind(reminder_date)
+    .fetch_all(&state.db_pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            error!(error = %error, reminder_date = %reminder_date, "Failed to fetch upcoming reservation reminders");
+            return;
+        }
+    };
+
+    for row in rows {
+        let title = if row.reservation_status == "confirmed" {
+            "Prenotazione domani"
+        } else {
+            "Promemoria prenotazione"
+        };
+        let body = format!(
+            "Domani hai {} al tavolo {}. Controlla i dettagli della prenotazione nell'app.",
+            row.event_name, row.table_name
+        );
+
+        if let Err(error) = outbox_service::enqueue_push_notification_for_user(
+            &state.db_pool,
+            row.user_id,
+            title,
+            &body,
+            Some("reservation"),
+            Some(row.reservation_id),
+        )
+        .await
+        {
+            error!(error = %error, reservation_id = %row.reservation_id, "Failed to enqueue upcoming reservation reminder");
         }
     }
 }
@@ -537,28 +705,63 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
 /// Sends an alert message to the configured Discord/Slack webhook.
 /// Silently does nothing if no webhook URL is configured.
 async fn send_alert(state: &AppState, message: &str) {
-    let url = match &state.alert_webhook_url {
-        Some(u) if !u.is_empty() => u.clone(),
-        _ => return,
-    };
+    if state.alert_webhook_url.is_none() {
+        return;
+    }
 
-    // Discord and Slack both accept {"content": "..."} / {"text": "..."}
-    // We send both keys so it works with either platform.
-    let payload = serde_json::json!({
-        "content": message,
-        "text": message,
-    });
+    if let Err(error) =
+        outbox_service::enqueue_alert_webhook(&state.db_pool, message, "payment_maintenance").await
+    {
+        error!(error = %error, "Failed to enqueue alert webhook");
+    }
+}
 
-    let client = reqwest::Client::new();
-    match client.post(&url).json(&payload).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            info!("Alert sent successfully");
+async fn notify_payment_action_required(
+    state: &AppState,
+    row: &AuthorizedPaymentRow,
+    title: &str,
+    body: &str,
+) {
+    if row.owner_push_token.as_deref().is_none() {
+        return;
+    }
+
+    let already_sent: Result<bool, sqlx::Error> = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM outbox_events
+            WHERE event_type = 'notification.push'
+              AND aggregate_type = 'payment'
+              AND aggregate_id = $1
+              AND payload ->> 'title' = $2
+              AND created_at >= NOW() - INTERVAL '24 hours'
+        )
+        "#,
+    )
+    .bind(row.payment_id)
+    .bind(title)
+    .fetch_one(&state.db_pool)
+    .await;
+
+    match already_sent {
+        Ok(true) => {}
+        Ok(false) => {
+            if let Err(error) = outbox_service::enqueue_push_notification_for_user(
+                &state.db_pool,
+                row.owner_user_id,
+                title,
+                body,
+                Some("payment"),
+                Some(row.payment_id),
+            )
+            .await
+            {
+                error!(error = %error, payment_id = %row.payment_id, reservation_id = %row.reservation_id, "Failed to enqueue payment action required notification");
+            }
         }
-        Ok(resp) => {
-            warn!(status = %resp.status(), "Alert webhook returned non-success status");
-        }
-        Err(e) => {
-            error!(error = %e, "Failed to send alert webhook");
+        Err(error) => {
+            error!(error = %error, payment_id = %row.payment_id, reservation_id = %row.reservation_id, "Failed to check duplicate payment notifications");
         }
     }
 }
@@ -627,11 +830,7 @@ async fn reauthorize(
 /// Sleeps until the next 09:00 UTC.
 async fn sleep_until_next_9am() {
     let now = Utc::now();
-    let today_9am = now
-        .date_naive()
-        .and_hms_opt(9, 0, 0)
-        .unwrap()
-        .and_utc();
+    let today_9am = now.date_naive().and_hms_opt(9, 0, 0).unwrap().and_utc();
 
     let next_9am = if now < today_9am {
         today_9am
@@ -660,7 +859,11 @@ fn generate_ticket_code() -> String {
     let random_part: String = (0..8)
         .map(|_| {
             let idx = rng.gen_range(0..36);
-            if idx < 26 { (b'A' + idx) as char } else { (b'0' + (idx - 26)) as char }
+            if idx < 26 {
+                (b'A' + idx) as char
+            } else {
+                (b'0' + (idx - 26)) as char
+            }
         })
         .collect();
     format!("TKT-{}", random_part)

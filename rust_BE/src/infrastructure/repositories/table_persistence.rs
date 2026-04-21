@@ -1,8 +1,23 @@
-use crate::models::{Table, TableReservation, ReservationPaymentShare, ReservationGuest};
-use sqlx::PgPool;
-use uuid::Uuid;
+use crate::models::{ReservationGuest, ReservationPaymentShare, Table, TableReservation};
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+async fn get_club_id_for_event(pool: &PgPool, event_id: Uuid) -> Result<Uuid, sqlx::Error> {
+    let club_id = sqlx::query_scalar::<_, Option<Uuid>>(
+        r#"
+        SELECT club_id
+        FROM events
+        WHERE id = $1
+        "#,
+    )
+    .bind(event_id)
+    .fetch_one(pool)
+    .await?;
+
+    club_id.ok_or(sqlx::Error::RowNotFound)
+}
 
 // ============================================================================
 // Tables CRUD
@@ -12,8 +27,12 @@ use serde_json::Value as JsonValue;
 pub async fn get_all_tables(pool: &PgPool) -> Result<Vec<Table>, sqlx::Error> {
     let tables = sqlx::query_as::<_, Table>(
         r#"
-        SELECT * FROM tables
-        ORDER BY created_at DESC
+        SELECT
+            t.*,
+            a.name AS area_name
+        FROM tables t
+        LEFT JOIN areas a ON a.id = t.area_id
+        ORDER BY t.created_at DESC
         "#,
     )
     .fetch_all(pool)
@@ -23,12 +42,19 @@ pub async fn get_all_tables(pool: &PgPool) -> Result<Vec<Table>, sqlx::Error> {
 }
 
 /// Get all tables for a specific event
-pub async fn get_tables_by_event_id(pool: &PgPool, event_id: Uuid) -> Result<Vec<Table>, sqlx::Error> {
+pub async fn get_tables_by_event_id(
+    pool: &PgPool,
+    event_id: Uuid,
+) -> Result<Vec<Table>, sqlx::Error> {
     let tables = sqlx::query_as::<_, Table>(
         r#"
-        SELECT * FROM tables
-        WHERE event_id = $1
-        ORDER BY name ASC
+        SELECT
+            t.*,
+            a.name AS area_name
+        FROM tables t
+        LEFT JOIN areas a ON a.id = t.area_id
+        WHERE t.event_id = $1
+        ORDER BY COALESCE(a.name, t.zone, 'A') ASC, t.name ASC
         "#,
     )
     .bind(event_id)
@@ -39,12 +65,19 @@ pub async fn get_tables_by_event_id(pool: &PgPool, event_id: Uuid) -> Result<Vec
 }
 
 /// Get available tables for an event
-pub async fn get_available_tables_by_event_id(pool: &PgPool, event_id: Uuid) -> Result<Vec<Table>, sqlx::Error> {
+pub async fn get_available_tables_by_event_id(
+    pool: &PgPool,
+    event_id: Uuid,
+) -> Result<Vec<Table>, sqlx::Error> {
     let tables = sqlx::query_as::<_, Table>(
         r#"
-        SELECT * FROM tables
-        WHERE event_id = $1 AND available = true
-        ORDER BY name ASC
+        SELECT
+            t.*,
+            a.name AS area_name
+        FROM tables t
+        LEFT JOIN areas a ON a.id = t.area_id
+        WHERE t.event_id = $1 AND t.available = true
+        ORDER BY COALESCE(a.name, t.zone, 'A') ASC, t.name ASC
         "#,
     )
     .bind(event_id)
@@ -58,8 +91,12 @@ pub async fn get_available_tables_by_event_id(pool: &PgPool, event_id: Uuid) -> 
 pub async fn get_table_by_id(pool: &PgPool, table_id: Uuid) -> Result<Table, sqlx::Error> {
     let table = sqlx::query_as::<_, Table>(
         r#"
-        SELECT * FROM tables
-        WHERE id = $1
+        SELECT
+            t.*,
+            a.name AS area_name
+        FROM tables t
+        LEFT JOIN areas a ON a.id = t.area_id
+        WHERE t.id = $1
         "#,
     )
     .bind(table_id)
@@ -82,12 +119,18 @@ pub async fn create_table(
     marzipano_position: Option<JsonValue>,
 ) -> Result<Table, sqlx::Error> {
     let total_cost = min_spend * Decimal::from(capacity);
+    let club_id = get_club_id_for_event(pool, event_id).await?;
+    let default_area =
+        crate::infrastructure::repositories::area_repository::get_or_create_default_area(
+            pool, club_id, min_spend,
+        )
+        .await?;
 
-    let table = sqlx::query_as::<_, Table>(
+    let table_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO tables (event_id, name, zone, capacity, min_spend, total_cost, location_description, features, marzipano_position)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        RETURNING *
+        INSERT INTO tables (event_id, name, zone, capacity, min_spend, total_cost, location_description, features, marzipano_position, area_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id
         "#,
     )
     .bind(event_id)
@@ -99,10 +142,11 @@ pub async fn create_table(
     .bind(location_description)
     .bind(features)
     .bind(marzipano_position)
+    .bind(default_area.id)
     .fetch_one(pool)
     .await?;
 
-    Ok(table)
+    get_table_by_id(pool, table_id).await
 }
 
 /// Update a table
@@ -125,7 +169,7 @@ pub async fn update_table(
     let final_min_spend = min_spend.unwrap_or(current_table.min_spend);
     let total_cost = final_min_spend * Decimal::from(final_capacity);
 
-    let table = sqlx::query_as::<_, Table>(
+    let updated_table_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         UPDATE tables
         SET name = COALESCE($1, name),
@@ -139,7 +183,7 @@ pub async fn update_table(
             marzipano_position = COALESCE($9, marzipano_position),
             updated_at = NOW()
         WHERE id = $10
-        RETURNING *
+        RETURNING id
         "#,
     )
     .bind(name)
@@ -155,7 +199,7 @@ pub async fn update_table(
     .fetch_one(pool)
     .await?;
 
-    Ok(table)
+    get_table_by_id(pool, updated_table_id).await
 }
 
 /// Delete a table
@@ -195,7 +239,11 @@ fn generate_reservation_code() -> String {
 }
 
 /// Get all reservations (paginated)
-pub async fn get_all_reservations(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<TableReservation>, sqlx::Error> {
+pub async fn get_all_reservations(
+    pool: &PgPool,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<TableReservation>, sqlx::Error> {
     let reservations = sqlx::query_as::<_, TableReservation>(
         r#"
         SELECT * FROM table_reservations
@@ -212,7 +260,10 @@ pub async fn get_all_reservations(pool: &PgPool, limit: i64, offset: i64) -> Res
 }
 
 /// Get reservations by table ID
-pub async fn get_reservations_by_table_id(pool: &PgPool, table_id: Uuid) -> Result<Vec<TableReservation>, sqlx::Error> {
+pub async fn get_reservations_by_table_id(
+    pool: &PgPool,
+    table_id: Uuid,
+) -> Result<Vec<TableReservation>, sqlx::Error> {
     let reservations = sqlx::query_as::<_, TableReservation>(
         r#"
         SELECT * FROM table_reservations
@@ -228,7 +279,10 @@ pub async fn get_reservations_by_table_id(pool: &PgPool, table_id: Uuid) -> Resu
 }
 
 /// Get reservation by ID
-pub async fn get_reservation_by_id(pool: &PgPool, reservation_id: Uuid) -> Result<TableReservation, sqlx::Error> {
+pub async fn get_reservation_by_id(
+    pool: &PgPool,
+    reservation_id: Uuid,
+) -> Result<TableReservation, sqlx::Error> {
     let reservation = sqlx::query_as::<_, TableReservation>(
         r#"
         SELECT * FROM table_reservations
@@ -243,7 +297,10 @@ pub async fn get_reservation_by_id(pool: &PgPool, reservation_id: Uuid) -> Resul
 }
 
 /// Get reservation by code
-pub async fn get_reservation_by_code(pool: &PgPool, code: &str) -> Result<TableReservation, sqlx::Error> {
+pub async fn get_reservation_by_code(
+    pool: &PgPool,
+    code: &str,
+) -> Result<TableReservation, sqlx::Error> {
     let reservation = sqlx::query_as::<_, TableReservation>(
         r#"
         SELECT * FROM table_reservations
@@ -262,7 +319,14 @@ pub async fn get_reservation_by_code(pool: &PgPool, code: &str) -> Result<TableR
 pub async fn get_reservation_with_details_by_code(
     pool: &PgPool,
     code: &str,
-) -> Result<(TableReservation, Table, (Uuid, String, String, String, String)), sqlx::Error> {
+) -> Result<
+    (
+        TableReservation,
+        Table,
+        (Uuid, String, String, String, String),
+    ),
+    sqlx::Error,
+> {
     // First, get the reservation
     let reservation = get_reservation_by_code(pool, code).await?;
 
@@ -289,9 +353,49 @@ pub async fn get_reservation_with_details_by_code(
 pub async fn get_reservations_with_details_by_user_id(
     pool: &PgPool,
     user_id: Uuid,
-) -> Result<Vec<(Uuid, String, String, i32, Decimal, Decimal, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>, Uuid, String, Option<String>, i32, Decimal)>, sqlx::Error> {
+) -> Result<
+    Vec<(
+        Uuid,
+        String,
+        String,
+        i32,
+        Decimal,
+        Decimal,
+        String,
+        String,
+        String,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+        Uuid,
+        String,
+        Option<String>,
+        i32,
+        Decimal,
+    )>,
+    sqlx::Error,
+> {
     // Query part 1: reservation + table details (16 fields)
-    let results = sqlx::query_as::<_, (Uuid, String, String, i32, Decimal, Decimal, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>, Uuid, String, Option<String>, i32, Decimal)>(
+    let results = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            String,
+            String,
+            i32,
+            Decimal,
+            Decimal,
+            String,
+            String,
+            String,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+            Uuid,
+            String,
+            Option<String>,
+            i32,
+            Decimal,
+        ),
+    >(
         r#"
         SELECT
             r.id, r.reservation_code, r.status, r.num_people, r.total_amount, r.amount_paid,
@@ -354,7 +458,10 @@ pub async fn create_reservation(
     let mut reservation_code = generate_reservation_code();
     let mut attempts = 0;
     while attempts < 10 {
-        if get_reservation_by_code(pool, &reservation_code).await.is_err() {
+        if get_reservation_by_code(pool, &reservation_code)
+            .await
+            .is_err()
+        {
             break;
         }
         reservation_code = generate_reservation_code();
@@ -404,12 +511,13 @@ pub async fn update_reservation(
     let final_num_people = num_people.unwrap_or(current_reservation.num_people);
 
     // Get the table to recalculate if num_people changed
-    let new_total_amount = if num_people.is_some() && num_people.unwrap() != current_reservation.num_people {
-        let table = get_table_by_id(pool, current_reservation.table_id).await?;
-        table.min_spend * Decimal::from(final_num_people)
-    } else {
-        current_reservation.total_amount
-    };
+    let new_total_amount =
+        if num_people.is_some() && num_people.unwrap() != current_reservation.num_people {
+            let table = get_table_by_id(pool, current_reservation.table_id).await?;
+            table.min_spend * Decimal::from(final_num_people)
+        } else {
+            current_reservation.total_amount
+        };
 
     let reservation = sqlx::query_as::<_, TableReservation>(
         r#"
@@ -567,7 +675,7 @@ pub async fn create_payment_share(
         let mut attempts = 0;
         while attempts < 10 {
             let existing = sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM reservation_payment_shares WHERE payment_link_token = $1"
+                "SELECT COUNT(*) FROM reservation_payment_shares WHERE payment_link_token = $1",
             )
             .bind(&token)
             .fetch_one(pool)
@@ -613,7 +721,7 @@ pub async fn get_payment_share_by_token(
     token: &str,
 ) -> Result<ReservationPaymentShare, sqlx::Error> {
     sqlx::query_as::<_, ReservationPaymentShare>(
-        "SELECT * FROM reservation_payment_shares WHERE payment_link_token = $1"
+        "SELECT * FROM reservation_payment_shares WHERE payment_link_token = $1",
     )
     .bind(token)
     .fetch_one(pool)
@@ -626,7 +734,7 @@ pub async fn get_reservation_by_payment_link_token(
     token: &str,
 ) -> Result<crate::models::TableReservation, sqlx::Error> {
     sqlx::query_as::<_, crate::models::TableReservation>(
-        "SELECT * FROM table_reservations WHERE payment_link_token = $1"
+        "SELECT * FROM table_reservations WHERE payment_link_token = $1",
     )
     .bind(token)
     .fetch_one(pool)
@@ -639,7 +747,7 @@ pub async fn get_payment_share_by_checkout_session(
     session_id: &str,
 ) -> Result<ReservationPaymentShare, sqlx::Error> {
     sqlx::query_as::<_, ReservationPaymentShare>(
-        "SELECT * FROM reservation_payment_shares WHERE stripe_checkout_session_id = $1"
+        "SELECT * FROM reservation_payment_shares WHERE stripe_checkout_session_id = $1",
     )
     .bind(session_id)
     .fetch_one(pool)
@@ -745,7 +853,7 @@ pub async fn get_free_guests_by_reservation(
     reservation_id: Uuid,
 ) -> Result<Vec<ReservationGuest>, sqlx::Error> {
     sqlx::query_as::<_, ReservationGuest>(
-        "SELECT * FROM reservation_guests WHERE reservation_id = $1 ORDER BY created_at ASC"
+        "SELECT * FROM reservation_guests WHERE reservation_id = $1 ORDER BY created_at ASC",
     )
     .bind(reservation_id)
     .fetch_all(pool)
@@ -758,14 +866,14 @@ pub async fn get_total_people_count(
     reservation_id: Uuid,
 ) -> Result<i64, sqlx::Error> {
     let shares_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM reservation_payment_shares WHERE reservation_id = $1"
+        "SELECT COUNT(*) FROM reservation_payment_shares WHERE reservation_id = $1",
     )
     .bind(reservation_id)
     .fetch_one(pool)
     .await?;
 
     let guests_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM reservation_guests WHERE reservation_id = $1"
+        "SELECT COUNT(*) FROM reservation_guests WHERE reservation_id = $1",
     )
     .bind(reservation_id)
     .fetch_one(pool)
@@ -830,7 +938,7 @@ pub async fn check_and_confirm_reservation(
 
     if pending_count == 0 {
         sqlx::query(
-            "UPDATE table_reservations SET status = 'confirmed', updated_at = NOW() WHERE id = $1"
+            "UPDATE table_reservations SET status = 'confirmed', updated_at = NOW() WHERE id = $1",
         )
         .bind(reservation_id)
         .execute(pool)

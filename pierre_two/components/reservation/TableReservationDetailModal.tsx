@@ -15,12 +15,12 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTheme } from "@/context/ThemeContext";
 import { TableReservation, PaymentShare } from "@/types";
 import { API_URL } from "@/config/api";
+import { trackEvent } from "@/config/analytics";
 
 type TableReservationDetailModalProps = {
   visible: boolean;
   reservation: TableReservation | null;
   onClose: () => void;
-  onPaymentSubmit: (numPeople: number) => Promise<void>;
 };
 
 export const TableReservationDetailModal = ({
@@ -38,6 +38,11 @@ export const TableReservationDetailModal = ({
 
   useEffect(() => {
     if (visible && reservation?.id) {
+      trackEvent("reservation_detail_opened", {
+        reservation_id: reservation.id,
+        event_id: reservation.event?.id || null,
+        status: reservation.status,
+      });
       fetchPaymentStatus();
     }
   }, [visible, reservation?.id]);
@@ -65,15 +70,28 @@ export const TableReservationDetailModal = ({
         setShareLink(data.shareLink || null);
         setSlotsFilled(data.slotsFilled ?? 0);
         setSlotsTotal(data.slotsTotal ?? 0);
+        trackEvent("reservation_payment_status_loaded", {
+          reservation_id: reservation!.id,
+          payment_share_count: (data.paymentShares || []).length,
+          slots_filled: data.slotsFilled ?? 0,
+          slots_total: data.slotsTotal ?? 0,
+          has_share_link: Boolean(data.shareLink),
+        });
       }
     } catch (error) {
       console.error("Failed to fetch payment status:", error);
+      trackEvent("reservation_payment_status_failed", {
+        reservation_id: reservation!.id,
+      });
     }
   };
 
   const handleShareTableLink = async () => {
     if (!shareLink) return;
     try {
+      trackEvent("reservation_share_link_opened", {
+        reservation_id: reservation.id,
+      });
       await Share.share({
         message: `Unisciti al mio tavolo "${reservation.table?.name || ""}"! Paga la tua quota qui: ${shareLink}`,
         url: shareLink,

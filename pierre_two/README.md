@@ -21,6 +21,12 @@ npx expo start
 
 Use a [development build](https://docs.expo.dev/develop/development-builds/introduction/) for full functionality (SecureStore, push notifications, Stripe). Expo Go works for basic UI development.
 
+Optional frontend analytics env vars:
+
+- `EXPO_PUBLIC_POSTHOG_KEY`
+- `EXPO_PUBLIC_POSTHOG_HOST` (defaults to `https://eu.i.posthog.com`)
+- `APP_ENV`
+
 ## Screens
 
 | Route | Description |
