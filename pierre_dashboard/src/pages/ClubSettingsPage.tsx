@@ -1,27 +1,60 @@
-import { useState, type FormEvent, useEffect } from 'react';
-import { Save, Plus, Trash2, X } from 'lucide-react';
+import { useState, type FormEvent, useEffect, useMemo } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  CreditCard,
+  ExternalLink,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
-import type { Club, ClubImage } from '../types';
+import type {
+  Club,
+  ClubImage,
+  StripeConnectStatus,
+  StripeOnboardingLinkResponse,
+} from '../types';
 import { trackEvent } from '../config/analytics';
 
 interface ClubImagesData {
   images: ClubImage[];
 }
 
+type StripeTone = 'slate' | 'green' | 'amber' | 'rose';
+
 export default function ClubSettingsPage() {
   const { token } = useAuth();
-  const { data: club, loading: clubLoading, refetch: refetchClub } = useFetch<Club>('/owner/club');
-  const { data: imagesData, loading: imagesLoading, refetch: refetchImages } = useFetch<ClubImagesData>('/owner/club/images');
+  const {
+    data: club,
+    loading: clubLoading,
+    refetch: refetchClub,
+  } = useFetch<Club>('/owner/club');
+  const {
+    data: imagesData,
+    loading: imagesLoading,
+    refetch: refetchImages,
+  } = useFetch<ClubImagesData>('/owner/club/images');
+  const {
+    data: stripeStatus,
+    loading: stripeLoading,
+    refetch: refetchStripeStatus,
+  } = useFetch<StripeConnectStatus>('/owner/club/stripe/status');
 
   const [name, setName] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [website, setWebsite] = useState('');
+  const [commissionPercent, setCommissionPercent] = useState('0');
+  const [commissionFixedFee, setCommissionFixedFee] = useState('0');
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [startingOnboarding, setStartingOnboarding] = useState(false);
 
   const [newImageUrl, setNewImageUrl] = useState('');
   const [newImageAlt, setNewImageAlt] = useState('');
@@ -29,14 +62,32 @@ export default function ClubSettingsPage() {
   const [showAddImage, setShowAddImage] = useState(false);
 
   useEffect(() => {
-    if (club) {
-      setName(club.name ?? '');
-      setSubtitle(club.subtitle ?? '');
-      setAddress(club.address ?? '');
-      setPhone(club.phone_number ?? '');
-      setWebsite(club.website ?? '');
+    if (!club) {
+      return;
     }
+
+    setName(club.name ?? '');
+    setSubtitle(club.subtitle ?? '');
+    setAddress(club.address ?? '');
+    setPhone(club.phone_number ?? '');
+    setWebsite(club.website ?? '');
+    setCommissionPercent(String(club.platform_commission_percent ?? '0'));
+    setCommissionFixedFee(String(club.platform_commission_fixed_fee ?? '0'));
   }, [club]);
+
+  useEffect(() => {
+    if (!stripeStatus) {
+      return;
+    }
+
+    if (stripeStatus.platform_commission_percent != null) {
+      setCommissionPercent(String(stripeStatus.platform_commission_percent));
+    }
+
+    if (stripeStatus.platform_commission_fixed_fee != null) {
+      setCommissionFixedFee(String(stripeStatus.platform_commission_fixed_fee));
+    }
+  }, [stripeStatus]);
 
   useEffect(() => {
     if (clubLoading || !club) {
@@ -46,23 +97,71 @@ export default function ClubSettingsPage() {
     trackEvent('owner_club_settings_viewed', {
       club_id: club.id,
       image_count: imagesData?.images.length ?? 0,
+      stripe_connected: Boolean(stripeStatus?.connected_account_id),
     });
-  }, [club, clubLoading, imagesData?.images.length]);
+  }, [club, clubLoading, imagesData?.images.length, stripeStatus?.connected_account_id]);
+
+  const stripeToneClasses: Record<StripeTone, string> = {
+    slate: 'bg-slate-100 text-slate-700 border-slate-200',
+    green: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    amber: 'bg-amber-100 text-amber-700 border-amber-200',
+    rose: 'bg-rose-100 text-rose-700 border-rose-200',
+  };
+
+  const stripeState = useMemo(() => {
+    if (!stripeStatus?.connected_account_id) {
+      return {
+        label: 'Non collegato',
+        tone: 'slate' as StripeTone,
+        description:
+          'Crea un account Stripe Connect per instradare automaticamente la quota del locale.',
+      };
+    }
+
+    if (stripeStatus.charges_enabled && stripeStatus.payouts_enabled) {
+      return {
+        label: 'Pronto per i payout',
+        tone: 'green' as StripeTone,
+        description:
+          'L’account Stripe del locale e attivo e puo ricevere la sua quota in automatico.',
+      };
+    }
+
+    if (stripeStatus.details_submitted || stripeStatus.onboarding_complete) {
+      return {
+        label: 'Verifica in corso',
+        tone: 'amber' as StripeTone,
+        description:
+          'Stripe ha ricevuto i dati. Appena verifica e payout saranno abilitati, i pagamenti verranno instradati in automatico.',
+      };
+    }
+
+    return {
+      label: 'Onboarding incompleto',
+      tone: 'rose' as StripeTone,
+      description:
+        'Il locale ha un account collegato ma deve completare il flusso Stripe per ricevere i payout.',
+    };
+  }, [stripeStatus]);
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setSaveSuccess(false);
+
     trackEvent('owner_club_update_submitted', {
       has_phone: Boolean(phone),
       has_website: Boolean(website),
+      commission_percent: commissionPercent || '0',
+      commission_fixed_fee: commissionFixedFee || '0',
     });
+
     try {
       const res = await fetch(`${API_URL}/owner/club`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           name,
@@ -70,14 +169,24 @@ export default function ClubSettingsPage() {
           address: address || undefined,
           phone_number: phone || undefined,
           website: website || undefined,
+          platform_commission_percent:
+            commissionPercent === '' ? undefined : Number(commissionPercent),
+          platform_commission_fixed_fee:
+            commissionFixedFee === '' ? undefined : Number(commissionFixedFee),
         }),
       });
-      if (!res.ok) throw new Error('Errore nel salvataggio');
+
+      if (!res.ok) {
+        throw new Error('Errore nel salvataggio');
+      }
+
       trackEvent('owner_club_updated', {
         club_id: club?.id ?? null,
       });
+
       setSaveSuccess(true);
       refetchClub();
+      refetchStripeStatus();
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       trackEvent('owner_club_update_failed', {
@@ -90,29 +199,69 @@ export default function ClubSettingsPage() {
     }
   };
 
+  const handleStartStripeOnboarding = async () => {
+    setStartingOnboarding(true);
+
+    trackEvent('owner_stripe_connect_started', {
+      club_id: club?.id ?? null,
+      existing_account: stripeStatus?.connected_account_id ?? null,
+    });
+
+    try {
+      const res = await fetch(`${API_URL}/owner/club/stripe/connect`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error('Errore avvio onboarding Stripe');
+      }
+
+      const data: StripeOnboardingLinkResponse = await res.json();
+      window.location.href = data.onboarding_url;
+    } catch (err) {
+      trackEvent('owner_stripe_connect_failed', {
+        club_id: club?.id ?? null,
+        error_message: err instanceof Error ? err.message : 'Errore',
+      });
+      alert(err instanceof Error ? err.message : 'Errore');
+    } finally {
+      setStartingOnboarding(false);
+    }
+  };
+
   const handleAddImage = async (e: FormEvent) => {
     e.preventDefault();
     setAddingImage(true);
+
     trackEvent('owner_club_image_add_submitted', {
       club_id: club?.id ?? null,
     });
+
     try {
       const res = await fetch(`${API_URL}/owner/club/images`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           url: newImageUrl,
           alt_text: newImageAlt || undefined,
-          display_order: (imagesData?.images.length ?? 0),
+          display_order: imagesData?.images.length ?? 0,
         }),
       });
-      if (!res.ok) throw new Error('Errore nel caricamento');
+
+      if (!res.ok) {
+        throw new Error('Errore nel caricamento');
+      }
+
       trackEvent('owner_club_image_added', {
         club_id: club?.id ?? null,
       });
+
       setNewImageUrl('');
       setNewImageAlt('');
       setShowAddImage(false);
@@ -129,13 +278,20 @@ export default function ClubSettingsPage() {
   };
 
   const handleDeleteImage = async (imageId: string) => {
-    if (!confirm('Rimuovere questa immagine?')) return;
+    if (!confirm('Rimuovere questa immagine?')) {
+      return;
+    }
+
     try {
       const res = await fetch(`${API_URL}/owner/club/images/${imageId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Errore nella rimozione');
+
+      if (!res.ok) {
+        throw new Error('Errore nella rimozione');
+      }
+
       trackEvent('owner_club_image_deleted', {
         club_id: club?.id ?? null,
         image_id: imageId,
@@ -156,13 +312,97 @@ export default function ClubSettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-4xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Impostazioni Locale</h1>
 
-      {/* Info form */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Informazioni</h2>
-        <form onSubmit={handleSave} className="space-y-4">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-11 h-11 rounded-2xl bg-gray-900 text-white flex items-center justify-center">
+                <CreditCard size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Stripe Connect</h2>
+                <p className="text-sm text-gray-500">
+                  Ogni locale puo collegare il proprio account Stripe e ricevere payout automatici.
+                </p>
+              </div>
+            </div>
+
+            <div
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium ${stripeToneClasses[stripeState.tone]}`}
+            >
+              {stripeState.tone === 'green' ? (
+                <CheckCircle2 size={15} />
+              ) : (
+                <AlertCircle size={15} />
+              )}
+              {stripeState.label}
+            </div>
+
+            <p className="text-sm text-gray-600 mt-3">{stripeState.description}</p>
+
+            {stripeStatus?.connected_account_id && (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                    Account ID
+                  </div>
+                  <div className="text-sm font-mono text-gray-900 break-all">
+                    {stripeStatus.connected_account_id}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                    Charges
+                  </div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    {stripeStatus.charges_enabled ? 'Abilitati' : 'Non abilitati'}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                    Payouts
+                  </div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    {stripeStatus.payouts_enabled ? 'Abilitati' : 'Non abilitati'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              onClick={() => refetchStripeStatus()}
+              disabled={stripeLoading}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw size={16} className={stripeLoading ? 'animate-spin' : ''} />
+              Aggiorna stato
+            </button>
+            <button
+              type="button"
+              onClick={handleStartStripeOnboarding}
+              disabled={startingOnboarding}
+              className="flex items-center justify-center gap-2 bg-gray-900 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 transition-colors"
+            >
+              <ExternalLink size={16} />
+              {startingOnboarding
+                ? 'Apertura...'
+                : stripeStatus?.connected_account_id
+                  ? 'Continua onboarding'
+                  : 'Collega Stripe'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Informazioni e commissioni</h2>
+        <form onSubmit={handleSave} className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
@@ -182,6 +422,7 @@ export default function ClubSettingsPage() {
               />
             </div>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Indirizzo</label>
             <input
@@ -191,6 +432,7 @@ export default function ClubSettingsPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
             />
           </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Telefono</label>
@@ -211,6 +453,71 @@ export default function ClubSettingsPage() {
               />
             </div>
           </div>
+
+          <div className="border-t border-gray-200 pt-5">
+            <div className="mb-4">
+              <h3 className="text-base font-semibold text-gray-900">
+                Commissioni piattaforma
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Se lasci `0`, tutto il pagamento viene inviato al locale. Se imposti una
+                commissione, la piattaforma trattiene quella quota e il resto va al club.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Commissione percentuale
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={commissionPercent}
+                    onChange={e => setCommissionPercent(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                  />
+                  <span className="absolute inset-y-0 right-3 flex items-center text-sm text-gray-500">
+                    %
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Commissione fissa
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={commissionFixedFee}
+                    onChange={e => setCommissionFixedFee(e.target.value)}
+                    className="w-full px-3 py-2 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                  />
+                  <span className="absolute inset-y-0 right-3 flex items-center text-sm text-gray-500">
+                    EUR
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
+              Regola consigliata:
+              {' '}
+              <strong>{commissionPercent || '0'}%</strong>
+              {' '}
+              +
+              {' '}
+              <strong>{commissionFixedFee || '0'} EUR</strong>
+              {' '}
+              per pagamento. Con `0%` e `0 EUR`, l’intero importo viene girato al locale.
+            </div>
+          </div>
+
           <div className="flex items-center gap-3">
             <button
               type="submit"
@@ -221,13 +528,14 @@ export default function ClubSettingsPage() {
               {saving ? 'Salvataggio...' : 'Salva'}
             </button>
             {saveSuccess && (
-              <span className="text-green-600 text-sm font-medium">Salvato con successo!</span>
+              <span className="text-green-600 text-sm font-medium">
+                Salvato con successo!
+              </span>
             )}
           </div>
         </form>
       </div>
 
-      {/* Gallery */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Galleria Immagini</h2>
@@ -245,13 +553,18 @@ export default function ClubSettingsPage() {
             <div className="bg-white rounded-xl p-6 w-full max-w-md">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-gray-900">Nuova immagine</h3>
-                <button onClick={() => setShowAddImage(false)} className="text-gray-400 hover:text-gray-600">
+                <button
+                  onClick={() => setShowAddImage(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
                   <X size={20} />
                 </button>
               </div>
               <form onSubmit={handleAddImage} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">URL immagine</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    URL immagine
+                  </label>
                   <input
                     value={newImageUrl}
                     onChange={e => setNewImageUrl(e.target.value)}
@@ -261,7 +574,9 @@ export default function ClubSettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione (opzionale)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Descrizione (opzionale)
+                  </label>
                   <input
                     value={newImageAlt}
                     onChange={e => setNewImageAlt(e.target.value)}
@@ -284,12 +599,21 @@ export default function ClubSettingsPage() {
         {imagesLoading ? (
           <p className="text-gray-500 text-sm">Caricamento...</p>
         ) : !imagesData?.images.length ? (
-          <p className="text-gray-500 text-sm">Nessuna immagine. Aggiungi la prima immagine del locale.</p>
+          <p className="text-gray-500 text-sm">
+            Nessuna immagine. Aggiungi la prima immagine del locale.
+          </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {imagesData.images.map((img) => (
-              <div key={img.id} className="relative group rounded-lg overflow-hidden aspect-video bg-gray-100">
-                <img src={img.url} alt={img.altText ?? ''} className="w-full h-full object-cover" />
+              <div
+                key={img.id}
+                className="relative group rounded-lg overflow-hidden aspect-video bg-gray-100"
+              >
+                <img
+                  src={img.url}
+                  alt={img.altText ?? ''}
+                  className="w-full h-full object-cover"
+                />
                 <button
                   onClick={() => handleDeleteImage(img.id)}
                   className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"

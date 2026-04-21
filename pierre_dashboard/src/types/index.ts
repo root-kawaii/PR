@@ -16,6 +16,30 @@ export interface Club {
   phone_number?: string;
   website?: string;
   owner_id?: string;
+  stripe_connected_account_id?: string;
+  stripe_onboarding_complete?: boolean;
+  stripe_charges_enabled?: boolean;
+  stripe_payouts_enabled?: boolean;
+  platform_commission_percent?: string | number;
+  platform_commission_fixed_fee?: string | number;
+}
+
+export interface StripeConnectStatus {
+  connected_account_id?: string | null;
+  onboarding_complete: boolean;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  platform_commission_percent?: string | number | null;
+  platform_commission_fixed_fee?: string | number | null;
+}
+
+export interface StripeOnboardingLinkResponse {
+  connected_account_id: string;
+  onboarding_url: string;
+  onboarding_complete: boolean;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
 }
 
 export interface ClubImage {

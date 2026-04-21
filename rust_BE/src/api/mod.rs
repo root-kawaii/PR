@@ -34,6 +34,11 @@ fn cors_layer(config: &AppConfig) -> CorsLayer {
     if let Ok(origin) = config.app_base_url.parse::<HeaderValue>() {
         allowed_origins.push(origin);
     }
+    if config.owner_app_base_url != config.app_base_url {
+        if let Ok(origin) = config.owner_app_base_url.parse::<HeaderValue>() {
+            allowed_origins.push(origin);
+        }
+    }
 
     CorsLayer::new()
         .allow_origin(allowed_origins)
