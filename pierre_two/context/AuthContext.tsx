@@ -1,9 +1,8 @@
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 import { API_URL } from '../config/api';
 import { identifyAnalyticsUser, resetAnalytics, trackEvent } from '../config/analytics';
+import { configureNotificationHandler, registerPushToken } from '../config/pushNotifications';
 
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
@@ -14,68 +13,7 @@ let SecureStore: typeof import('expo-secure-store') | null = null;
 try { SecureStore = require('expo-secure-store'); } catch { /* Expo Go */ }
 const _memStore: Record<string, string> = {};
 
-let Notifications: typeof import('expo-notifications') | null = null;
-try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
-
-if (Notifications) {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-}
-
-async function registerPushToken(authToken: string): Promise<void> {
-  if (!Notifications) {
-    console.log('[PushToken] Skipped: expo-notifications not available (Expo Go)');
-    return;
-  }
-  if (!Constants.isDevice) {
-    console.log('[PushToken] Skipped: not a physical device');
-    return;
-  }
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-  console.log('[PushToken] Permission status:', existingStatus);
-
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-    console.log('[PushToken] Permission after request:', status);
-  }
-
-  if (finalStatus !== 'granted') {
-    console.log('[PushToken] Permission denied — token not registered');
-    return;
-  }
-
-  try {
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    console.log('[PushToken] Using projectId:', projectId);
-    const tokenData = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
-    console.log('[PushToken] Token obtained:', tokenData.data);
-    const res = await fetch(`${API_URL}/auth/push-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ push_token: tokenData.data }),
-    });
-    console.log('[PushToken] Server response:', res.status);
-  } catch (e) {
-    console.error('[PushToken] Failed to register push token:', e);
-  }
-
-  if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-    });
-  }
-}
+configureNotificationHandler();
 
 /** Extract a human-readable message from a failed response (handles JSON or plain text). */
 async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
@@ -266,7 +204,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     trackEvent('auth_login_succeeded', {
       user_id: data.user.id,
     });
-    registerPushToken(data.token);
+    registerPushToken(API_URL, data.token).catch((e) => {
+      console.error('[PushToken] Failed to register push token:', e);
+    });
   };
 
   const deleteAccount = useCallback(
@@ -347,7 +287,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     trackEvent('auth_register_succeeded', {
       user_id: authData.user.id,
     });
-    registerPushToken(authData.token);
+    registerPushToken(API_URL, authData.token).catch((e) => {
+      console.error('[PushToken] Failed to register push token:', e);
+    });
   };
 
   const value = {
