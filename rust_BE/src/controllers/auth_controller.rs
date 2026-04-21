@@ -4,7 +4,7 @@ use crate::middleware::auth::{AuthUser, SmsVerificationUser};
 use crate::models::{ApiError, AppState, AuthResponse, LoginRequest, RegisterRequest, User, UserResponse};
 use crate::services::sms_service;
 use crate::utils::jwt;
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{body::Bytes, extract::State, http::StatusCode, Json};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -343,11 +343,16 @@ pub struct DeleteAccountResponse {
 pub async fn register_push_token(
     State(state): State<Arc<AppState>>,
     AuthUser(claims): AuthUser,
-    Json(payload): Json<RegisterPushTokenRequest>,
+    body: Bytes,
 ) -> StatusCode {
     let user_id = match Uuid::parse_str(&claims.sub) {
         Ok(id) => id,
         Err(_) => return StatusCode::UNAUTHORIZED,
+    };
+
+    let payload = match parse_push_token_request(&body) {
+        Ok(payload) => payload,
+        Err(status) => return status,
     };
 
     match sqlx::query("UPDATE users SET expo_push_token = $1, updated_at = NOW() WHERE id = $2")
@@ -378,6 +383,33 @@ pub async fn register_push_token(
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
+}
+
+fn parse_push_token_request(body: &Bytes) -> Result<RegisterPushTokenRequest, StatusCode> {
+    if body.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if let Ok(payload) = serde_json::from_slice::<RegisterPushTokenRequest>(body) {
+        return Ok(payload);
+    }
+
+    let raw_body = std::str::from_utf8(body)
+        .map(str::trim)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    if raw_body.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Accept a raw Expo push token body as a fallback for clients that miss JSON headers.
+    if raw_body.starts_with("ExponentPushToken[") || raw_body.starts_with("ExpoPushToken[") {
+        return Ok(RegisterPushTokenRequest {
+            push_token: raw_body.to_string(),
+        });
+    }
+
+    Err(StatusCode::BAD_REQUEST)
 }
 
 pub async fn delete_account(

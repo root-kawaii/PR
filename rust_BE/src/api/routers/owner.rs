@@ -5,15 +5,22 @@ use axum::{routing::get, Router};
 use crate::bootstrap::state::AppState;
 use crate::controllers::club_owner_controller::{
     add_my_club_image, add_table_image_handler, checkin_handler, create_club_event,
-    create_club_table, create_manual_reservation_handler, delete_my_club_image,
-    delete_table_image_handler, get_event_reservations_handler, get_my_club, get_my_club_events,
-    get_my_club_images, get_my_club_tables, get_owner_stats_handler, get_table_images_handler,
-    scan_code_handler, update_my_club, update_reservation_status_handler,
+    create_club_table, create_manual_reservation_handler,
+    create_my_club_stripe_onboarding_link, delete_my_club_image, delete_table_image_handler,
+    get_event_reservations_handler, get_my_club, get_my_club_events, get_my_club_images,
+    get_my_club_stripe_status, get_my_club_tables, get_owner_stats_handler,
+    get_table_images_handler, scan_code_handler, update_my_club,
+    update_reservation_status_handler,
 };
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/owner/club", get(get_my_club).put(update_my_club))
+        .route("/owner/club/stripe/status", get(get_my_club_stripe_status))
+        .route(
+            "/owner/club/stripe/connect",
+            axum::routing::post(create_my_club_stripe_onboarding_link),
+        )
         .route(
             "/owner/club/images",
             get(get_my_club_images).post(add_my_club_image),

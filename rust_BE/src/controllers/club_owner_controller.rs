@@ -6,7 +6,8 @@ use crate::middleware::auth::ClubOwnerUser;
 use crate::models::club_owner::{
     AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
     ClubOwnerRegisterRequest, ClubOwnerResponse, CreateManualReservationRequest, OwnerStats,
-    OwnerUpdateClubRequest, ScanResult, TableImageRow, UpdateReservationStatusRequest,
+    OwnerUpdateClubRequest, ScanResult, StripeConnectStatusResponse,
+    StripeOnboardingLinkResponse, TableImageRow, UpdateReservationStatusRequest,
 };
 use crate::models::table::TableReservationResponse;
 use crate::models::{
@@ -21,6 +22,11 @@ use axum::{
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rust_decimal::Decimal;
+use stripe::{
+    Account, AccountBusinessType, AccountLink, AccountLinkType, AccountType, CreateAccount,
+    CreateAccountCapabilities, CreateAccountCapabilitiesCardPayments,
+    CreateAccountCapabilitiesTransfers, CreateAccountLink,
+};
 use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
@@ -71,6 +77,12 @@ pub async fn register_club_owner(
         phone_number: None,
         website: None,
         owner_id: Some(owner.id),
+        stripe_connected_account_id: None,
+        stripe_onboarding_complete: Some(false),
+        stripe_charges_enabled: Some(false),
+        stripe_payouts_enabled: Some(false),
+        platform_commission_percent: Some(Decimal::ZERO),
+        platform_commission_fixed_fee: Some(Decimal::ZERO),
     };
 
     let club = club_persistence::create_club(&state.db_pool, club_request)
@@ -350,6 +362,12 @@ pub async fn update_my_club(
         phone_number: payload.phone_number,
         website: payload.website,
         owner_id: None,
+        stripe_connected_account_id: None,
+        stripe_onboarding_complete: None,
+        stripe_charges_enabled: None,
+        stripe_payouts_enabled: None,
+        platform_commission_percent: payload.platform_commission_percent,
+        platform_commission_fixed_fee: payload.platform_commission_fixed_fee,
     };
 
     let updated = club_persistence::update_club(&state.db_pool, club.id, update_req)
@@ -373,6 +391,172 @@ pub async fn update_my_club(
     .await;
 
     Ok(Json(ClubResponse::from(updated)))
+}
+
+/// Get the authenticated club owner's current Stripe Connect status.
+pub async fn get_my_club_stripe_status(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+) -> Result<Json<StripeConnectStatusResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let connected_account_id = club.stripe_connected_account_id.clone();
+    if let Some(ref account_id) = connected_account_id {
+        let account_id = account_id.parse().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let account = Account::retrieve(&state.stripe_client, &account_id, &[])
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+        let updated = club_persistence::update_club(
+            &state.db_pool,
+            club.id,
+            UpdateClubRequest {
+                name: None,
+                subtitle: None,
+                image: None,
+                address: None,
+                phone_number: None,
+                website: None,
+                owner_id: None,
+                stripe_connected_account_id: Some(account.id.to_string()),
+                stripe_onboarding_complete: Some(account.details_submitted.unwrap_or(false)),
+                stripe_charges_enabled: Some(account.charges_enabled.unwrap_or(false)),
+                stripe_payouts_enabled: Some(account.payouts_enabled.unwrap_or(false)),
+                platform_commission_percent: None,
+                platform_commission_fixed_fee: None,
+            },
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+        return Ok(Json(StripeConnectStatusResponse {
+            connected_account_id: updated.stripe_connected_account_id,
+            onboarding_complete: updated.stripe_onboarding_complete.unwrap_or(false),
+            charges_enabled: updated.stripe_charges_enabled.unwrap_or(false),
+            payouts_enabled: updated.stripe_payouts_enabled.unwrap_or(false),
+            details_submitted: updated.stripe_onboarding_complete.unwrap_or(false),
+            platform_commission_percent: updated.platform_commission_percent,
+            platform_commission_fixed_fee: updated.platform_commission_fixed_fee,
+        }));
+    }
+
+    Ok(Json(StripeConnectStatusResponse {
+        connected_account_id,
+        onboarding_complete: club.stripe_onboarding_complete.unwrap_or(false),
+        charges_enabled: club.stripe_charges_enabled.unwrap_or(false),
+        payouts_enabled: club.stripe_payouts_enabled.unwrap_or(false),
+        details_submitted: club.stripe_onboarding_complete.unwrap_or(false),
+        platform_commission_percent: club.platform_commission_percent,
+        platform_commission_fixed_fee: club.platform_commission_fixed_fee,
+    }))
+}
+
+/// Create or reuse a Stripe Connect Express account and return an onboarding link.
+pub async fn create_my_club_stripe_onboarding_link(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+) -> Result<Json<StripeOnboardingLinkResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let owner = club_owner_persistence::find_club_owner_by_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let account = if let Some(existing_id) = &club.stripe_connected_account_id {
+        let parsed = existing_id
+            .parse()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        Account::retrieve(&state.stripe_client, &parsed, &[])
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?
+    } else {
+        let mut params = CreateAccount::new();
+        params.type_ = Some(AccountType::Express);
+        params.country = Some("IT");
+        params.default_currency = Some(stripe::Currency::EUR);
+        params.email = Some(&owner.email);
+        params.business_type = Some(AccountBusinessType::Company);
+        params.capabilities = Some(CreateAccountCapabilities {
+            card_payments: Some(CreateAccountCapabilitiesCardPayments {
+                requested: Some(true),
+            }),
+            transfers: Some(CreateAccountCapabilitiesTransfers {
+                requested: Some(true),
+            }),
+            ..Default::default()
+        });
+
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert("club_id".to_string(), club.id.to_string());
+        metadata.insert("owner_id".to_string(), owner.id.to_string());
+        params.metadata = Some(metadata);
+
+        Account::create(&state.stripe_client, params)
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?
+    };
+
+    let updated = club_persistence::update_club(
+        &state.db_pool,
+        club.id,
+        UpdateClubRequest {
+            name: None,
+            subtitle: None,
+            image: None,
+            address: None,
+            phone_number: None,
+            website: None,
+            owner_id: None,
+            stripe_connected_account_id: Some(account.id.to_string()),
+            stripe_onboarding_complete: Some(account.details_submitted.unwrap_or(false)),
+            stripe_charges_enabled: Some(account.charges_enabled.unwrap_or(false)),
+            stripe_payouts_enabled: Some(account.payouts_enabled.unwrap_or(false)),
+            platform_commission_percent: None,
+            platform_commission_fixed_fee: None,
+        },
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    let mut link_params =
+        CreateAccountLink::new(account.id.clone(), AccountLinkType::AccountOnboarding);
+    let refresh_url = format!(
+        "{}/dashboard/club?stripe=refresh",
+        state.config.owner_app_base_url
+    );
+    let return_url = format!(
+        "{}/dashboard/club?stripe=connected",
+        state.config.owner_app_base_url
+    );
+    link_params.refresh_url = Some(&refresh_url);
+    link_params.return_url = Some(&return_url);
+
+    let onboarding_link = AccountLink::create(&state.stripe_client, link_params)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    Ok(Json(StripeOnboardingLinkResponse {
+        connected_account_id: updated
+            .stripe_connected_account_id
+            .unwrap_or_else(|| account.id.to_string()),
+        onboarding_url: onboarding_link.url,
+        onboarding_complete: updated.stripe_onboarding_complete.unwrap_or(false),
+        charges_enabled: updated.stripe_charges_enabled.unwrap_or(false),
+        payouts_enabled: updated.stripe_payouts_enabled.unwrap_or(false),
+    }))
 }
 
 /// Get images for the authenticated club owner's club

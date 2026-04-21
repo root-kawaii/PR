@@ -49,6 +49,10 @@ pub async fn build_state(config: Arc<AppConfig>) -> Arc<AppState> {
     }
     info!(app_base_url = %config.app_base_url, "APP_BASE_URL configured");
     info!(
+        owner_app_base_url = %config.owner_app_base_url,
+        "OWNER_APP_BASE_URL configured"
+    );
+    info!(
         ttl_hours = config.payment_share_ttl_hours,
         "Payment share TTL configured"
     );

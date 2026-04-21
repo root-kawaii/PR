@@ -23,11 +23,64 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use stripe::{
+    CreateCheckoutSessionPaymentIntentData, CreateCheckoutSessionPaymentIntentDataTransferData,
     CreateCustomer, CreatePaymentIntent, Currency, Customer, PaymentIntent,
     PaymentIntentCaptureMethod, PaymentIntentSetupFutureUsage, PaymentIntentStatus,
 };
 use tracing::warn;
 use uuid::Uuid;
+
+#[derive(Clone, Debug, sqlx::FromRow)]
+struct ClubStripeConnectConfig {
+    stripe_connected_account_id: Option<String>,
+    stripe_onboarding_complete: Option<bool>,
+    stripe_charges_enabled: Option<bool>,
+    stripe_payouts_enabled: Option<bool>,
+    platform_commission_percent: Option<Decimal>,
+    platform_commission_fixed_fee: Option<Decimal>,
+}
+
+fn compute_application_fee_cents(
+    total_amount: Decimal,
+    commission_percent: Option<Decimal>,
+    commission_fixed_fee: Option<Decimal>,
+) -> i64 {
+    let percent = commission_percent.unwrap_or(Decimal::ZERO);
+    let fixed_fee = commission_fixed_fee.unwrap_or(Decimal::ZERO);
+    let percent_fee = (total_amount * percent / Decimal::new(100, 0)).round_dp(2);
+    let fee = (percent_fee + fixed_fee).max(Decimal::ZERO).min(total_amount);
+    ((fee.to_f64().unwrap_or(0.0) * 100.0).round()) as i64
+}
+
+async fn get_club_connect_config_for_event(
+    pool: &sqlx::PgPool,
+    event_id: Uuid,
+) -> Result<Option<ClubStripeConnectConfig>, sqlx::Error> {
+    sqlx::query_as::<_, ClubStripeConnectConfig>(
+        r#"
+        SELECT
+            c.stripe_connected_account_id,
+            c.stripe_onboarding_complete,
+            c.stripe_charges_enabled,
+            c.stripe_payouts_enabled,
+            c.platform_commission_percent,
+            c.platform_commission_fixed_fee
+        FROM events e
+        JOIN clubs c ON c.id = e.club_id
+        WHERE e.id = $1
+        "#,
+    )
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await
+}
+
+fn can_route_funds_to_connected_account(config: &ClubStripeConnectConfig) -> bool {
+    config.stripe_connected_account_id.is_some()
+        && config.stripe_onboarding_complete.unwrap_or(false)
+        && config.stripe_charges_enabled.unwrap_or(false)
+        && config.stripe_payouts_enabled.unwrap_or(false)
+}
 
 // ============================================================================
 // Tables endpoints
@@ -535,6 +588,14 @@ pub async fn create_payment_intent(
 
     let total_cost = table.total_cost;
     let capacity = Decimal::from(table.capacity);
+    let club_connect_config = get_club_connect_config_for_event(&state.db_pool, event_id)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore del database".to_string(),
+            )
+        })?;
 
     // Per-person share: total_cost / capacity, owner absorbs rounding remainder
     let per_person = (total_cost / capacity).round_dp(2);
@@ -593,6 +654,30 @@ pub async fn create_payment_intent(
         enabled: true,
         allow_redirects: None,
     });
+
+    let connect_destination_for_on_behalf_of = club_connect_config
+        .as_ref()
+        .filter(|cfg| can_route_funds_to_connected_account(cfg))
+        .and_then(|cfg| cfg.stripe_connected_account_id.clone());
+    if let Some(config) = club_connect_config
+        .as_ref()
+        .filter(|cfg| can_route_funds_to_connected_account(cfg))
+    {
+        let destination = connect_destination_for_on_behalf_of
+            .clone()
+            .unwrap_or_default();
+        let application_fee_amount = compute_application_fee_cents(
+            owner_share,
+            config.platform_commission_percent,
+            config.platform_commission_fixed_fee,
+        );
+        params.application_fee_amount = Some(application_fee_amount);
+        params.on_behalf_of = connect_destination_for_on_behalf_of.as_deref();
+        params.transfer_data = Some(stripe::CreatePaymentIntentTransferData {
+            amount: None,
+            destination,
+        });
+    }
 
     params.metadata = Some(
         [
@@ -1242,6 +1327,15 @@ pub async fn create_payment_link_checkout(
         .unwrap_or_else(|_| "Evento".to_string());
 
     let amount_in_cents = (per_person.to_f64().unwrap_or(0.0) * 100.0) as i64;
+    let club_connect_config = get_club_connect_config_for_event(&state.db_pool, reservation_event_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, event_id = %reservation_event_id, "Failed to load club Connect config");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore del database".to_string(),
+            )
+        })?;
 
     let mut checkout_params = stripe::CreateCheckoutSession::new();
     checkout_params.mode = Some(stripe::CheckoutSessionMode::Payment);
@@ -1280,6 +1374,36 @@ pub async fn create_payment_link_checkout(
         .into_iter()
         .collect(),
     );
+
+    if let Some(config) = club_connect_config.as_ref().filter(|cfg| can_route_funds_to_connected_account(cfg)) {
+        let destination = config
+            .stripe_connected_account_id
+            .clone()
+            .unwrap_or_default();
+        let application_fee_amount = compute_application_fee_cents(
+            per_person,
+            config.platform_commission_percent,
+            config.platform_commission_fixed_fee,
+        );
+        checkout_params.payment_intent_data = Some(CreateCheckoutSessionPaymentIntentData {
+            application_fee_amount: Some(application_fee_amount),
+            on_behalf_of: Some(destination.clone()),
+            transfer_data: Some(CreateCheckoutSessionPaymentIntentDataTransferData {
+                amount: None,
+                destination,
+            }),
+            metadata: Some(
+                [
+                    ("payment_share_id".to_string(), share_id.to_string()),
+                    ("reservation_id".to_string(), reservation_id.to_string()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            receipt_email: req.email.clone(),
+            ..Default::default()
+        });
+    }
 
     let session = stripe::CheckoutSession::create(&state.stripe_client, checkout_params)
         .await

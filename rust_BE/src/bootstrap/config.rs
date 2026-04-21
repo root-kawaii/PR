@@ -62,6 +62,7 @@ pub struct AppConfig {
     pub feature_flags: FeatureFlagsConfig,
     pub jobs: JobsConfig,
     pub app_base_url: String,
+    pub owner_app_base_url: String,
     pub payment_share_ttl_hours: i64,
     pub port: u16,
 }
@@ -96,6 +97,10 @@ impl AppConfig {
         if app_base_url.is_empty() {
             panic!("APP_BASE_URL must not be empty");
         }
+        let owner_app_base_url = env::var("OWNER_APP_BASE_URL")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| app_base_url.clone());
 
         let alert_webhook_url = env::var("ALERT_WEBHOOK_URL").ok().filter(|s| !s.is_empty());
         let twilio_account_sid = env::var("TWILIO_ACCOUNT_SID")
@@ -203,6 +208,7 @@ impl AppConfig {
                 idempotency_cleanup_interval_seconds,
             },
             app_base_url,
+            owner_app_base_url,
             payment_share_ttl_hours,
             port,
         }
