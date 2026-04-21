@@ -6,7 +6,7 @@ import { trackEvent } from '../config/analytics';
 
 export default function DashboardPage() {
   const { owner } = useAuth();
-  const { data: club, loading } = useFetch<Club>('/owner/club');
+  const { data: club, loading, error } = useFetch<Club>('/owner/club');
 
   useEffect(() => {
     if (loading || !owner) {
@@ -22,6 +22,17 @@ export default function DashboardPage() {
 
   if (loading) {
     return <div className="text-gray-500">Loading...</div>;
+  }
+
+  if (error) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+          {error}
+        </div>
+      </div>
+    );
   }
 
   return (
