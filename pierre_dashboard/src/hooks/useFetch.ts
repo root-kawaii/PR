@@ -12,7 +12,8 @@ export function useFetch<T>(path: string) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}${path}`, {
+      const requestUrl = `${API_URL}${path}`;
+      const res = await fetch(requestUrl, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -21,7 +22,11 @@ export function useFetch<T>(path: string) {
       const json = await res.json();
       setData(json);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Fetch failed');
+      if (err instanceof TypeError) {
+        setError(`Network request failed for ${path}. Check API URL, CORS, and backend availability.`);
+      } else {
+        setError(err instanceof Error ? err.message : 'Fetch failed');
+      }
     } finally {
       setLoading(false);
     }
