@@ -48,6 +48,11 @@ type RawStripeStatus = Partial<StripeConnectStatus & {
   detailsSubmitted?: boolean;
 }>;
 
+interface ApiErrorResponse {
+  error?: string;
+  code?: string;
+}
+
 export default function ClubSettingsPage() {
   const { token } = useAuth();
   const {
@@ -246,7 +251,24 @@ export default function ClubSettingsPage() {
       });
 
       if (!res.ok) {
-        throw new Error('Errore avvio onboarding Stripe');
+        let message = `Errore avvio onboarding Stripe (HTTP ${res.status})`;
+        const responseText = (await res.text()).trim();
+
+        try {
+          const errorData = JSON.parse(responseText) as ApiErrorResponse;
+          if (errorData.error) {
+            message = errorData.error;
+            if (errorData.code) {
+              message += ` [${errorData.code}]`;
+            }
+          }
+        } catch {
+          if (responseText) {
+            message = `${message}: ${responseText}`;
+          }
+        }
+
+        throw new Error(message);
       }
 
       const data: StripeOnboardingLinkResponse = await res.json();
