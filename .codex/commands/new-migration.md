@@ -5,7 +5,7 @@ Arguments: `$ARGUMENTS` (describe what the migration should do)
 Steps:
 1. Find the highest-numbered migration file:
    ```bash
-   ls /Users/root-kawaii/Desktop/PR/DB/migrations/*.sql | sort | tail -1
+   ls DB/migrations/*.sql | sort | tail -1
    ```
 2. Increment the number by 1 with zero padding to 3 digits.
 3. Convert the description in `$ARGUMENTS` to a `snake_case` slug.

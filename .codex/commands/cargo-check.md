@@ -1,7 +1,9 @@
-Run `cargo check` in the `rust_BE` directory and report any compiler errors or warnings. Fix any errors found before continuing.
+Run `cargo check` in `rust_BE/` and report any compiler errors or warnings.
+
+Use the workspace root as the starting point.
 
 Run:
 
 ```bash
-cd /Users/root-kawaii/Desktop/PR/rust_BE && cargo check 2>&1
+cd rust_BE && cargo check 2>&1
 ```

@@ -28,6 +28,7 @@
       "autoIncrement": true,
       "channel": "production",
       "env": {
+        "APP_ENV": "production",
         "EXPO_PUBLIC_API_URL": "https://pierre-two-backend.fly.dev"
       }
     }

@@ -11,7 +11,7 @@ use crate::models::club_owner::{
 };
 use crate::models::table::TableReservationResponse;
 use crate::models::{
-    AppState, ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest,
+    ApiError, AppState, ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest,
     EventResponse, TableResponse, TablesResponse, UpdateClubRequest,
 };
 use crate::utils::jwt;
@@ -23,12 +23,11 @@ use axum::{
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rust_decimal::Decimal;
 use stripe::{
-    Account, AccountBusinessType, AccountLink, AccountLinkType, AccountType, CreateAccount,
-    CreateAccountCapabilities, CreateAccountCapabilitiesCardPayments,
-    CreateAccountCapabilitiesTransfers, CreateAccountLink,
+    Account, AccountLink, AccountLinkType, AccountType, CreateAccount, CreateAccountCapabilities,
+    CreateAccountCapabilitiesCardPayments, CreateAccountCapabilitiesTransfers, CreateAccountLink,
 };
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 /// Register a new club owner and create their club
@@ -366,8 +365,8 @@ pub async fn update_my_club(
         stripe_onboarding_complete: None,
         stripe_charges_enabled: None,
         stripe_payouts_enabled: None,
-        platform_commission_percent: payload.platform_commission_percent,
-        platform_commission_fixed_fee: payload.platform_commission_fixed_fee,
+        platform_commission_percent: None,
+        platform_commission_fixed_fee: None,
     };
 
     let updated = club_persistence::update_club(&state.db_pool, club.id, update_req)
@@ -461,33 +460,78 @@ pub async fn get_my_club_stripe_status(
 pub async fn create_my_club_stripe_onboarding_link(
     State(state): State<Arc<AppState>>,
     ClubOwnerUser(claims): ClubOwnerUser,
-) -> Result<Json<StripeOnboardingLinkResponse>, StatusCode> {
-    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+) -> Result<Json<StripeOnboardingLinkResponse>, (StatusCode, Json<ApiError>)> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| {
+        ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "Sessione non valida. Ricarica la pagina ed effettua di nuovo l'accesso.",
+        )
+    })?;
 
     let owner = club_owner_persistence::find_club_owner_by_id(&state.db_pool, owner_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(|error| {
+            error!(owner_id = %owner_id, ?error, "Failed to load club owner for Stripe onboarding");
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Non sono riuscito a recuperare il profilo del proprietario.",
+            )
+        })?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "Proprietario del club non trovato."))?;
 
     let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(|error| {
+            error!(owner_id = %owner_id, ?error, "Failed to load club for Stripe onboarding");
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Non sono riuscito a recuperare il club collegato a questo account.",
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::NOT_FOUND,
+                "Nessun club trovato per questo account proprietario.",
+            )
+        })?;
 
     let account = if let Some(existing_id) = &club.stripe_connected_account_id {
         let parsed = existing_id
             .parse()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            .map_err(|error| {
+                error!(
+                    owner_id = %owner_id,
+                    club_id = %club.id,
+                    stripe_connected_account_id = %existing_id,
+                    ?error,
+                    "Failed to parse stored Stripe connected account id"
+                );
+                ApiError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "L'account Stripe salvato per questo club non e valido. Serve correggere il collegamento Stripe nel database.",
+                )
+            })?;
         Account::retrieve(&state.stripe_client, &parsed, &[])
             .await
-            .map_err(|_| StatusCode::BAD_GATEWAY)?
+            .map_err(|error| {
+                error!(
+                    owner_id = %owner_id,
+                    club_id = %club.id,
+                    stripe_connected_account_id = %existing_id,
+                    ?error,
+                    "Failed to retrieve Stripe connected account"
+                );
+                ApiError::new(
+                    StatusCode::BAD_GATEWAY,
+                    "Stripe non ha accettato il recupero dell'account collegato. Controlla che le chiavi Stripe siano corrette e che l'account esista ancora.",
+                )
+            })?
     } else {
         let mut params = CreateAccount::new();
         params.type_ = Some(AccountType::Express);
         params.country = Some("IT");
         params.default_currency = Some(stripe::Currency::EUR);
         params.email = Some(&owner.email);
-        params.business_type = Some(AccountBusinessType::Company);
         params.capabilities = Some(CreateAccountCapabilities {
             card_payments: Some(CreateAccountCapabilitiesCardPayments {
                 requested: Some(true),
@@ -505,7 +549,19 @@ pub async fn create_my_club_stripe_onboarding_link(
 
         Account::create(&state.stripe_client, params)
             .await
-            .map_err(|_| StatusCode::BAD_GATEWAY)?
+            .map_err(|error| {
+                error!(
+                    owner_id = %owner_id,
+                    club_id = %club.id,
+                    owner_email = %owner.email,
+                    ?error,
+                    "Failed to create Stripe connected account"
+                );
+                ApiError::new(
+                    StatusCode::BAD_GATEWAY,
+                    "Stripe ha rifiutato la creazione dell'account Express. Verifica le chiavi Stripe del backend e la configurazione Stripe Connect.",
+                )
+            })?
     };
 
     let updated = club_persistence::update_club(
@@ -528,8 +584,20 @@ pub async fn create_my_club_stripe_onboarding_link(
         },
     )
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    .ok_or(StatusCode::NOT_FOUND)?;
+    .map_err(|error| {
+        error!(
+            owner_id = %owner_id,
+            club_id = %club.id,
+            stripe_connected_account_id = %account.id,
+            ?error,
+            "Failed to persist Stripe connected account on club"
+        );
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "L'account Stripe e stato creato, ma non sono riuscito a salvarlo sul club nel database.",
+        )
+    })?
+    .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "Club non trovato durante il salvataggio dell'account Stripe."))?;
 
     let mut link_params =
         CreateAccountLink::new(account.id.clone(), AccountLinkType::AccountOnboarding);
@@ -546,7 +614,21 @@ pub async fn create_my_club_stripe_onboarding_link(
 
     let onboarding_link = AccountLink::create(&state.stripe_client, link_params)
         .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+        .map_err(|error| {
+            error!(
+                owner_id = %owner_id,
+                club_id = %club.id,
+                stripe_connected_account_id = %account.id,
+                refresh_url = %refresh_url,
+                return_url = %return_url,
+                ?error,
+                "Failed to create Stripe onboarding link"
+            );
+            ApiError::new(
+                StatusCode::BAD_GATEWAY,
+                "Stripe non ha generato il link di onboarding. Controlla OWNER_APP_BASE_URL e la configurazione dell'account Connect.",
+            )
+        })?;
 
     Ok(Json(StripeOnboardingLinkResponse {
         connected_account_id: updated

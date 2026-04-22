@@ -1,4 +1,4 @@
-name: Deploy Backend & Build App
+name: Production Deploy
 
 on:
   # Auto-deploy when a version tag is pushed (e.g. git tag v1.0.0 && git push --tags)
@@ -20,19 +20,24 @@ on:
         type: boolean
         default: true
       build_app:
-        description: "Trigger EAS development build"
+        description: "Trigger EAS production build"
         required: false
         type: boolean
         default: false
 
 jobs:
   migrations:
-    name: Run Database Migrations
+    name: Run Production Database Migrations
     runs-on: ubuntu-latest
+    environment:
+      name: Production
     # Run on tag push (always) or manual trigger (if toggled on)
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       github.event.inputs.run_migrations == 'true'
+    concurrency:
+      group: production-migrations
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
@@ -49,8 +54,8 @@ jobs:
           PGPASSWORD: ${{ secrets.PGPASSWORD }}
           PGHOST: ${{ secrets.PGHOST }}
           PGUSER: ${{ secrets.PGUSER }}
-          PGDATABASE: postgres
-          PGSSLMODE: require
+          PGDATABASE: ${{ secrets.PGDATABASE || 'postgres' }}
+          PGSSLMODE: ${{ secrets.PGSSLMODE || 'require' }}
           PGPORT: 5432
         run: |
           cd DB/migrations
@@ -92,8 +97,8 @@ jobs:
           PGPASSWORD: ${{ secrets.PGPASSWORD }}
           PGHOST: ${{ secrets.PGHOST }}
           PGUSER: ${{ secrets.PGUSER }}
-          PGDATABASE: postgres
-          PGSSLMODE: require
+          PGDATABASE: ${{ secrets.PGDATABASE || 'postgres' }}
+          PGSSLMODE: ${{ secrets.PGSSLMODE || 'require' }}
           PGPORT: 5432
         run: |
           cd DB/migrations
@@ -122,15 +127,21 @@ jobs:
           echo "All migrations completed successfully"
 
   deploy_backend:
-    name: Deploy Backend to Fly.io
+    name: Deploy Production Backend to Fly.io
     runs-on: ubuntu-latest
     needs: migrations
+    environment:
+      name: Production
+      url: ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}
     # Run on tag push (always) or manual trigger (if toggled on)
     # Proceeds even if migrations were skipped (no pending)
     if: >-
       always() &&
       (needs.migrations.result == 'success' || needs.migrations.result == 'skipped') &&
       (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.deploy_backend == 'true')
+    concurrency:
+      group: production-backend
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
@@ -141,16 +152,18 @@ jobs:
 
       - name: Deploy to Fly.io
         working-directory: ./rust_BE
-        run: flyctl deploy --remote-only --ha=false
+        run: flyctl deploy --remote-only --ha=false --app "${{ vars.FLY_APP_NAME || 'pierre-two-backend' }}"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Verify deployment
+        env:
+          API_URL: ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}
         run: |
           echo "Waiting for deployment to be ready..."
           sleep 10
 
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://pierre-two-backend.fly.dev/health || echo "000")
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" || echo "000")
 
           if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "404" ]; then
             echo "Backend is responding (HTTP $RESPONSE)"
@@ -160,15 +173,20 @@ jobs:
           fi
 
   build_app:
-    name: Build App with EAS
+    name: Build Production App With EAS
     runs-on: ubuntu-latest
     needs: deploy_backend
+    environment:
+      name: Production
     # Only runs on manual trigger with build_app toggled on — never on tag push
     if: >-
       always() &&
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.build_app == 'true' &&
       (needs.deploy_backend.result == 'success' || needs.deploy_backend.result == 'skipped')
+    concurrency:
+      group: production-mobile-build
+      cancel-in-progress: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -191,19 +209,24 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Trigger EAS preview build
+      - name: Trigger EAS production build
         working-directory: ./pierre_two
         env:
-          APP_ENV: production
-          EXPO_PUBLIC_API_URL: https://pierre-two-backend.fly.dev
+          APP_ENV: ${{ vars.APP_ENV || 'production' }}
+          EXPO_PUBLIC_API_URL: ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}
+          EXPO_PUBLIC_SUPPORT_URL: ${{ vars.SUPPORT_URL || 'https://pierre.app/support' }}
+          EXPO_PUBLIC_PRIVACY_URL: ${{ vars.PRIVACY_URL || 'https://pierre.app/privacy' }}
+          EXPO_PUBLIC_TERMS_URL: ${{ vars.TERMS_URL || 'https://pierre.app/terms' }}
         run: |
-          echo "Starting EAS preview build for Android..."
-          eas build --platform android --profile preview --non-interactive --no-wait
+          echo "Starting EAS production build for Android..."
+          eas build --platform android --profile "${{ vars.EAS_BUILD_PROFILE || 'production' }}" --non-interactive --no-wait
 
   summary:
-    name: Deployment Summary
+    name: Production Deployment Summary
     runs-on: ubuntu-latest
     needs: [migrations, deploy_backend, build_app]
+    environment:
+      name: Production
     if: always()
 
     steps:
@@ -230,10 +253,10 @@ jobs:
           fi
 
           if [ "${{ needs.deploy_backend.result }}" = "success" ]; then
-            echo "Backend deployed to https://pierre-two-backend.fly.dev" >> $GITHUB_STEP_SUMMARY
+            echo "Backend deployed to ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ "${{ needs.build_app.result }}" = "success" ]; then
-            echo "EAS development build triggered" >> $GITHUB_STEP_SUMMARY
+            echo "EAS production build triggered" >> $GITHUB_STEP_SUMMARY
             echo "Check build status at: https://expo.dev" >> $GITHUB_STEP_SUMMARY
           fi
