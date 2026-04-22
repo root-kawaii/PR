@@ -21,11 +21,32 @@ import type {
 } from '../types';
 import { trackEvent } from '../config/analytics';
 
+interface ClubImageApiRow {
+  id: string;
+  club_id?: string;
+  clubId?: string;
+  url: string;
+  display_order?: number;
+  displayOrder?: number;
+  alt_text?: string | null;
+  altText?: string | null;
+}
+
 interface ClubImagesData {
-  images: ClubImage[];
+  images?: ClubImageApiRow[];
 }
 
 type StripeTone = 'slate' | 'green' | 'amber' | 'rose';
+
+type ClubImagesResponse = ClubImageApiRow[] | ClubImagesData | null;
+
+type RawStripeStatus = Partial<StripeConnectStatus & {
+  connectedAccountId?: string | null;
+  onboardingComplete?: boolean;
+  chargesEnabled?: boolean;
+  payoutsEnabled?: boolean;
+  detailsSubmitted?: boolean;
+}>;
 
 export default function ClubSettingsPage() {
   const { token } = useAuth();
@@ -38,12 +59,12 @@ export default function ClubSettingsPage() {
     data: imagesData,
     loading: imagesLoading,
     refetch: refetchImages,
-  } = useFetch<ClubImagesData>('/owner/club/images');
+  } = useFetch<ClubImagesResponse>('/owner/club/images');
   const {
     data: stripeStatus,
     loading: stripeLoading,
     refetch: refetchStripeStatus,
-  } = useFetch<StripeConnectStatus>('/owner/club/stripe/status');
+  } = useFetch<RawStripeStatus>('/owner/club/stripe/status');
 
   const [name, setName] = useState('');
   const [subtitle, setSubtitle] = useState('');
@@ -58,6 +79,39 @@ export default function ClubSettingsPage() {
   const [newImageAlt, setNewImageAlt] = useState('');
   const [addingImage, setAddingImage] = useState(false);
   const [showAddImage, setShowAddImage] = useState(false);
+
+  const clubImages = useMemo<ClubImage[]>(() => {
+    const rawImages = Array.isArray(imagesData)
+      ? imagesData
+      : imagesData?.images ?? [];
+
+    return rawImages.map((image) => ({
+      id: image.id,
+      clubId: image.clubId ?? image.club_id ?? '',
+      url: image.url,
+      displayOrder: image.displayOrder ?? image.display_order ?? 0,
+      altText: image.altText ?? image.alt_text ?? undefined,
+    }));
+  }, [imagesData]);
+
+  const normalizedStripeStatus = useMemo<StripeConnectStatus>(() => {
+    const rawStripeStatus = stripeStatus ?? {};
+
+    return {
+      connected_account_id:
+        rawStripeStatus.connected_account_id ?? rawStripeStatus.connectedAccountId ?? null,
+      onboarding_complete:
+        rawStripeStatus.onboarding_complete ?? rawStripeStatus.onboardingComplete ?? false,
+      charges_enabled:
+        rawStripeStatus.charges_enabled ?? rawStripeStatus.chargesEnabled ?? false,
+      payouts_enabled:
+        rawStripeStatus.payouts_enabled ?? rawStripeStatus.payoutsEnabled ?? false,
+      details_submitted:
+        rawStripeStatus.details_submitted ?? rawStripeStatus.detailsSubmitted ?? false,
+      platform_commission_percent: null,
+      platform_commission_fixed_fee: null,
+    };
+  }, [stripeStatus]);
 
   useEffect(() => {
     if (!club) {
@@ -78,10 +132,10 @@ export default function ClubSettingsPage() {
 
     trackEvent('owner_club_settings_viewed', {
       club_id: club.id,
-      image_count: imagesData?.images.length ?? 0,
-      stripe_connected: Boolean(stripeStatus?.connected_account_id),
+      image_count: clubImages.length,
+      stripe_connected: Boolean(normalizedStripeStatus.connected_account_id),
     });
-  }, [club, clubLoading, imagesData?.images.length, stripeStatus?.connected_account_id]);
+  }, [club, clubLoading, clubImages.length, normalizedStripeStatus.connected_account_id]);
 
   const stripeToneClasses: Record<StripeTone, string> = {
     slate: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -91,7 +145,7 @@ export default function ClubSettingsPage() {
   };
 
   const stripeState = useMemo(() => {
-    if (!stripeStatus?.connected_account_id) {
+    if (!normalizedStripeStatus.connected_account_id) {
       return {
         label: 'Non collegato',
         tone: 'slate' as StripeTone,
@@ -100,7 +154,7 @@ export default function ClubSettingsPage() {
       };
     }
 
-    if (stripeStatus.charges_enabled && stripeStatus.payouts_enabled) {
+    if (normalizedStripeStatus.charges_enabled && normalizedStripeStatus.payouts_enabled) {
       return {
         label: 'Pronto per i payout',
         tone: 'green' as StripeTone,
@@ -109,7 +163,7 @@ export default function ClubSettingsPage() {
       };
     }
 
-    if (stripeStatus.details_submitted || stripeStatus.onboarding_complete) {
+    if (normalizedStripeStatus.details_submitted || normalizedStripeStatus.onboarding_complete) {
       return {
         label: 'Verifica in corso',
         tone: 'amber' as StripeTone,
@@ -124,7 +178,7 @@ export default function ClubSettingsPage() {
       description:
         'Il locale ha un account collegato ma deve completare il flusso Stripe per ricevere i payout.',
     };
-  }, [stripeStatus]);
+  }, [normalizedStripeStatus]);
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -180,7 +234,7 @@ export default function ClubSettingsPage() {
 
     trackEvent('owner_stripe_connect_started', {
       club_id: club?.id ?? null,
-      existing_account: stripeStatus?.connected_account_id ?? null,
+      existing_account: normalizedStripeStatus.connected_account_id ?? null,
     });
 
     try {
@@ -226,7 +280,7 @@ export default function ClubSettingsPage() {
         body: JSON.stringify({
           url: newImageUrl,
           alt_text: newImageAlt || undefined,
-          display_order: imagesData?.images.length ?? 0,
+          display_order: clubImages.length,
         }),
       });
 
@@ -319,14 +373,14 @@ export default function ClubSettingsPage() {
 
             <p className="text-sm text-gray-600 mt-3">{stripeState.description}</p>
 
-            {stripeStatus?.connected_account_id && (
+            {normalizedStripeStatus.connected_account_id && (
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
                   <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
                     Account ID
                   </div>
                   <div className="text-sm font-mono text-gray-900 break-all">
-                    {stripeStatus.connected_account_id}
+                    {normalizedStripeStatus.connected_account_id}
                   </div>
                 </div>
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
@@ -334,7 +388,7 @@ export default function ClubSettingsPage() {
                     Charges
                   </div>
                   <div className="text-sm font-semibold text-gray-900">
-                    {stripeStatus.charges_enabled ? 'Abilitati' : 'Non abilitati'}
+                    {normalizedStripeStatus.charges_enabled ? 'Abilitati' : 'Non abilitati'}
                   </div>
                 </div>
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
@@ -342,7 +396,7 @@ export default function ClubSettingsPage() {
                     Payouts
                   </div>
                   <div className="text-sm font-semibold text-gray-900">
-                    {stripeStatus.payouts_enabled ? 'Abilitati' : 'Non abilitati'}
+                    {normalizedStripeStatus.payouts_enabled ? 'Abilitati' : 'Non abilitati'}
                   </div>
                 </div>
               </div>
@@ -368,7 +422,7 @@ export default function ClubSettingsPage() {
               <ExternalLink size={16} />
               {startingOnboarding
                 ? 'Apertura...'
-                : stripeStatus?.connected_account_id
+                : normalizedStripeStatus.connected_account_id
                   ? 'Continua onboarding'
                   : 'Collega Stripe'}
             </button>
@@ -510,13 +564,13 @@ export default function ClubSettingsPage() {
 
         {imagesLoading ? (
           <p className="text-gray-500 text-sm">Caricamento...</p>
-        ) : !imagesData?.images.length ? (
+        ) : clubImages.length === 0 ? (
           <p className="text-gray-500 text-sm">
             Nessuna immagine. Aggiungi la prima immagine del locale.
           </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {imagesData.images.map((img) => (
+            {clubImages.map((img) => (
               <div
                 key={img.id}
                 className="relative group rounded-lg overflow-hidden aspect-video bg-gray-100"
