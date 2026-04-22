@@ -1,0 +1,43 @@
+name: Deploy Dashboard
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy_dashboard:
+    name: Deploy Production Dashboard To Netlify
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+    concurrency:
+      group: production-dashboard
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: pierre_dashboard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./pierre_dashboard
+        run: npm ci
+
+      - name: Build dashboard
+        working-directory: ./pierre_dashboard
+        env:
+          VITE_API_URL: ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}
+          VITE_APP_ENV: ${{ vars.APP_ENV || 'production' }}
+        run: npm run build
+
+      - name: Deploy to Netlify
+        working-directory: ./pierre_dashboard
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx netlify-cli deploy --dir=dist --prod --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"

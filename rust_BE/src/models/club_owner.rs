@@ -74,8 +74,6 @@ pub struct OwnerUpdateClubRequest {
     pub address: Option<String>,
     pub phone_number: Option<String>,
     pub website: Option<String>,
-    pub platform_commission_percent: Option<Decimal>,
-    pub platform_commission_fixed_fee: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize)]

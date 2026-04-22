@@ -9,6 +9,11 @@ jobs:
   ota-update:
     name: EAS OTA Update → staging channel
     runs-on: ubuntu-latest
+    environment:
+      name: Staging
+    concurrency:
+      group: staging-ota
+      cancel-in-progress: true
 
     steps:
       - uses: actions/checkout@v4
@@ -32,11 +37,11 @@ jobs:
       - name: Push OTA update to staging channel
         working-directory: ./pierre_two
         env:
-          APP_ENV: staging
-          EXPO_PUBLIC_API_URL: ${{ secrets.STAGING_API_URL }}
+          APP_ENV: ${{ vars.APP_ENV || 'staging' }}
+          EXPO_PUBLIC_API_URL: ${{ vars.API_URL || secrets.STAGING_API_URL }}
         run: |
           eas update \
-            --branch staging \
+            --branch "${{ vars.EAS_UPDATE_BRANCH || 'staging' }}" \
             --message "Staging: ${{ github.sha }}" \
             --platform ios \
             --non-interactive

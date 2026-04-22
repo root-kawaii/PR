@@ -56,8 +56,11 @@ WHERE phone_number IS NOT NULL AND is_owner = false AND status IN ('paid', 'chec
 # Compile check (run after any Rust edit)
 cd rust_BE && cargo check
 
-# Deploy backend to Fly.io
-cd rust_BE && fly deploy
+# Deploy backend to the default Fly app in fly.toml
+cd rust_BE && flyctl deploy --remote-only --ha=false
+
+# Deploy backend to the dedicated production Fly app
+cd rust_BE && flyctl deploy --config fly.production.toml --remote-only --ha=false
 ```
 
 Backend URL: `https://pierre-two-backend.fly.dev`
@@ -78,6 +81,11 @@ Backend URL: `https://pierre-two-backend.fly.dev`
 | Command | What it does |
 |---------|-------------|
 | `/cargo-check` | Run `cargo check` in `rust_BE` and report compiler issues |
-| `/deploy-backend` | Compile-check then `fly deploy` |
+| `/deploy-backend` | Compile-check then deploy the backend with `flyctl` |
 | `/new-migration` | Scaffold the next numbered migration file |
 | `/run-migration` | Run a specific migration file on Supabase |
+| `/repo-env-audit` | Audit the current staging/prod setup across repo config, GitHub Actions, Fly.io, and Expo/EAS |
+| `/github-actions-status` | Inspect live GitHub workflows, runs, environments, secrets, and variables |
+| `/fly-status` | Inspect Fly apps, machine state, and secret names for a given app |
+| `/eas-status` | Inspect Expo/EAS auth, branches, channels, builds, and env status |
+| `/setup-production-env` | Set and verify the non-sensitive Production GitHub environment variables used by deploy workflows |
