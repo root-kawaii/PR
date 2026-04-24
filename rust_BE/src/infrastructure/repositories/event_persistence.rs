@@ -1,4 +1,5 @@
 use crate::models::{CreateEventRequest, Event, UpdateEventRequest};
+use serde_json::Value as JsonValue;
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
@@ -137,6 +138,31 @@ pub async fn get_events_by_club_id(pool: &PgPool, club_id: Uuid) -> Result<Vec<E
     .await?;
 
     Ok(events)
+}
+
+/// Overwrite an event's `marzipano_config`. Pass `None` to clear it
+/// (event falls back to the club-level config in the mobile viewer).
+pub async fn update_marzipano_config(
+    pool: &PgPool,
+    event_id: Uuid,
+    scenes: Option<JsonValue>,
+) -> Result<Option<Event>> {
+    let event = sqlx::query_as::<_, Event>(
+        r#"
+        UPDATE events
+        SET marzipano_config = $1,
+            updated_at = NOW()
+        WHERE id = $2
+        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+                  tour_provider, marzipano_config, event_date, created_at, updated_at
+        "#,
+    )
+    .bind(scenes)
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(event)
 }
 
 /// Delete an event
