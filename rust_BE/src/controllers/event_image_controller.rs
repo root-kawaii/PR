@@ -21,7 +21,7 @@ pub async fn upload_event_image(
     // Verify storage is configured
     let (supabase_url, service_role_key) = match (
         state.config.storage.supabase_url.as_deref(),
-        state.config.storage.service_role_key.as_deref(),
+        state.config.storage.supabase_service_role_key.as_deref(),
     ) {
         (Some(url), Some(key)) => (url.to_string(), key.to_string()),
         _ => {
