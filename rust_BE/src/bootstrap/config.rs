@@ -53,6 +53,18 @@ pub struct JobsConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct StorageConfig {
+    /// Base URL of the Supabase project (e.g. `https://xyz.supabase.co`).
+    pub supabase_url: Option<String>,
+    /// Service-role key used to upload to storage. Kept server-side only.
+    pub supabase_service_role_key: Option<String>,
+    /// Bucket where 360° panoramas are stored (must be public-read).
+    pub panoramas_bucket: String,
+    /// Maximum panorama upload size in bytes. 50 MB default.
+    pub max_panorama_bytes: usize,
+}
+
+#[derive(Clone, Debug)]
 pub struct AppConfig {
     pub database: DatabaseConfig,
     pub auth: AuthConfig,
@@ -61,6 +73,7 @@ pub struct AppConfig {
     pub analytics: AnalyticsConfig,
     pub feature_flags: FeatureFlagsConfig,
     pub jobs: JobsConfig,
+    pub storage: StorageConfig,
     pub app_base_url: String,
     pub owner_app_base_url: String,
     pub payment_share_ttl_hours: i64,
@@ -170,6 +183,20 @@ impl AppConfig {
             .and_then(|v| v.parse().ok())
             .unwrap_or(3000);
 
+        let supabase_url = env::var("SUPABASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.trim_end_matches('/').to_string());
+        let supabase_service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let panoramas_bucket =
+            env::var("SUPABASE_PANORAMAS_BUCKET").unwrap_or_else(|_| "panoramas".to_string());
+        let max_panorama_bytes = env::var("MAX_PANORAMA_BYTES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(50 * 1024 * 1024);
+
         Self {
             database: DatabaseConfig {
                 url: database_url,
@@ -206,6 +233,12 @@ impl AppConfig {
             jobs: JobsConfig {
                 payment_frequent_interval_seconds,
                 idempotency_cleanup_interval_seconds,
+            },
+            storage: StorageConfig {
+                supabase_url,
+                supabase_service_role_key,
+                panoramas_bucket,
+                max_panorama_bytes,
             },
             app_base_url,
             owner_app_base_url,
