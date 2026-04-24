@@ -1,8 +1,9 @@
+use crate::application::club_service as club_persistence;
 use crate::application::event_service as event_persistence;
 use crate::application::outbox_service;
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{
-    AppState, CreateEventRequest, EventResponse, PaginationParams, UpdateEventRequest,
+    AppState, CreateEventRequest, Event, EventResponse, PaginationParams, UpdateEventRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -98,7 +99,7 @@ pub async fn get_event(
             {
                 warn!(error = %error, event_id = %event_id, "Failed to enqueue event detail analytics event");
             }
-            Ok(Json(event.into()))
+            Ok(Json(event_response_with_club_fallback(&state, event).await))
         }
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(error) => {
@@ -146,6 +147,23 @@ pub async fn update_event(
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
+}
+
+/// Build an `EventResponse`, filling `marzipano_scenes` from the club's
+/// tour config when the event itself has none (event override > club default).
+async fn event_response_with_club_fallback(state: &AppState, event: Event) -> EventResponse {
+    if event.marzipano_config.is_some() {
+        return EventResponse::from(event);
+    }
+    if let Some(club_id) = event.club_id {
+        if let Ok(Some(club)) = club_persistence::get_club_by_id(&state.read_db_pool, club_id).await
+        {
+            let mut resp = EventResponse::from(event);
+            resp.marzipano_scenes = club.marzipano_config;
+            return resp;
+        }
+    }
+    EventResponse::from(event)
 }
 
 /// Delete an event (requires club_owner JWT)
