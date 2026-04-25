@@ -50,7 +50,23 @@ pub async fn get_all_events(
             {
                 warn!(error = %error, "Failed to enqueue events list analytics event");
             }
-            let responses: Vec<EventResponse> = events.into_iter().map(|e| e.into()).collect();
+
+            let event_ids: Vec<Uuid> = events.iter().map(|e| e.id).collect();
+            let genres_map =
+                event_persistence::get_genres_for_events(&state.read_db_pool, &event_ids)
+                    .await
+                    .unwrap_or_default();
+
+            let responses: Vec<EventResponse> = events
+                .into_iter()
+                .map(|e| {
+                    let id = e.id;
+                    let mut r = EventResponse::from(e);
+                    r.genres = genres_map.get(&id).cloned().unwrap_or_default();
+                    r
+                })
+                .collect();
+
             Ok(Json(EventsResponse { events: responses }))
         }
         Err(error) => {
@@ -98,7 +114,14 @@ pub async fn get_event(
             {
                 warn!(error = %error, event_id = %event_id, "Failed to enqueue event detail analytics event");
             }
-            Ok(Json(event.into()))
+
+            let genres = event_persistence::get_event_genres(&state.read_db_pool, event_id)
+                .await
+                .unwrap_or_default();
+
+            let mut response = EventResponse::from(event);
+            response.genres = genres;
+            Ok(Json(response))
         }
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(error) => {
@@ -126,8 +149,20 @@ pub async fn create_event(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateEventRequest>,
 ) -> Result<(StatusCode, Json<EventResponse>), StatusCode> {
+    let genre_ids = payload.genre_ids.clone().unwrap_or_default();
+
     match event_persistence::create_event(&state.db_pool, payload).await {
-        Ok(event) => Ok((StatusCode::CREATED, Json(event.into()))),
+        Ok(event) => {
+            if !genre_ids.is_empty() {
+                let _ = event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids).await;
+            }
+            let genres = event_persistence::get_event_genres(&state.db_pool, event.id)
+                .await
+                .unwrap_or_default();
+            let mut response = EventResponse::from(event);
+            response.genres = genres;
+            Ok((StatusCode::CREATED, Json(response)))
+        }
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
@@ -140,9 +175,20 @@ pub async fn update_event(
     Json(payload): Json<UpdateEventRequest>,
 ) -> Result<Json<EventResponse>, StatusCode> {
     let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let genre_ids = payload.genre_ids.clone();
 
     match event_persistence::update_event(&state.db_pool, event_id, payload).await {
-        Ok(Some(event)) => Ok(Json(event.into())),
+        Ok(Some(event)) => {
+            if let Some(ids) = genre_ids {
+                let _ = event_persistence::set_event_genres(&state.db_pool, event_id, &ids).await;
+            }
+            let genres = event_persistence::get_event_genres(&state.db_pool, event_id)
+                .await
+                .unwrap_or_default();
+            let mut response = EventResponse::from(event);
+            response.genres = genres;
+            Ok(Json(response))
+        }
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }

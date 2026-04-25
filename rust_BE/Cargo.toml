@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Axum - Modern, ergonomic web framework (like Express for Node.js)
-axum = "0.7"
+axum = { version = "0.7", features = ["multipart"] }
 
 # Tokio - Async runtime (Rust's async needs a runtime, tokio is the most popular)
 # We need "macros" feature for #[tokio::main]
@@ -39,6 +39,7 @@ rand = "0.8"
 
 # Twilio for SMS verification
 reqwest = { version = "0.11", features = ["json"] }
+bytes = "1"
 
 # SHA256 hashing for idempotency request fingerprinting
 sha2 = "0.10"

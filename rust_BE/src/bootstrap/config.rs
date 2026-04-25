@@ -53,6 +53,13 @@ pub struct JobsConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct StorageConfig {
+    pub supabase_url: Option<String>,
+    pub service_role_key: Option<String>,
+    pub event_images_bucket: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct AppConfig {
     pub database: DatabaseConfig,
     pub auth: AuthConfig,
@@ -61,6 +68,7 @@ pub struct AppConfig {
     pub analytics: AnalyticsConfig,
     pub feature_flags: FeatureFlagsConfig,
     pub jobs: JobsConfig,
+    pub storage: StorageConfig,
     pub app_base_url: String,
     pub owner_app_base_url: String,
     pub payment_share_ttl_hours: i64,
@@ -170,6 +178,11 @@ impl AppConfig {
             .and_then(|v| v.parse().ok())
             .unwrap_or(3000);
 
+        let supabase_url = env::var("SUPABASE_URL").ok().filter(|s| !s.is_empty());
+        let supabase_service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY").ok().filter(|s| !s.is_empty());
+        let event_images_bucket = env::var("SUPABASE_EVENT_IMAGES_BUCKET")
+            .unwrap_or_else(|_| "event-images".to_string());
+
         Self {
             database: DatabaseConfig {
                 url: database_url,
@@ -206,6 +219,11 @@ impl AppConfig {
             jobs: JobsConfig {
                 payment_frequent_interval_seconds,
                 idempotency_cleanup_interval_seconds,
+            },
+            storage: StorageConfig {
+                supabase_url,
+                service_role_key: supabase_service_role_key,
+                event_images_bucket,
             },
             app_base_url,
             owner_app_base_url,

@@ -2,6 +2,7 @@ pub mod areas;
 pub mod auth;
 pub mod clubs;
 pub mod events;
+pub mod genres;
 pub mod owner;
 pub mod payments;
 pub mod reservations;

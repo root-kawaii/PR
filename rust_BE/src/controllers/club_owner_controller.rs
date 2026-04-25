@@ -209,7 +209,20 @@ pub async fn get_my_club_events(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let responses: Vec<EventResponse> = events.into_iter().map(EventResponse::from).collect();
+    let event_ids: Vec<uuid::Uuid> = events.iter().map(|e| e.id).collect();
+    let genres_map = event_persistence::get_genres_for_events(&state.db_pool, &event_ids)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let responses: Vec<EventResponse> = events
+        .into_iter()
+        .map(|e| {
+            let id = e.id;
+            let mut r = EventResponse::from(e);
+            r.genres = genres_map.get(&id).cloned().unwrap_or_default();
+            r
+        })
+        .collect();
     Ok(Json(responses))
 }
 
@@ -228,8 +241,19 @@ pub async fn create_club_event(
 
     // Force club_id to the owner's club
     payload.club_id = Some(club.id);
+    let genre_ids = payload.genre_ids.clone().unwrap_or_default();
 
     let event = event_persistence::create_event(&state.db_pool, payload)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if !genre_ids.is_empty() {
+        event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    let genres = event_persistence::get_event_genres(&state.db_pool, event.id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -249,7 +273,9 @@ pub async fn create_club_event(
     )
     .await;
 
-    Ok((StatusCode::CREATED, Json(EventResponse::from(event))))
+    let mut response = EventResponse::from(event);
+    response.genres = genres;
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// Get tables for a specific event owned by the club owner
@@ -1099,13 +1125,26 @@ pub async fn update_club_event(
 
     // Prevent changing the event's club association
     payload.club_id = None;
+    let genre_ids = payload.genre_ids.clone();
 
     let updated = event_persistence::update_event(&state.db_pool, event_uuid, payload)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    Ok(Json(EventResponse::from(updated)))
+    if let Some(ids) = genre_ids {
+        event_persistence::set_event_genres(&state.db_pool, event_uuid, &ids)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    let genres = event_persistence::get_event_genres(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut response = EventResponse::from(updated);
+    response.genres = genres;
+    Ok(Json(response))
 }
 
 /// Delete an event owned by the club owner (with ownership check)
