@@ -9,16 +9,25 @@
 
 2. Fill in your actual credentials in `.env`
 
+The recommended local setup on `develop` is:
+
+- mobile app -> local backend on `http://127.0.0.1:3000`
+- local backend -> remote staging Supabase database
+
+That is why `.env.example` is written around the staging pooler host but keeps the password as a local-only placeholder.
+
 ## Required Variables
 
 ### Database
 - **DATABASE_URL**: PostgreSQL connection string
-  - Format: `postgresql://username:password@host:5432/database`
-  - Get from Supabase or your PostgreSQL instance
+  - Recommended local format: `postgresql://postgres.<ref>:<password>@<pooler-host>:5432/postgres`
+  - Use the staging Supabase pooler credentials for day-to-day development
 
 ### Server
 - **HOST**: Server host (default: `0.0.0.0`)
 - **PORT**: Server port (default: `3000`)
+- **APP_BASE_URL**: use `http://127.0.0.1:3000` for local backend development
+- **OWNER_APP_BASE_URL**: use `http://127.0.0.1:5173` if you want local dashboard callbacks
 
 ### Stripe
 - **STRIPE_SECRET_KEY**: Your Stripe secret key
