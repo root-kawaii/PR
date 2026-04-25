@@ -370,11 +370,12 @@ export default function EventReservationsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     <Phone size={14} className="inline mr-1" />
-                    Telefono
+                    Telefono *
                   </label>
                   <input
                     value={formPhone}
                     onChange={e => setFormPhone(e.target.value)}
+                    required
                     placeholder="+39 333 1234567"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
                   />

@@ -16,10 +16,17 @@ use crate::models::{
 };
 use crate::utils::jwt;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
+use chrono::NaiveDate;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct EventFilterParams {
+    pub from_date: Option<NaiveDate>,
+}
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rust_decimal::Decimal;
 use stripe::{
@@ -193,10 +200,12 @@ pub async fn get_my_club(
     Ok(Json(ClubResponse::from(club)))
 }
 
-/// Get all events for the authenticated club owner's club
+/// Get all events for the authenticated club owner's club.
+/// Accepts optional `?from_date=YYYY-MM-DD` to filter server-side.
 pub async fn get_my_club_events(
     State(state): State<Arc<AppState>>,
     ClubOwnerUser(claims): ClubOwnerUser,
+    Query(params): Query<EventFilterParams>,
 ) -> Result<Json<Vec<EventResponse>>, StatusCode> {
     let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
 
@@ -205,9 +214,10 @@ pub async fn get_my_club_events(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let events = event_persistence::get_events_by_club_id(&state.db_pool, club.id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let events =
+        event_persistence::get_events_by_club_id(&state.db_pool, club.id, params.from_date)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let event_ids: Vec<uuid::Uuid> = events.iter().map(|e| e.id).collect();
     let genres_map = event_persistence::get_genres_for_events(&state.db_pool, &event_ids)
