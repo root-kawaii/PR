@@ -1,4 +1,5 @@
 use crate::models::{CreateEventRequest, Event, GenreResponse, UpdateEventRequest};
+use chrono::NaiveDate;
 use sqlx::{PgPool, QueryBuilder, Result};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -214,20 +215,41 @@ pub async fn update_event(
     Ok(event)
 }
 
-/// Get events by club ID
-pub async fn get_events_by_club_id(pool: &PgPool, club_id: Uuid) -> Result<Vec<Event>> {
-    let events = sqlx::query_as::<_, Event>(
-        r#"
-        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
-               tour_provider, marzipano_config, event_date, created_at, updated_at
-        FROM events
-        WHERE club_id = $1
-        ORDER BY created_at DESC
-        "#,
-    )
-    .bind(club_id)
-    .fetch_all(pool)
-    .await?;
+/// Get events by club ID, optionally filtered to events on or after `from_date`.
+pub async fn get_events_by_club_id(
+    pool: &PgPool,
+    club_id: Uuid,
+    from_date: Option<NaiveDate>,
+) -> Result<Vec<Event>> {
+    let events = if let Some(date) = from_date {
+        sqlx::query_as::<_, Event>(
+            r#"
+            SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+                   tour_provider, marzipano_config, event_date, created_at, updated_at
+            FROM events
+            WHERE club_id = $1
+              AND (event_date IS NULL OR event_date >= $2)
+            ORDER BY event_date ASC NULLS LAST, created_at DESC
+            "#,
+        )
+        .bind(club_id)
+        .bind(date)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, Event>(
+            r#"
+            SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+                   tour_provider, marzipano_config, event_date, created_at, updated_at
+            FROM events
+            WHERE club_id = $1
+            ORDER BY event_date ASC NULLS LAST, created_at DESC
+            "#,
+        )
+        .bind(club_id)
+        .fetch_all(pool)
+        .await?
+    };
 
     Ok(events)
 }
