@@ -8,7 +8,9 @@ import DashboardPage from './pages/DashboardPage';
 import EventsPage from './pages/EventsPage';
 import EventTablesPage from './pages/EventTablesPage';
 import EventReservationsPage from './pages/EventReservationsPage';
+import EventTourConfigPage from './pages/EventTourConfigPage';
 import ClubSettingsPage from './pages/ClubSettingsPage';
+import ClubTourConfigPage from './pages/ClubTourConfigPage';
 import QRScannerPage from './pages/QRScannerPage';
 import { trackScreen } from './config/analytics';
 
@@ -40,10 +42,12 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/dashboard/club" element={<ClubSettingsPage />} />
+              <Route path="/dashboard/club/tour" element={<ClubTourConfigPage />} />
               <Route path="/dashboard/scan" element={<QRScannerPage />} />
               <Route path="/dashboard/events" element={<EventsPage />} />
               <Route path="/dashboard/events/:eventId/tables" element={<EventTablesPage />} />
               <Route path="/dashboard/events/:eventId/reservations" element={<EventReservationsPage />} />
+              <Route path="/dashboard/events/:eventId/tour" element={<EventTourConfigPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

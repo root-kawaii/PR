@@ -22,6 +22,7 @@ export interface Club {
   stripe_payouts_enabled?: boolean;
   platform_commission_percent?: string | number;
   platform_commission_fixed_fee?: string | number;
+  marzipanoScenes?: MarzipanoScene[] | null;
 }
 
 export interface StripeConnectStatus {
@@ -126,7 +127,7 @@ export interface EventResponse {
   price?: string;
   description?: string;
   tourProvider?: string;
-  marzipanoScenes?: unknown;
+  marzipanoScenes?: MarzipanoScene[] | null;
   genres?: Genre[];
 }
 
@@ -141,7 +142,68 @@ export interface TableResponse {
   available: boolean;
   locationDescription?: string;
   features?: string[];
-  marzipanoPosition?: unknown;
+  marzipanoPosition?: MarzipanoPosition | null;
+  areaId?: string;
+  areaName?: string;
+}
+
+export interface Area {
+  id: string;
+  clubId: string;
+  name: string;
+  price: string;
+  description?: string;
+  marzipanoPosition?: MarzipanoPosition | null;
+}
+
+// ============================================================================
+// 360° Tour (Marzipano) types
+// Mirrors pierre_two/types/index.ts so the config JSON is interchangeable
+// between the dashboard editor and the mobile viewer.
+// ============================================================================
+
+export interface MarzipanoView {
+  yaw: number;
+  pitch: number;
+  fov: number;
+}
+
+export interface MarzipanoPosition {
+  sceneId: string;
+  yaw: number;
+  pitch: number;
+}
+
+export type MarzipanoHotspotType = 'table' | 'scene-link' | 'area';
+
+export interface MarzipanoHotspot {
+  id: string;
+  type: MarzipanoHotspotType;
+  yaw: number;
+  pitch: number;
+  // table
+  tableId?: string;
+  tableName?: string;
+  // scene-link
+  targetSceneId?: string;
+  label?: string;
+  // area
+  areaId?: string;
+  areaName?: string;
+}
+
+export interface MarzipanoScene {
+  id: string;
+  name: string;
+  imageUrl: string;
+  initialView?: MarzipanoView;
+  hotspots: MarzipanoHotspot[];
+}
+
+export interface TourConfigPayload {
+  scenes: MarzipanoScene[] | null;
+  tablePositions: Array<{ tableId: string; sceneId: string; yaw: number; pitch: number }>;
+  areaPositions: Array<{ areaId: string; sceneId: string; yaw: number; pitch: number }>;
 }
 
 export interface AuthResponse {
