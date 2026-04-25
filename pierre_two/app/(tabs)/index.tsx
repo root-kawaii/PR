@@ -12,7 +12,7 @@ import {
   Pressable,
   TouchableOpacity,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Calendar } from "react-native-calendars";
 import { EventCard } from "@/components/home/EventCard";
 import { EventDetailModal } from "@/components/event/EventDetailModal";
@@ -22,11 +22,13 @@ import { useEvents } from "@/hooks/useEvents";
 import { useModal } from "@/hooks/useModal";
 import { useTheme } from "@/context/ThemeContext";
 import { Event, Table } from "@/types";
+import { getEventDateKey } from "@/utils/events";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { trackEvent } from "@/config/analytics";
 
 export default function HomeScreen() {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,31 +122,7 @@ export default function HomeScreen() {
 
   const extractEventDate = (dateStr: string): string | null => {
     try {
-      if (dateStr.includes("T")) {
-        return dateStr.split("T")[0];
-      }
-
-      if (dateStr.includes(" ") && !dateStr.includes("|")) {
-        const datePart = dateStr.split(" ")[0];
-        if (datePart.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          return datePart;
-        }
-      }
-
-      if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return dateStr;
-      }
-
-      if (dateStr.match(/^\d{1,2}\s+[A-Z]{3}/)) {
-        console.warn(
-          "Skipping event with legacy Italian date format:",
-          dateStr,
-        );
-        return null;
-      }
-
-      console.warn("Unexpected date format:", dateStr);
-      return null;
+      return getEventDateKey(dateStr);
     } catch (e) {
       console.error("Error extracting date:", dateStr, e);
       return null;
@@ -240,6 +218,9 @@ export default function HomeScreen() {
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <ScrollView
           style={styles.mainScroll}
+          contentContainerStyle={{
+            paddingBottom: 112 + insets.bottom,
+          }}
           showsVerticalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={400}
@@ -478,7 +459,7 @@ const styles = StyleSheet.create({
   },
   contentWrap: {
     paddingTop: 14,
-    paddingBottom: 8,
+    paddingBottom: 48,
   },
   topIntro: {
     paddingHorizontal: 16,

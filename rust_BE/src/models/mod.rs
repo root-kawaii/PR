@@ -1,6 +1,8 @@
 // src/models.rs
 pub mod event;
-pub use event::{CreateEventRequest, Event, EventResponse, UpdateEventRequest};
+pub use event::{
+    is_valid_event_image_url, CreateEventRequest, Event, EventResponse, UpdateEventRequest,
+};
 
 pub mod payment;
 pub use payment::{

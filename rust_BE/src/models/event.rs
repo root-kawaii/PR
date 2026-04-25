@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::FromRow;
@@ -94,6 +95,18 @@ pub struct EventResponse {
     pub marzipano_scenes: Option<JsonValue>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub genres: Vec<GenreResponse>,
+}
+
+pub fn is_valid_event_image_url(url: &str) -> bool {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+
+    match Url::parse(trimmed) {
+        Ok(parsed) => matches!(parsed.scheme(), "http" | "https") && parsed.host().is_some(),
+        Err(_) => false,
+    }
 }
 
 impl From<Event> for EventResponse {

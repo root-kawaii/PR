@@ -35,5 +35,10 @@ async fn main() {
     info!(port = config.port, "Server starting");
     info!(local = %format!("http://127.0.0.1:{}", config.port), "Local address");
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }

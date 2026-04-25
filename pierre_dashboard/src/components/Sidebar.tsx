@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, CalendarDays, LogOut, Settings, QrCode, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getSafeImageUrl } from '../utils/image';
 
 interface Props {
   mobileOpen?: boolean;
@@ -14,16 +15,17 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 
 function SidebarContent({ onClose }: { onClose?: () => void }) {
   const { club, owner, logout } = useAuth();
+  const clubImageSrc = getSafeImageUrl(club?.image);
 
   return (
     <>
       {/* Club header */}
       <div className="p-6 border-b border-gray-700 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {club?.image && (
+          {clubImageSrc && (
             <img
-              src={club.image}
-              alt={club.name}
+              src={clubImageSrc}
+              alt={club?.name ?? 'Club'}
               className="w-16 h-16 rounded-lg object-cover mb-3"
             />
           )}

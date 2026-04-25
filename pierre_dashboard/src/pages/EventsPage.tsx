@@ -8,6 +8,7 @@ import type { EventResponse, Genre } from "../types";
 import { trackEvent } from "../config/analytics";
 import EventImageUpload from "../components/EventImageUpload";
 import { formatPrice, priceToApiString } from "../utils/currency";
+import { getSafeImageUrl } from "../utils/image";
 
 const MONTH_MAP: Record<string, number> = {
   GEN: 0,
@@ -476,6 +477,7 @@ export default function EventsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredEvents.map((event) => {
             const displayTime = event.time ?? extractEventTime(event.date);
+            const eventImageSrc = getSafeImageUrl(event.image);
             return (
               <div
                 key={event.id}
@@ -485,10 +487,10 @@ export default function EventsPage() {
                   to={`/dashboard/events/${event.id}/tables`}
                   className="block"
                 >
-                  {event.image && (
+                  {eventImageSrc && (
                     <div className="h-40 overflow-hidden">
                       <img
-                        src={event.image}
+                        src={eventImageSrc}
                         alt={event.title}
                         className="w-full h-full object-cover"
                       />

@@ -5,11 +5,13 @@ import { Link } from 'react-router-dom';
 import { CalendarDays, Users, TrendingUp } from 'lucide-react';
 import type { Club, OwnerStats } from '../types';
 import { trackEvent } from '../config/analytics';
+import { getSafeImageUrl } from '../utils/image';
 
 export default function DashboardPage() {
   const { owner } = useAuth();
   const { data: club, loading, error } = useFetch<Club>('/owner/club');
   const { data: stats } = useFetch<OwnerStats>('/owner/stats');
+  const clubImageSrc = getSafeImageUrl(club?.image);
 
   useEffect(() => {
     if (loading || !owner) {
@@ -44,9 +46,13 @@ export default function DashboardPage() {
 
       {/* Club card */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-        {club?.image && (
+        {clubImageSrc && (
           <div className="h-48 overflow-hidden">
-            <img src={club.image} alt={club.name} className="w-full h-full object-cover" />
+            <img
+              src={clubImageSrc}
+              alt={club?.name ?? 'Club'}
+              className="w-full h-full object-cover"
+            />
           </div>
         )}
         <div className="p-6">

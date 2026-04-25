@@ -51,7 +51,10 @@ pub async fn upload_event_image(
     }
 
     let file_name = format!("{}/{}.{}", club_id, Uuid::new_v4(), ext_for(content_type));
-    let upload_url = format!("{}/storage/v1/object/{}/{}", supabase_url, bucket, file_name);
+    let upload_url = format!(
+        "{}/storage/v1/object/{}/{}",
+        supabase_url, bucket, file_name
+    );
 
     let response = client
         .put(&upload_url)

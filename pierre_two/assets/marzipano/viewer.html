@@ -680,11 +680,12 @@
 
       // Position hotspot in 3D space using the current container
       const position = { yaw, pitch };
-      currentHotspotContainer.createHotspot(element, position);
+      const hotspotInstance = currentHotspotContainer.createHotspot(element, position);
 
       // Store only necessary data to avoid circular references
       hotspotElements.push({
         element,
+        instance: hotspotInstance,
         hotspot: {
           id,
           type,
@@ -696,8 +697,17 @@
 
     // Clear all hotspots
     function clearHotspots() {
-      // Just clear the array - Marzipano automatically cleans up hotspots when switching scenes
-      // Trying to destroy hotspots from the old scene using the current container causes errors
+      hotspotElements.forEach(({ instance, element }) => {
+        try {
+          if (instance && typeof instance.destroy === 'function') {
+            instance.destroy();
+          } else if (element && element.parentNode) {
+            element.parentNode.removeChild(element);
+          }
+        } catch (error) {
+          notifyReactNative({ type: 'DEBUG', message: '⚠️ Hotspot destroy skipped: ' + error.message });
+        }
+      });
       hotspotElements = [];
     }
 
@@ -887,6 +897,35 @@
       switchToScene(sceneId);
     };
 
+    window.syncMarzipanoViewer = function(config) {
+      try {
+        scenes = config.scenes || scenes;
+        availabilityMap = config.availabilityMap || availabilityMap;
+
+        if (!viewer || !isInitialized) {
+          notifyReactNative({ type: 'DEBUG', message: '🔁 Viewer sync skipped - viewer not initialized yet' });
+          return;
+        }
+
+        const activeSceneId = currentSceneId || (scenes[0] && scenes[0].id);
+        const activeSceneConfig = scenes.find(s => s.id === activeSceneId) || scenes[0];
+        const sceneList = viewer.listScenes();
+        const activeScene = sceneList.find(s => s._id === activeSceneId) || sceneList[0];
+
+        if (!activeSceneConfig || !activeScene) {
+          notifyReactNative({ type: 'DEBUG', message: '🔁 Viewer sync skipped - active scene not found' });
+          return;
+        }
+
+        clearHotspots();
+        currentHotspotContainer = activeScene.hotspotContainer();
+        createHotspots(activeSceneConfig.hotspots || []);
+        notifyReactNative({ type: 'DEBUG', message: '🔁 Viewer config synced with latest tables' });
+      } catch (error) {
+        notifyReactNative({ type: 'ERROR', message: 'Viewer sync failed: ' + error.message });
+      }
+    };
+
     // Notify React Native — retries up to 2s to handle production bridge injection delay
     function notifyReactNative(message, attempt) {
       attempt = attempt || 0;
@@ -955,7 +994,7 @@
     showLoading();
 
     // Log version
-    notifyReactNative({ type: 'DEBUG', message: '🟢 HTML VERSION: 2026-01-13-v12-REAL-TABLE-DATA' });
+    notifyReactNative({ type: 'DEBUG', message: '🟢 HTML VERSION: 2026-04-25-v13-HOTSPOT-SYNC' });
 
     // Notify that we're ready for initialization
     notifyReactNative({ type: 'READY_FOR_INIT' });

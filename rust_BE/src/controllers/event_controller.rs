@@ -2,7 +2,8 @@ use crate::application::event_service as event_persistence;
 use crate::application::outbox_service;
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{
-    AppState, CreateEventRequest, EventResponse, PaginationParams, UpdateEventRequest,
+    is_valid_event_image_url, AppState, CreateEventRequest, EventResponse, PaginationParams,
+    UpdateEventRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -149,12 +150,17 @@ pub async fn create_event(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateEventRequest>,
 ) -> Result<(StatusCode, Json<EventResponse>), StatusCode> {
+    if !is_valid_event_image_url(&payload.image) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     let genre_ids = payload.genre_ids.clone().unwrap_or_default();
 
     match event_persistence::create_event(&state.db_pool, payload).await {
         Ok(event) => {
             if !genre_ids.is_empty() {
-                let _ = event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids).await;
+                let _ =
+                    event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids).await;
             }
             let genres = event_persistence::get_event_genres(&state.db_pool, event.id)
                 .await
@@ -175,6 +181,11 @@ pub async fn update_event(
     Json(payload): Json<UpdateEventRequest>,
 ) -> Result<Json<EventResponse>, StatusCode> {
     let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if let Some(image) = payload.image.as_deref() {
+        if !is_valid_event_image_url(image) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
     let genre_ids = payload.genre_ids.clone();
 
     match event_persistence::update_event(&state.db_pool, event_id, payload).await {
