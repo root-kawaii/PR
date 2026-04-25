@@ -110,6 +110,29 @@ pub async fn update_area(
     .await
 }
 
+/// Overwrite an area's `marzipano_position` (or clear it when `None`).
+/// Returns true if the area exists.
+pub async fn update_marzipano_position(
+    pool: &PgPool,
+    area_id: Uuid,
+    position: Option<JsonValue>,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE areas
+        SET marzipano_position = $1,
+            updated_at = NOW()
+        WHERE id = $2
+        "#,
+    )
+    .bind(position)
+    .bind(area_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn delete_area(pool: &PgPool, area_id: Uuid) -> Result<bool, sqlx::Error> {
     let result = sqlx::query("DELETE FROM areas WHERE id = $1")
         .bind(area_id)

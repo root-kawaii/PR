@@ -4,6 +4,7 @@ use sqlx::PgPool;
 
 use crate::bootstrap::config::AppConfig;
 use crate::idempotency::IdempotencyService;
+use crate::services::storage_service::StorageService;
 
 pub struct AppState {
     pub db_pool: PgPool,
@@ -15,6 +16,7 @@ pub struct AppState {
     pub alert_webhook_url: Option<String>,
     pub payment_share_ttl_hours: i64,
     pub config: Arc<AppConfig>,
+    pub storage: Arc<StorageService>,
 }
 
 impl AppState {
@@ -25,6 +27,7 @@ impl AppState {
         idempotency_service: IdempotencyService,
         config: Arc<AppConfig>,
     ) -> Self {
+        let storage = Arc::new(StorageService::new(config.storage.clone()));
         Self {
             db_pool,
             read_db_pool,
@@ -35,6 +38,7 @@ impl AppState {
             alert_webhook_url: config.notifications.alert_webhook_url.clone(),
             payment_share_ttl_hours: config.payment_share_ttl_hours,
             config,
+            storage,
         }
     }
 }
