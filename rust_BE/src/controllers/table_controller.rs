@@ -650,10 +650,9 @@ pub async fn create_payment_intent(
     // Attach the Stripe customer
     params.customer = Some(stripe_customer.id.clone());
 
-    params.automatic_payment_methods = Some(stripe::CreatePaymentIntentAutomaticPaymentMethods {
-        enabled: true,
-        allow_redirects: None,
-    });
+    // This flow uses manual capture and later reservation bookkeeping, so keep
+    // the mobile Payment Sheet on card rails instead of redirect-based methods.
+    params.payment_method_types = Some(vec!["card".to_string()]);
 
     let connect_destination_for_on_behalf_of = club_connect_config
         .as_ref()
@@ -733,6 +732,7 @@ pub async fn create_payment_intent(
     Ok(Json(CreatePaymentIntentResponse {
         client_secret,
         payment_intent_id: payment_intent.id.to_string(),
+        stripe_publishable_key: state.config.stripe.publishable_key.clone(),
         amount: format!("{:.2} €", owner_share),
         total_cost: Some(format!("{:.2} €", total_cost)),
         per_person_amount: Some(format!("{:.2} €", per_person)),

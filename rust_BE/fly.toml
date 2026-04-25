@@ -1,5 +1,5 @@
-app = "pierre-two-backend"
-primary_region = "fra"  # Frankfurt (close to your Supabase EU region)
+app = "pierreclubs-backend-prod"
+primary_region = "fra"
 
 [build]
 
@@ -12,7 +12,7 @@ primary_region = "fra"  # Frankfurt (close to your Supabase EU region)
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0  # Free tier: scale to zero when not in use
+  min_machines_running = 0
 
 [[vm]]
   memory = "256mb"

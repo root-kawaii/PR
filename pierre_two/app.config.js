@@ -1,4 +1,28 @@
 const IS_STAGING = process.env.APP_ENV === 'staging';
+const defaultApiUrl = IS_STAGING
+  ? 'https://pierreclubs-backend-staging.fly.dev'
+  : 'https://pierreclubs-backend-prod.fly.dev';
+const easProjectId =
+  process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
+  process.env.EAS_PROJECT_ID ||
+  '6c405b8b-7cb7-454f-a1a7-fb52014dcf35';
+const updatesUrl = easProjectId ? `https://u.expo.dev/${easProjectId}` : undefined;
+
+const extra = {
+  router: {},
+  appEnv: process.env.APP_ENV || 'development',
+  apiUrl: process.env.EXPO_PUBLIC_API_URL || defaultApiUrl,
+  stripePublishableKey: process.env.EXPO_PUBLIC_STRIPE_KEY || '',
+  posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_KEY || '',
+  posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com',
+  supportUrl: process.env.EXPO_PUBLIC_SUPPORT_URL || 'https://pierre.app/support',
+  privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL || 'https://pierre.app/privacy',
+  termsUrl: process.env.EXPO_PUBLIC_TERMS_URL || 'https://pierre.app/terms',
+};
+
+if (easProjectId) {
+  extra.eas = { projectId: easProjectId };
+}
 
 export default {
   expo: {
@@ -15,6 +39,8 @@ export default {
       bundleIdentifier: IS_STAGING ? 'PR.staging' : 'com.rootkawaii.pierre',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSCameraUsageDescription:
+          'Pierre may use the camera when you choose to scan or upload event-related content.',
       },
     },
     android: {
@@ -60,25 +86,10 @@ export default {
       typedRoutes: true,
       reactCompiler: true,
     },
-    updates: {
-      url: 'https://u.expo.dev/4e65bba3-9d05-4b27-9300-a81a9b8181be',
-    },
+    ...(updatesUrl ? { updates: { url: updatesUrl } } : {}),
     runtimeVersion: {
       policy: 'appVersion',
     },
-    extra: {
-      router: {},
-      eas: {
-        projectId: '4e65bba3-9d05-4b27-9300-a81a9b8181be',
-      },
-      appEnv: process.env.APP_ENV || 'development',
-      apiUrl: process.env.EXPO_PUBLIC_API_URL || 'https://pierre-two-backend.fly.dev',
-      stripePublishableKey: process.env.EXPO_PUBLIC_STRIPE_KEY || '',
-      posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_KEY || '',
-      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com',
-      supportUrl: process.env.EXPO_PUBLIC_SUPPORT_URL || 'https://pierre.app/support',
-      privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_URL || 'https://pierre.app/privacy',
-      termsUrl: process.env.EXPO_PUBLIC_TERMS_URL || 'https://pierre.app/terms',
-    },
+    extra,
   },
 };

@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -24,9 +25,12 @@ import { API_URL } from '@/config/api';
 import { useApiFetch } from '@/config/apiFetch';
 import { PRIVACY_POLICY_URL, SUPPORT_URL, TERMS_URL } from '@/config/appLinks';
 import { registerPushToken } from '@/config/pushNotifications';
+import { trackEvent } from '@/config/analytics';
 
 let Notifications: typeof import('expo-notifications') | null = null;
-try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
+if (Platform.OS !== 'web') {
+  try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
+}
 
 export default function ProfileScreen() {
   const { user, token, logout, deleteAccount, updateUser } = useAuth();
@@ -68,6 +72,7 @@ export default function ProfileScreen() {
       .slice(0, 2);
 
   const handleLogout = () => {
+    trackEvent('profile_logout_initiated', { user_id: user?.id ?? null });
     Alert.alert('Esci', 'Vuoi uscire dal tuo account?', [
       { text: 'Annulla', style: 'cancel' },
       {
@@ -82,6 +87,7 @@ export default function ProfileScreen() {
   };
 
   const handleEnableNotifications = async () => {
+    trackEvent('profile_notifications_requested', { user_id: user?.id ?? null });
     if (!Notifications) {
       Alert.alert('Non disponibile', 'Le notifiche non sono supportate in questa modalità.');
       return;
@@ -292,7 +298,12 @@ export default function ProfileScreen() {
           <View style={[styles.cardGroup, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
             <TouchableOpacity
               activeOpacity={0.88}
-              onPress={() => setShowPhoneVerification(prev => !prev)}
+              onPress={() => {
+                if (!showPhoneVerification) {
+                  trackEvent('profile_phone_verification_initiated', { user_id: user?.id ?? null });
+                }
+                setShowPhoneVerification(prev => !prev);
+              }}
               style={[styles.rowButton, { borderBottomColor: showPhoneVerification ? theme.border : 'transparent' }]}
             >
               <View style={styles.rowLeft}>

@@ -2,7 +2,9 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 let Notifications: typeof import('expo-notifications') | null = null;
-try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
+if (Platform.OS !== 'web') {
+  try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
+}
 
 export type PushRegistrationResult =
   | { status: 'registered'; token: string }

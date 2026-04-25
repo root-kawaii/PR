@@ -1,4 +1,4 @@
-app = "pierre-two-backend-prod"
+app = "pierreclubs-backend-prod"
 primary_region = "fra"
 
 [build]
