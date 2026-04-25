@@ -13,8 +13,8 @@ The production workflow now reads these environment-scoped variables:
 | Variable | Example value | Purpose |
 | --- | --- | --- |
 | `APP_ENV` | `production` | Sets the mobile build environment and aligns analytics tags |
-| `API_URL` | `https://pierre-two-backend-prod.fly.dev` | Production backend URL used by build and deploy verification |
-| `FLY_APP_NAME` | `pierre-two-backend-prod` | Fly app name used by the production deploy workflow |
+| `API_URL` | `https://pierreclubs-backend-prod.fly.dev` | Production backend URL used by build and deploy verification |
+| `FLY_APP_NAME` | `pierreclubs-backend-prod` | Fly app name used by the production deploy workflow |
 | `EAS_BUILD_PROFILE` | `production` | EAS build profile for the production mobile build |
 | `SUPPORT_URL` | `https://pierre.app/support` | Mobile app support link |
 | `PRIVACY_URL` | `https://pierre.app/privacy` | Mobile app privacy policy link |
@@ -31,14 +31,13 @@ The production workflow expects these secrets in the `Production` environment, o
 | `PGDATABASE` | Production database name |
 | `PGSSLMODE` | Database SSL mode |
 | `EXPO_TOKEN` | Trigger EAS production builds |
-| `NETLIFY_AUTH_TOKEN` | Optional production dashboard deployment |
-| `NETLIFY_SITE_ID` | Optional production dashboard site |
+| `VERCEL_TOKEN` | Optional production dashboard deployment |
 
 ## Fly.io production app
 
 Production Fly app:
 
-- `pierre-two-backend-prod`
+- `pierreclubs-backend-prod`
 
 Required Fly secrets for production:
 
@@ -64,7 +63,7 @@ Recommended production values:
 
 - `APP_ENV=production`
 - `SERVICE_NAME=rust_BE`
-- `APP_BASE_URL=https://pierre-two-backend-prod.fly.dev` only if that domain is the correct public base URL for payment redirects
+- `APP_BASE_URL=https://pierreclubs-backend-prod.fly.dev` only if that domain is the correct public base URL for payment redirects
 
 ## Expo / EAS production config
 
@@ -93,14 +92,21 @@ Recommended production dashboard variables:
 - `VITE_POSTHOG_KEY`
 - `VITE_POSTHOG_HOST`
 
+Recommended production dashboard hosting model:
+
+- company-owned Vercel project linked from `pierre_dashboard/`
+- Vercel production URL used as `OWNER_APP_BASE_URL`
+- GitHub `Production` environment secret:
+  - `VERCEL_TOKEN`
+
 ## Suggested GitHub commands
 
 These commands set the non-sensitive production environment variables:
 
 ```bash
 gh variable set APP_ENV --env Production --body production
-gh variable set API_URL --env Production --body https://pierre-two-backend-prod.fly.dev
-gh variable set FLY_APP_NAME --env Production --body pierre-two-backend-prod
+gh variable set API_URL --env Production --body https://pierreclubs-backend-prod.fly.dev
+gh variable set FLY_APP_NAME --env Production --body pierreclubs-backend-prod
 gh variable set EAS_BUILD_PROFILE --env Production --body production
 gh variable set SUPPORT_URL --env Production --body https://pierre.app/support
 gh variable set PRIVACY_URL --env Production --body https://pierre.app/privacy
@@ -115,7 +121,17 @@ After configuration is complete:
 
 1. Confirm the `Production` GitHub environment contains the expected variables and secrets.
 2. Confirm Fly secrets include `APP_ENV=production`.
-3. Confirm the Fly app `pierre-two-backend-prod` has all required runtime secrets, including the new production `DATABASE_URL`.
+3. Confirm the Fly app `pierreclubs-backend-prod` has all required runtime secrets, including the new production `DATABASE_URL`.
 4. Run the production deploy workflow manually once.
 5. Verify the backend health check uses the production URL.
 6. Trigger one production EAS build and confirm it resolves the production API URL.
+
+## Related staging setup
+
+The company-owned staging backend app is:
+
+- `pierreclubs-backend-staging`
+
+Recommended staging database:
+
+- `postgresql://postgres:[PASSWORD]@db.cnvnugirbftyblxnkqbf.supabase.co:5432/postgres`

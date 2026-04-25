@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pierre Release Ops"
+  short_description: "Run Pierre staging and production release workflows."
+  default_prompt: "Use this skill to audit, deploy, or troubleshoot Pierre staging and production environments across Fly.io, Supabase, EAS/TestFlight, Vercel, GitHub Actions, Stripe, and PostHog."

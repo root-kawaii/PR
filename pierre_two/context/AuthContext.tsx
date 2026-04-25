@@ -2,10 +2,19 @@ import React, { createContext, useState, useContext, useEffect, useCallback, use
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 import { API_URL } from '../config/api';
 import { identifyAnalyticsUser, resetAnalytics, trackEvent } from '../config/analytics';
+import { getExpoExtraString } from '../config/expoExtra';
 import { configureNotificationHandler, registerPushToken } from '../config/pushNotifications';
 
-const TOKEN_KEY = 'auth_token';
-const USER_KEY = 'auth_user';
+const LEGACY_TOKEN_KEY = 'auth_token';
+const LEGACY_USER_KEY = 'auth_user';
+const authStorageNamespace = [
+  getExpoExtraString('appEnv') || 'development',
+  API_URL,
+]
+  .join(':')
+  .replace(/[^A-Za-z0-9._-]/g, '_');
+const TOKEN_KEY = `auth_token_${authStorageNamespace}`;
+const USER_KEY = `auth_user_${authStorageNamespace}`;
 
 // expo-secure-store and expo-notifications are only available in native builds (not Expo Go).
 // Fall back gracefully so the app works during local development.
@@ -119,6 +128,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         secureGet(TOKEN_KEY),
         secureGet(USER_KEY),
       ]);
+      await Promise.all([
+        secureDelete(LEGACY_TOKEN_KEY),
+        secureDelete(LEGACY_USER_KEY),
+      ]);
 
       if (savedToken && savedUser) {
         if (isTokenExpired(savedToken)) {
@@ -149,7 +162,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(null);
     setToken(null);
-    await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+    await Promise.all([
+      secureDelete(TOKEN_KEY),
+      secureDelete(USER_KEY),
+      secureDelete(LEGACY_TOKEN_KEY),
+      secureDelete(LEGACY_USER_KEY),
+    ]);
   }, [user]);
 
   const updateUser = useCallback(async (nextUser: User) => {
@@ -247,7 +265,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(null);
       setToken(null);
-      await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+      await Promise.all([
+        secureDelete(TOKEN_KEY),
+        secureDelete(USER_KEY),
+        secureDelete(LEGACY_TOKEN_KEY),
+        secureDelete(LEGACY_USER_KEY),
+      ]);
     },
     [token, user],
   );

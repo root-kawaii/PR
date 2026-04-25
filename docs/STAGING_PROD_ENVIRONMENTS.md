@@ -71,21 +71,24 @@ Verified live GitHub repository configuration on April 22, 2026:
   - no protection rules
   - no environment-scoped secrets visible
 - Current environment-scoped GitHub Actions variables in `Production`:
-  - `API_URL=https://pierre-two-backend-prod.fly.dev`
+  - `API_URL=https://pierreclubs-backend-prod.fly.dev`
   - `APP_ENV=production`
   - `EAS_BUILD_PROFILE=production`
-  - `FLY_APP_NAME=pierre-two-backend-prod`
+  - `FLY_APP_NAME=pierreclubs-backend-prod`
   - `PRIVACY_URL=https://pierre.app/privacy`
   - `SUPPORT_URL=https://pierre.app/support`
   - `TERMS_URL=https://pierre.app/terms`
 - Current environment-scoped GitHub Actions variables in `Staging`:
+  - `API_URL=https://pierreclubs-backend-staging.fly.dev`
   - `APP_ENV=staging`
   - `EAS_UPDATE_BRANCH=staging`
+  - `FLY_APP_NAME=pierreclubs-backend-staging`
 - Current repo-scoped GitHub Actions secrets:
   - `EXPO_TOKEN`
   - `FLY_API_TOKEN`
   - `NETLIFY_AUTH_TOKEN`
   - `NETLIFY_SITE_ID`
+  - future target: `VERCEL_TOKEN`
   - `PGDATABASE`
   - `PGHOST`
   - `PGPASSWORD`
@@ -104,10 +107,15 @@ Verified on April 22, 2026:
 - Fly apps under the account:
   - `pierre-two-backend`
   - `pierre-two-backend-prod`
+  - `pierreclubs-backend-prod`
+  - `pierreclubs-backend-staging`
   - `mariacho-backend`
   - `fly-builder-hidden-bush-872`
-- A new production-dedicated Fly app now exists:
-  - `pierre-two-backend-prod`
+- New production-dedicated Fly apps now exist:
+  - `pierre-two-backend-prod` under the older personal account
+  - `pierreclubs-backend-prod` under the new company-owned account
+- New staging-dedicated Fly app now exists:
+  - `pierreclubs-backend-staging` under the new company-owned account
 - There is still no separate Fly staging app for Pierre visible today.
 - `pierre-two-backend` status:
   - hostname: `pierre-two-backend.fly.dev`
@@ -116,8 +124,12 @@ Verified on April 22, 2026:
   - latest machine updates:
     - `2026-04-22T16:00:40Z`
     - `2026-04-21T22:46:50Z`
-- `pierre-two-backend-prod` status at creation time:
-  - hostname: `pierre-two-backend-prod.fly.dev`
+- `pierreclubs-backend-prod` status at creation time:
+  - hostname: `pierreclubs-backend-prod.fly.dev`
+  - app exists
+  - no image deployed yet
+- `pierreclubs-backend-staging` status at creation time:
+  - hostname: `pierreclubs-backend-staging.fly.dev`
   - app exists
   - no image deployed yet
 
@@ -171,11 +183,12 @@ That means the following could not be verified live from this machine:
 The staging OTA workflow is real and active, but the backend infrastructure is still single-environment:
 
 - old app: `pierre-two-backend`
-- new production app shell: `pierre-two-backend-prod`
-- current production workflow hostname: `https://pierre-two-backend-prod.fly.dev`
-- no visible staging Fly app
+- company-owned production app shell: `pierreclubs-backend-prod`
+- company-owned staging app shell: `pierreclubs-backend-staging`
+- current production workflow hostname: `https://pierreclubs-backend-prod.fly.dev`
+- current staging workflow hostname: `https://pierreclubs-backend-staging.fly.dev`
 
-Result: production is now being separated from the older shared app, but staging still does not have its own backend app.
+Result: both production and staging now have company-owned Fly app targets, but neither is fully deployable yet until the remaining runtime secrets are supplied and migrations are run.
 
 ### 2. Checked-in Expo profiles still point staging and production to the same backend URL
 
@@ -229,7 +242,7 @@ That means the production backend is likely reporting analytics and log environm
 
 ### 7. Dashboard deployment is not clearly wired in the current checked-in workflow set
 
-The repo has `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` secrets, which suggests Netlify is intended or was previously used.
+The repo has `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` secrets today, which suggests Netlify was previously used.
 
 However, the current checked-in `.github/workflows/deploy.yml` in this workspace does not contain a dashboard deployment job.
 
@@ -347,7 +360,7 @@ If `preview` remains, define it intentionally. Do not let it drift as an acciden
 
 Choose one deploy target and make it explicit.
 
-Because repo secrets already point toward Netlify, the most consistent short path is:
+Because the target is now Vercel, the most consistent short path is:
 
 - staging dashboard site
 - production dashboard site

@@ -64,6 +64,28 @@ pub async fn find_club_owner_by_id(pool: &PgPool, owner_id: Uuid) -> Result<Opti
     Ok(owner)
 }
 
+/// Update a club owner's password hash.
+pub async fn update_club_owner_password_hash(
+    pool: &PgPool,
+    owner_id: Uuid,
+    password_hash: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE club_owners
+        SET password_hash = $1,
+            updated_at = NOW()
+        WHERE id = $2
+        "#,
+    )
+    .bind(password_hash)
+    .bind(owner_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 // ============================================================================
 // Club images
 // ============================================================================
