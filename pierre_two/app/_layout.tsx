@@ -2,15 +2,10 @@ import { ThemeProvider as NavigationThemeProvider, Theme } from '@react-navigati
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import 'react-native-reanimated';
-import { StripeProvider } from '@stripe/stripe-react-native';
-import Constants from 'expo-constants';
-import * as Linking from 'expo-linking';
 import { PostHogProvider } from 'posthog-react-native';
-let Notifications: typeof import('expo-notifications') | null = null;
-try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
-
+import { StripeProvider } from '@/components/payments/StripeProvider';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import {
@@ -21,11 +16,10 @@ import {
   trackScreen,
 } from '../config/analytics';
 
-const stripePublishableKey = Constants.expoConfig?.extra?.stripePublishableKey || '';
-const stripeUrlScheme =
-  Constants.appOwnership === 'expo'
-    ? Linking.createURL('/--/')
-    : Linking.createURL('');
+let Notifications: typeof import('expo-notifications') | null = null;
+if (Platform.OS !== 'web') {
+  try { Notifications = require('expo-notifications'); } catch { /* Expo Go */ }
+}
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -152,10 +146,7 @@ function AnalyticsProvider({ children }: { children: ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <StripeProvider
-      publishableKey={stripePublishableKey}
-      urlScheme={stripeUrlScheme}
-    >
+    <StripeProvider>
       <AnalyticsProvider>
         <ThemeProvider>
           <AuthProvider>

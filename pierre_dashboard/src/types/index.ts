@@ -35,11 +35,16 @@ export interface StripeConnectStatus {
 }
 
 export interface StripeOnboardingLinkResponse {
-  connected_account_id: string;
-  onboarding_url: string;
-  onboarding_complete: boolean;
-  charges_enabled: boolean;
-  payouts_enabled: boolean;
+  connected_account_id?: string;
+  connectedAccountId?: string;
+  onboarding_url?: string;
+  onboardingUrl?: string;
+  onboarding_complete?: boolean;
+  onboardingComplete?: boolean;
+  charges_enabled?: boolean;
+  chargesEnabled?: boolean;
+  payouts_enabled?: boolean;
+  payoutsEnabled?: boolean;
 }
 
 export interface ClubImage {

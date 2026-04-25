@@ -18,8 +18,9 @@ import { Table, Event } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/context/ThemeContext";
 import { trackEvent } from "@/config/analytics";
-import { useStripe } from "@stripe/stripe-react-native";
+import { usePaymentSheet } from "@/components/payments/usePaymentSheet";
 import { API_URL } from "@/config/api";
+import { getExpoExtraString } from "@/config/expoExtra";
 
 type TableReservationModalProps = {
   visible: boolean;
@@ -34,11 +35,18 @@ export const TableReservationModal = ({
   event,
   onClose,
 }: TableReservationModalProps) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { theme } = useTheme();
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const {
+    configurePaymentSheet,
+    initPaymentSheet,
+    presentPaymentSheet,
+    isPaymentSheetAvailable,
+  } = usePaymentSheet();
   const [loading, setLoading] = useState(false);
   const paymentFlowInProgressRef = useRef(false);
+  const appEnv = getExpoExtraString("appEnv");
+  const isStaging = appEnv === "staging";
 
   useEffect(() => {
     if (visible) {
@@ -70,6 +78,9 @@ export const TableReservationModal = ({
 
   if (!table || !event) return null;
 
+  const isMissingStagingUserError = (message: string) =>
+    isStaging && message.toLowerCase().includes("utente non trovato");
+
   const handleReservation = async () => {
     if (!user) {
       Alert.alert("Errore", "Devi effettuare il login per prenotare un tavolo");
@@ -80,11 +91,26 @@ export const TableReservationModal = ({
       return;
     }
 
+    if (!isPaymentSheetAvailable) {
+      Alert.alert(
+        "Pagamento non disponibile",
+        "La prenotazione con pagamento funziona solo dall'app mobile."
+      );
+      trackEvent("table_reservation_payment_unavailable", {
+        event_id: event.id,
+        table_id: table.id,
+        platform: "web",
+      });
+      return;
+    }
+
     paymentFlowInProgressRef.current = true;
     setLoading(true);
 
     let failureTracked = false;
+    let lastStep = "start";
     const trackReservationFailure = (step: string, errorMessage: string) => {
+      lastStep = step;
       failureTracked = true;
       trackEvent("table_reservation_flow_failed", {
         event_id: event.id,
@@ -102,6 +128,7 @@ export const TableReservationModal = ({
       });
 
       // Step 1: Create Stripe PaymentIntent for owner's share
+      lastStep = "create_payment_intent_request";
       const paymentIntentResponse = await fetch(
         `${API_URL}/reservations/create-payment-intent`,
         {
@@ -122,10 +149,39 @@ export const TableReservationModal = ({
       if (!paymentIntentResponse.ok) {
         const errorText = await paymentIntentResponse.text();
         trackReservationFailure("create_payment_intent", errorText || "payment_intent_failed");
+        if (isMissingStagingUserError(errorText)) {
+          await logout();
+          onClose();
+          Alert.alert(
+            "Sessione staging scaduta",
+            "Accedi di nuovo nella app staging prima di riprovare il pagamento."
+          );
+          return;
+        }
         throw new Error(`Failed to create payment intent: ${errorText}`);
       }
 
       const paymentIntentData = await paymentIntentResponse.json();
+      const { error: configureError } = await configurePaymentSheet(
+        paymentIntentData.stripePublishableKey
+      );
+
+      if (configureError) {
+        trackReservationFailure(
+          "configure_payment_sheet",
+          configureError.message || "payment_sheet_config_failed"
+        );
+        Alert.alert(
+          "Errore",
+          isStaging && configureError.message
+            ? `Impossibile configurare il pagamento.\n\n${configureError.message}`
+            : "Impossibile configurare il pagamento. Riprova."
+        );
+        setLoading(false);
+        return;
+      }
+
+      lastStep = "init_payment_sheet";
 
       // Step 2: Present Stripe payment sheet for owner's share
       const { error: initError } = await initPaymentSheet({
@@ -136,7 +192,12 @@ export const TableReservationModal = ({
 
       if (initError) {
         trackReservationFailure("init_payment_sheet", initError.message || "payment_sheet_init_failed");
-        Alert.alert("Errore", "Impossibile inizializzare il pagamento. Riprova.");
+        Alert.alert(
+          "Errore",
+          isStaging && initError.message
+            ? `Impossibile inizializzare il pagamento.\n\n${initError.message}`
+            : "Impossibile inizializzare il pagamento. Riprova."
+        );
         setLoading(false);
         return;
       }
@@ -146,13 +207,19 @@ export const TableReservationModal = ({
         table_id: table.id,
       });
 
+      lastStep = "present_payment_sheet";
       const { error: presentError } = await presentPaymentSheet();
 
       if (presentError) {
         if (presentError.code !== "Canceled") {
           console.error("PaymentSheet present error:", presentError);
           trackReservationFailure("present_payment_sheet", presentError.message || "payment_sheet_failed");
-          Alert.alert("Errore", "Pagamento non riuscito. Riprova.");
+          Alert.alert(
+            "Errore",
+            isStaging && presentError.message
+              ? `Pagamento non riuscito.\n\n${presentError.message}`
+              : "Pagamento non riuscito. Riprova."
+          );
         } else {
           trackEvent("table_reservation_payment_cancelled", {
             event_id: event.id,
@@ -164,6 +231,7 @@ export const TableReservationModal = ({
       }
 
       // Step 3: Create reservation — generates the shared link
+      lastStep = "create_reservation_request";
       const reservationResponse = await fetch(
         `${API_URL}/reservations/create-with-payment`,
         {
@@ -189,6 +257,7 @@ export const TableReservationModal = ({
       }
 
       const data = await reservationResponse.json();
+      lastStep = "completed";
       const shareLink: string = data.shareLink || "";
 
       trackEvent("table_reservation_flow_completed", {
@@ -228,6 +297,29 @@ export const TableReservationModal = ({
         );
       }
       console.error("Reservation error:", error);
+      const errorMessage = error instanceof Error ? error.message : "unknown_error";
+      if (isMissingStagingUserError(errorMessage)) {
+        await logout();
+        onClose();
+        Alert.alert(
+          "Sessione staging scaduta",
+          "Accedi di nuovo nella app staging prima di riprovare il pagamento."
+        );
+        return;
+      }
+      if (isStaging) {
+        Alert.alert(
+          "Debug staging prenotazione",
+          [
+            `Step: ${lastStep}`,
+            `API: ${API_URL}`,
+            `Errore: ${errorMessage}`,
+            "",
+            "Non è stato possibile completare la prenotazione. Riprova più tardi.",
+          ].join("\n")
+        );
+        return;
+      }
       Alert.alert(
         "Errore",
         "Non è stato possibile completare la prenotazione. Riprova più tardi."

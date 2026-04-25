@@ -16,6 +16,10 @@ Use this skill when the task is about staging and production pipelines, environm
    - [`fly-status.md`](../../commands/fly-status.md)
    - [`eas-status.md`](../../commands/eas-status.md)
    - [`setup-production-env.md`](../../commands/setup-production-env.md)
+   - [`deploy-production-backend.md`](../../commands/deploy-production-backend.md)
+   - [`deploy-staging-backend.md`](../../commands/deploy-staging-backend.md)
+   - [`migrate-supabase-pooled.md`](../../commands/migrate-supabase-pooled.md)
+   - [`bootstrap-env-files.md`](../../commands/bootstrap-env-files.md)
 3. Distinguish clearly between:
    - checked-in repo config
    - live GitHub/Fly/Expo state
@@ -27,9 +31,11 @@ Use this skill when the task is about staging and production pipelines, environm
 
 - Treat `main` as the intended production branch and `staging` as the intended fast-iteration branch unless the user says otherwise.
 - Do not assume Expo, Fly, and GitHub use the same environment naming today. Verify and call out mismatches.
-- Treat the current Fly app `pierre-two-backend` as production unless a separate staging app is explicitly confirmed.
+- Treat the current company-owned Fly apps `pierreclubs-backend-prod` and `pierreclubs-backend-staging` as the intended targets unless the user says otherwise.
 - If Expo/EAS authentication is unavailable, stop the live Expo audit and document the gap instead of guessing.
 - If a workflow can deploy from arbitrary branches, call that out as a release-control risk.
+- Prefer Supabase pooled connection strings when running migrations from IPv4-only or restricted environments.
+- Keep checked-in env files as templates only. Never commit live secret values.
 
 ## Expected Output
 

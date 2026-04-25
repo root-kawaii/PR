@@ -13,23 +13,28 @@
     },
     "staging": {
       "autoIncrement": true,
-      "distribution": "internal",
+      "distribution": "store",
       "channel": "staging",
+      "environment": "preview",
       "env": {
         "APP_ENV": "staging",
-        "EXPO_PUBLIC_API_URL": "https://pierre-two-backend.fly.dev"
+        "EXPO_PUBLIC_API_URL": "https://pierreclubs-backend-staging.fly.dev",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "6c405b8b-7cb7-454f-a1a7-fb52014dcf35"
       }
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "environment": "preview"
     },
     "production": {
       "autoIncrement": true,
       "channel": "production",
+      "environment": "production",
       "env": {
         "APP_ENV": "production",
-        "EXPO_PUBLIC_API_URL": "https://pierre-two-backend.fly.dev"
+        "EXPO_PUBLIC_API_URL": "https://pierreclubs-backend-prod.fly.dev",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "6c405b8b-7cb7-454f-a1a7-fb52014dcf35"
       }
     }
   },
@@ -39,6 +44,10 @@
         "ascAppId": "6761366076"
       }
     },
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6761366768"
+      }
+    }
   }
 }
