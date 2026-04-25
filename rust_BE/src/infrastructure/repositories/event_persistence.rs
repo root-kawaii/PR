@@ -1,6 +1,99 @@
-use crate::models::{CreateEventRequest, Event, UpdateEventRequest};
-use sqlx::{PgPool, Result};
+use crate::models::{CreateEventRequest, Event, GenreResponse, UpdateEventRequest};
+use sqlx::{PgPool, QueryBuilder, Result};
+use std::collections::HashMap;
 use uuid::Uuid;
+
+// ---------------------------------------------------------------------------
+// Genre helpers
+// ---------------------------------------------------------------------------
+
+/// Row type for the batch-genres query
+#[derive(sqlx::FromRow)]
+struct EventGenreRow {
+    event_id: Uuid,
+    genre_id: Uuid,
+    name: String,
+    color: String,
+}
+
+/// Fetch all genres associated with a single event.
+pub async fn get_event_genres(pool: &PgPool, event_id: Uuid) -> Result<Vec<GenreResponse>> {
+    let rows = sqlx::query_as::<_, EventGenreRow>(
+        r#"
+        SELECT eg.event_id, g.id AS genre_id, g.name, g.color
+        FROM genres g
+        JOIN event_genres eg ON eg.genre_id = g.id
+        WHERE eg.event_id = $1
+        ORDER BY g.name
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| GenreResponse {
+            id: r.genre_id.to_string(),
+            name: r.name,
+            color: r.color,
+        })
+        .collect())
+}
+
+/// Fetch genres for multiple events in one query, grouped by event_id.
+pub async fn get_genres_for_events(
+    pool: &PgPool,
+    event_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<GenreResponse>>> {
+    if event_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sqlx::query_as::<_, EventGenreRow>(
+        r#"
+        SELECT eg.event_id, g.id AS genre_id, g.name, g.color
+        FROM genres g
+        JOIN event_genres eg ON eg.genre_id = g.id
+        WHERE eg.event_id = ANY($1)
+        ORDER BY g.name
+        "#,
+    )
+    .bind(event_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut map: HashMap<Uuid, Vec<GenreResponse>> = HashMap::new();
+    for r in rows {
+        map.entry(r.event_id).or_default().push(GenreResponse {
+            id: r.genre_id.to_string(),
+            name: r.name,
+            color: r.color,
+        });
+    }
+    Ok(map)
+}
+
+/// Replace the genre assignments for an event (delete-then-insert in the caller's transaction
+/// or as two separate statements — safe because ON DELETE CASCADE handles orphans).
+pub async fn set_event_genres(pool: &PgPool, event_id: Uuid, genre_ids: &[Uuid]) -> Result<()> {
+    sqlx::query("DELETE FROM event_genres WHERE event_id = $1")
+        .bind(event_id)
+        .execute(pool)
+        .await?;
+
+    if !genre_ids.is_empty() {
+        let mut qb: QueryBuilder<sqlx::Postgres> =
+            QueryBuilder::new("INSERT INTO event_genres (event_id, genre_id) ");
+        qb.push_values(genre_ids.iter(), |mut b, gid| {
+            b.push_bind(event_id).push_bind(gid);
+        });
+        qb.push(" ON CONFLICT DO NOTHING");
+        qb.build().execute(pool).await?;
+    }
+
+    Ok(())
+}
 
 /// Get all events with pagination (limit/offset)
 pub async fn get_all_events(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<Event>> {

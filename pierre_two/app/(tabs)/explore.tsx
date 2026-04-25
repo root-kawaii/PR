@@ -75,7 +75,7 @@ export default function SearchScreen() {
 
       return (
         fuzzyMatch(event.title, deferredSearchQuery) ||
-        fuzzyMatch(event.venue, deferredSearchQuery) ||
+        fuzzyMatch(event.venue ?? '', deferredSearchQuery) ||
         (event.description && fuzzyMatch(event.description, deferredSearchQuery))
       );
     });

@@ -4,8 +4,10 @@ import { Plus, ChevronRight, X, Pencil, Trash2 } from "lucide-react";
 import { useFetch } from "../hooks/useFetch";
 import { useAuth } from "../context/AuthContext";
 import { API_URL } from "../config/api";
-import type { EventResponse } from "../types";
+import type { EventResponse, Genre } from "../types";
 import { trackEvent } from "../config/analytics";
+import EventImageUpload from "../components/EventImageUpload";
+import { formatPrice, priceToApiString } from "../utils/currency";
 
 const MONTH_MAP: Record<string, number> = {
   GEN: 0,
@@ -65,7 +67,7 @@ function todayStr(): string {
 
 interface EventFormData {
   title: string;
-  venue: string;
+  venue: string; // hidden from UI — preserved on edit, "" for new events
   date: string;
   time: string;
   end_time: string;
@@ -74,6 +76,7 @@ interface EventFormData {
   age_limit: string;
   price: string;
   description: string;
+  genreIds: string[];
 }
 
 const emptyForm: EventFormData = {
@@ -87,14 +90,12 @@ const emptyForm: EventFormData = {
   age_limit: "",
   price: "",
   description: "",
+  genreIds: [],
 };
 
 export default function EventsPage() {
-  const {
-    data: events,
-    loading,
-    refetch,
-  } = useFetch<EventResponse[]>("/owner/events");
+  const { data: events, loading, refetch } = useFetch<EventResponse[]>("/owner/events");
+  const { data: genres } = useFetch<Genre[]>("/genres");
   const { token } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventResponse | null>(null);
@@ -141,7 +142,7 @@ export default function EventsPage() {
     setEditingEvent(event);
     setForm({
       title: event.title,
-      venue: event.venue,
+      venue: event.venue ?? "",
       date: extractEventDate(event.date) ?? "",
       time: event.time ?? extractEventTime(event.date),
       end_time: event.endTime ?? "",
@@ -150,8 +151,18 @@ export default function EventsPage() {
       age_limit: event.ageLimit ?? "",
       price: event.price ?? "",
       description: event.description ?? "",
+      genreIds: event.genres?.map((g) => g.id) ?? [],
     });
     setShowForm(true);
+  };
+
+  const toggleGenre = (id: string) => {
+    setForm((f) => ({
+      ...f,
+      genreIds: f.genreIds.includes(id)
+        ? f.genreIds.filter((g) => g !== id)
+        : [...f.genreIds, id],
+    }));
   };
 
   const handleDelete = async (e: React.MouseEvent, eventId: string) => {
@@ -178,7 +189,10 @@ export default function EventsPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-
+    trackEvent("owner_event_create_submitted", {
+      has_price: Boolean(form.price),
+      has_description: Boolean(form.description),
+    });
     try {
       const dateToSend = form.time ? `${form.date}T${form.time}:00` : form.date;
       const body = {
@@ -186,17 +200,13 @@ export default function EventsPage() {
         venue: form.venue,
         date: dateToSend,
         image: form.image,
-        status: form.status,
-        age_limit: form.age_limit,
-        end_time: form.end_time,
-        price: form.price,
-        description: form.description,
+        status: form.status || undefined,
+        age_limit: form.age_limit || undefined,
+        end_time: form.end_time || undefined,
+        price: priceToApiString(form.price),
+        description: form.description || undefined,
+        genre_ids: form.genreIds.length ? form.genreIds : undefined,
       };
-
-      trackEvent("owner_event_create_submitted", {
-        has_price: Boolean(form.price),
-        has_description: Boolean(form.description),
-      });
 
       const url = editingEvent
         ? `${API_URL}/owner/events/${editingEvent.id}`
@@ -280,6 +290,7 @@ export default function EventsPage() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Title *
@@ -291,17 +302,19 @@ export default function EventsPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
                 />
               </div>
+
+              {/* Locandina */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Venue *
+                  Locandina
                 </label>
-                <input
-                  value={form.venue}
-                  onChange={(e) => setForm({ ...form, venue: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                <EventImageUpload
+                  currentUrl={form.image || undefined}
+                  onUploaded={(url) => setForm((f) => ({ ...f, image: url }))}
                 />
               </div>
+
+              {/* Date + Start time */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -327,6 +340,8 @@ export default function EventsPage() {
                   />
                 </div>
               </div>
+
+              {/* End time + Age limit */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -356,6 +371,8 @@ export default function EventsPage() {
                   />
                 </div>
               </div>
+
+              {/* Status + Price */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -376,30 +393,55 @@ export default function EventsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Price
+                    Price{" "}
+                    <span className="text-gray-400 font-normal">
+                      (€, vuoto = gratis)
+                    </span>
                   </label>
                   <input
-                    type="text"
+                    type="number"
+                    min="0"
+                    step="0.50"
                     value={form.price}
                     onChange={(e) =>
                       setForm({ ...form, price: e.target.value })
                     }
-                    placeholder="es. 15 €"
+                    placeholder="15"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Image URL *
-                </label>
-                <input
-                  value={form.image}
-                  onChange={(e) => setForm({ ...form, image: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
-                />
-              </div>
+
+              {/* Genre pills */}
+              {genres && genres.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Generi
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {genres.map((g) => {
+                      const selected = form.genreIds.includes(g.id);
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          style={selected ? { backgroundColor: g.color } : {}}
+                          onClick={() => toggleGenre(g.id)}
+                          className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                            selected
+                              ? "text-white border-transparent"
+                              : "text-gray-700 border-gray-300 bg-white hover:bg-gray-50"
+                          }`}
+                        >
+                          {g.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Description
@@ -413,6 +455,7 @@ export default function EventsPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
                 />
               </div>
+
               <button
                 type="submit"
                 disabled={submitting}
@@ -468,7 +511,9 @@ export default function EventsPage() {
                         className="text-gray-400 group-hover:text-gray-600"
                       />
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">{event.venue}</p>
+                    {event.venue && (
+                      <p className="text-sm text-gray-500 mt-1">{event.venue}</p>
+                    )}
                     <p className="text-sm text-gray-500">
                       {extractEventDate(event.date) ?? event.date}
                       {displayTime && ` · ${displayTime}`}
@@ -485,11 +530,18 @@ export default function EventsPage() {
                           {event.ageLimit}
                         </span>
                       )}
-                      {event.price && (
-                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
-                          {event.price}
+                      <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
+                        {formatPrice(event.price)}
+                      </span>
+                      {event.genres?.map((g) => (
+                        <span
+                          key={g.id}
+                          style={{ backgroundColor: g.color }}
+                          className="text-xs text-white px-2 py-0.5 rounded font-medium"
+                        >
+                          {g.name}
                         </span>
-                      )}
+                      ))}
                     </div>
                   </div>
                 </Link>

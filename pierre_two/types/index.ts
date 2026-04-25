@@ -1,7 +1,7 @@
 export type Event = {
   id: string;
   title: string;
-  venue: string;
+  venue?: string;
   date: string;
   image: string;
   status?: string;
@@ -13,6 +13,7 @@ export type Event = {
   tourProvider?: 'marzipano' | 'kuula' | 'cloudpano';
   marzipanoScenes?: MarzipanoScene[]; // NEW: Marzipano 360° viewer configuration
   tables?: Table[];
+  genres?: Genre[];
 };
 
 export type Table = {

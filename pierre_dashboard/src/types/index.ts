@@ -102,10 +102,16 @@ export interface OwnerStats {
   events: EventStatRow[];
 }
 
+export interface Genre {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface EventResponse {
   id: string;
   title: string;
-  venue: string;
+  venue?: string;
   date: string;
   image: string;
   status?: string;
@@ -116,6 +122,7 @@ export interface EventResponse {
   description?: string;
   tourProvider?: string;
   marzipanoScenes?: unknown;
+  genres?: Genre[];
 }
 
 export interface TableResponse {
