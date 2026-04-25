@@ -4,6 +4,8 @@ use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use uuid::Uuid;
 
+use crate::models::genre::GenreResponse;
+
 #[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
 pub struct Event {
     pub id: Uuid,
@@ -41,6 +43,7 @@ pub struct CreateEventRequest {
     pub club_id: Option<Uuid>,
     pub tour_provider: Option<String>,
     pub marzipano_config: Option<JsonValue>,
+    pub genre_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +62,7 @@ pub struct UpdateEventRequest {
     pub club_id: Option<Uuid>,
     pub tour_provider: Option<String>,
     pub marzipano_config: Option<JsonValue>,
+    pub genre_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,6 +92,8 @@ pub struct EventResponse {
     #[serde(rename = "marzipanoScenes")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub marzipano_scenes: Option<JsonValue>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub genres: Vec<GenreResponse>,
 }
 
 impl From<Event> for EventResponse {
@@ -116,6 +122,7 @@ impl From<Event> for EventResponse {
             description: event.description,
             tour_provider: event.tour_provider,
             marzipano_scenes: event.marzipano_config,
+            genres: vec![],
         }
     }
 }

@@ -75,12 +75,14 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
             </ThemedText>
           </View>
 
-          <View style={styles.metaRow}>
-            <IconSymbol name="mappin" size={13} color={theme.textSecondary} />
-            <ThemedText style={[styles.metaText, { color: theme.textSecondary }]} numberOfLines={1}>
-              {event.venue}
-            </ThemedText>
-          </View>
+          {event.venue ? (
+            <View style={styles.metaRow}>
+              <IconSymbol name="mappin" size={13} color={theme.textSecondary} />
+              <ThemedText style={[styles.metaText, { color: theme.textSecondary }]} numberOfLines={1}>
+                {event.venue}
+              </ThemedText>
+            </View>
+          ) : null}
 
           <View style={styles.metaRow}>
             <IconSymbol name="calendar" size={13} color={theme.textTertiary} />
@@ -88,6 +90,16 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
               {event.date}
             </ThemedText>
           </View>
+
+          {event.genres && event.genres.length > 0 && (
+            <View style={styles.genreRow}>
+              {event.genres.map(g => (
+                <View key={g.id} style={[styles.genreBadge, { backgroundColor: g.color }]}>
+                  <ThemedText style={styles.genreBadgeText}>{g.name}</ThemedText>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.footerRow}>
             <View style={[styles.ctaPill, { backgroundColor: theme.primary }]}>
@@ -218,6 +230,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '500',
+  },
+  genreRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  genreBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  genreBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   footerRow: {
     flexDirection: 'row',

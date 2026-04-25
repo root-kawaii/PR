@@ -3,6 +3,7 @@ pub mod auth_controller;
 pub mod club_controller;
 pub mod club_owner_controller;
 pub mod event_controller;
+pub mod event_image_controller;
 pub mod genre_controller;
 pub mod payment_controller;
 pub mod table_controller;
