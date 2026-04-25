@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Plus, ChevronRight, X, Pencil, Trash2 } from "lucide-react";
 import { useFetch } from "../hooks/useFetch";
@@ -94,23 +94,16 @@ const emptyForm: EventFormData = {
 };
 
 export default function EventsPage() {
-  const { data: events, loading, refetch } = useFetch<EventResponse[]>("/owner/events");
+  const [filterDate, setFilterDate] = useState(todayStr());
+  const { data: events, loading, refetch } = useFetch<EventResponse[]>(`/owner/events?from_date=${filterDate}`);
   const { data: genres } = useFetch<Genre[]>("/genres");
   const { token } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EventResponse | null>(null);
   const [form, setForm] = useState<EventFormData>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
-  const [filterDate, setFilterDate] = useState(todayStr());
 
-  const filteredEvents = useMemo(() => {
-    if (!events) return [];
-    return events.filter((event) => {
-      const eventDate = extractEventDate(event.date);
-      if (!eventDate) return true;
-      return eventDate >= filterDate;
-    });
-  }, [events, filterDate]);
+  const filteredEvents = events ?? [];
 
   const closeForm = () => {
     setShowForm(false);
@@ -270,7 +263,7 @@ export default function EventsPage() {
           className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900 text-sm"
         />
         <span className="text-sm text-gray-500">
-          {filteredEvents.length} of {events?.length ?? 0} events
+          {filteredEvents.length} events
         </span>
       </div>
 
@@ -477,9 +470,7 @@ export default function EventsPage() {
       {/* Events list */}
       {!filteredEvents.length ? (
         <p className="text-gray-500">
-          {events?.length
-            ? "No events from this date onwards."
-            : "No events yet. Create your first event."}
+          No events from this date onwards.
         </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
