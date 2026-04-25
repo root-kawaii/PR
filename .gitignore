@@ -25,4 +25,6 @@ rust_BE/server.log
 
 
 .claude/
-.vercel
+
+# Local Netlify folder
+.netlify

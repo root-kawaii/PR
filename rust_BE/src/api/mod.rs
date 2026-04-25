@@ -50,6 +50,7 @@ pub fn build_router(app_state: Arc<AppState>) -> Router {
         .route("/health", get(health_check))
         .merge(crate::api::routers::auth::router())
         .merge(crate::api::routers::events::router())
+        .merge(crate::api::routers::genres::router())
         .merge(crate::api::routers::clubs::router())
         .merge(crate::api::routers::tickets::router())
         .merge(crate::api::routers::reservations::router())

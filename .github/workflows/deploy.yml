@@ -19,6 +19,11 @@ on:
         required: false
         type: boolean
         default: true
+      deploy_dashboard:
+        description: "Deploy dashboard to Netlify"
+        required: false
+        type: boolean
+        default: true
       build_app:
         description: "Trigger EAS production build"
         required: false
@@ -41,7 +46,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install PostgreSQL client
         run: |
@@ -145,7 +150,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
@@ -172,6 +177,42 @@ jobs:
             exit 1
           fi
 
+  deploy_dashboard:
+    name: Deploy Dashboard to Netlify
+    runs-on: ubuntu-latest
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') || github.event.inputs.deploy_dashboard == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: pierre_dashboard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./pierre_dashboard
+        run: npm ci
+
+      - name: Build dashboard
+        working-directory: ./pierre_dashboard
+        env:
+          VITE_API_URL: https://pierre-two-backend.fly.dev
+        run: npm run build
+
+      - name: Deploy to Netlify
+        uses: nwtgck/actions-netlify@v3
+        with:
+          publish-dir: ./pierre_dashboard/dist
+          production-deploy: true
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
   build_app:
     name: Build Production App With EAS
     runs-on: ubuntu-latest
@@ -189,12 +230,12 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: pierre_two/package-lock.json
 
@@ -224,9 +265,7 @@ jobs:
   summary:
     name: Production Deployment Summary
     runs-on: ubuntu-latest
-    needs: [migrations, deploy_backend, build_app]
-    environment:
-      name: Production
+    needs: [migrations, deploy_backend, deploy_dashboard, build_app]
     if: always()
 
     steps:
@@ -245,6 +284,7 @@ jobs:
           echo "## Jobs Status" >> $GITHUB_STEP_SUMMARY
           echo "- Migrations: ${{ needs.migrations.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Backend Deploy: ${{ needs.deploy_backend.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Dashboard Deploy: ${{ needs.deploy_dashboard.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- App Build: ${{ needs.build_app.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 

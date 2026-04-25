@@ -7,8 +7,24 @@ import { API_URL } from '../config/api';
 import type { TableReservation, TableResponse } from '../types';
 import { trackEvent } from '../config/analytics';
 
-interface ReservationsData {
-  reservations: TableReservation[];
+// Matches the flat TableReservationResponse from the backend
+interface OwnerReservation {
+  id: string;
+  reservationCode: string;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  numPeople: number;
+  totalAmount: string;
+  amountPaid: string;
+  amountRemaining: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  specialRequests?: string;
+  tableId: string;
+  eventId: string;
+  isManual: boolean;
+  manualNotes?: string;
+  createdAt: string;
 }
 
 interface TablesData {
@@ -33,7 +49,7 @@ export default function EventReservationsPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { token } = useAuth();
 
-  const { data, loading, refetch } = useFetch<ReservationsData>(`/owner/events/${eventId}/reservations`);
+  const { data: reservationsData, loading, refetch } = useFetch<OwnerReservation[]>(`/owner/events/${eventId}/reservations`);
   const { data: tablesData } = useFetch<TablesData>(`/owner/events/${eventId}/tables`);
 
   const [search, setSearch] = useState('');
@@ -52,8 +68,10 @@ export default function EventReservationsPage() {
   // Status change
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const reservations = data?.reservations ?? [];
+  const reservations = reservationsData ?? [];
   const tables = tablesData?.tables ?? [];
+
+  const getTable = (tableId: string) => tables.find(t => t.id === tableId);
 
   useEffect(() => {
     if (loading || !eventId) {
@@ -67,11 +85,12 @@ export default function EventReservationsPage() {
   }, [eventId, loading, reservations.length]);
 
   const filtered = reservations.filter((r) => {
+    const table = getTable(r.tableId);
     const matchesSearch =
       search === '' ||
       r.contactName.toLowerCase().includes(search.toLowerCase()) ||
       r.reservationCode.toLowerCase().includes(search.toLowerCase()) ||
-      r.table.name.toLowerCase().includes(search.toLowerCase());
+      (table?.name ?? '').toLowerCase().includes(search.toLowerCase());
     const matchesStatus = filterStatus === 'all' || r.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -229,6 +248,7 @@ export default function EventReservationsPage() {
         </p>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -263,8 +283,8 @@ export default function EventReservationsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-sm">
-                    {r.table.name}
-                    {r.table.zone && <span className="text-gray-400"> · {r.table.zone}</span>}
+                    {getTable(r.tableId)?.name ?? r.tableId}
+                    {getTable(r.tableId)?.zone && <span className="text-gray-400"> · {getTable(r.tableId)?.zone}</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-sm">{r.numPeople}</td>
                   <td className="px-4 py-3 text-gray-600 text-sm">
@@ -300,6 +320,7 @@ export default function EventReservationsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -349,11 +370,12 @@ export default function EventReservationsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     <Phone size={14} className="inline mr-1" />
-                    Telefono
+                    Telefono *
                   </label>
                   <input
                     value={formPhone}
                     onChange={e => setFormPhone(e.target.value)}
+                    required
                     placeholder="+39 333 1234567"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
                   />

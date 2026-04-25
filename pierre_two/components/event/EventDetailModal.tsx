@@ -55,7 +55,7 @@ export const EventDetailModal = ({
     trackEvent("event_detail_opened", {
       event_id: event.id,
       event_title: event.title,
-      venue: event.venue,
+      venue: event.venue ?? '',
     });
   }, [event?.id, visible]);
 
@@ -114,10 +114,21 @@ export const EventDetailModal = ({
                   <IconSymbol name="calendar" size={16} color={theme.textSecondary} />
                   <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>{event.date}</ThemedText>
                 </View>
-                <View style={styles.modalDateRow}>
-                  <IconSymbol name="mappin" size={16} color={theme.textSecondary} />
-                  <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>{event.venue}</ThemedText>
-                </View>
+                {event.venue ? (
+                  <View style={styles.modalDateRow}>
+                    <IconSymbol name="mappin" size={16} color={theme.textSecondary} />
+                    <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>{event.venue}</ThemedText>
+                  </View>
+                ) : null}
+                {event.genres && event.genres.length > 0 && (
+                  <View style={styles.genreRow}>
+                    {event.genres.map(g => (
+                      <View key={g.id} style={[styles.genreBadge, { backgroundColor: g.color }]}>
+                        <ThemedText style={styles.genreBadgeText}>{g.name}</ThemedText>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             </View>
 
@@ -236,6 +247,24 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     marginBottom: 6,
+  },
+  genreRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 8,
+  },
+  genreBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  genreBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   eventTagText: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
   modalTitle: { fontSize: 30, fontWeight: "bold", marginBottom: 4, lineHeight: 34 },

@@ -431,3 +431,122 @@ http POST :3000/payments sender_id=user_123 receiver_id=venue_456 amount=250.00
 - Event availability changes
 - Payment status updates
 - Reservation confirmations
+
+---
+
+## Owner API (JWT — role: club_owner)
+
+All routes require `Authorization: Bearer <token>` where the token carries `role = "club_owner"`.
+
+### Club
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/owner/club` | Get own club |
+| `PUT` | `/owner/club` | Update club settings |
+| `GET` | `/owner/club/images` | List club images |
+| `POST` | `/owner/club/images` | Add image |
+| `DELETE` | `/owner/club/images/:id` | Delete image |
+
+### Events
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/owner/events` | List all events for the owner's club |
+| `POST` | `/owner/events` | Create an event (club_id forced to owner's club) |
+| `PUT` | `/owner/events/:id` | Update event (ownership verified) |
+| `DELETE` | `/owner/events/:id` | Delete event + cascade tables/reservations |
+
+**Create/Update event body**:
+```json
+{
+  "title": "Neon Night",
+  "venue": "Club XYZ",
+  "date": "2026-04-05T23:00:00",
+  "image": "https://...",
+  "status": "HOT",
+  "age_limit": "18+",
+  "end_time": "06:00",
+  "price": "15 €",
+  "description": "..."
+}
+```
+
+**EventResponse**:
+```json
+{
+  "id": "uuid",
+  "title": "Neon Night",
+  "venue": "Club XYZ",
+  "date": "2026-04-05T23:00:00",
+  "image": "https://...",
+  "status": "HOT",
+  "time": "23:00",
+  "ageLimit": "18+",
+  "endTime": "06:00",
+  "price": "15 €",
+  "description": "..."
+}
+```
+
+### Tables
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/owner/events/:id/tables` | List tables for event |
+| `POST` | `/owner/events/:id/tables` | Create table |
+| `GET` | `/owner/tables/:id/images` | List table images |
+| `POST` | `/owner/tables/:id/images` | Add table image |
+| `DELETE` | `/owner/table-images/:id` | Delete table image |
+
+### Reservations
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/owner/events/:id/reservations` | List reservations for event |
+| `POST` | `/owner/events/:id/reservations/manual` | Create manual reservation (no Stripe) |
+| `PATCH` | `/owner/reservations/:id/status` | Update reservation status |
+
+### QR / Check-in
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/owner/scan/:code` | Resolve a QR code (read-only) |
+| `POST` | `/owner/checkin/:code` | Check in by code (marks ticket/reservation as used) |
+
+**ScanResult response**:
+```json
+{
+  "valid": true,
+  "already_used": false,
+  "scan_type": "reservation",
+  "guest_name": "Mario Rossi",
+  "num_people": 4,
+  "event_title": "Neon Night",
+  "table_name": "VIP-1",
+  "code": "RES-XXXX"
+}
+```
+
+### Stats
+
+```http
+GET /owner/stats
+```
+
+**OwnerStats response**:
+```json
+{
+  "activeReservations": 12,
+  "totalRevenue": "3400.00",
+  "events": [
+    {
+      "eventId": "uuid",
+      "title": "Neon Night",
+      "date": "2026-04-05T23:00:00",
+      "reservedTables": 3,
+      "totalTables": 8
+    }
+  ]
+}
+```
