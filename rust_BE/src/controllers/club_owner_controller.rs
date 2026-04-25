@@ -1383,3 +1383,198 @@ pub async fn get_owner_stats_handler(
 
     Ok(Json(stats))
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Marzipano config — club-level
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+pub struct MarzipanoConfigPayload {
+    pub scenes: Option<serde_json::Value>,
+    #[serde(rename = "tablePositions")]
+    pub table_positions: Option<Vec<TablePositionItem>>,
+    #[serde(rename = "areaPositions")]
+    pub area_positions: Option<Vec<AreaPositionItem>>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct TablePositionItem {
+    #[serde(rename = "tableId")]
+    pub table_id: String,
+    #[serde(rename = "sceneId")]
+    pub scene_id: String,
+    pub yaw: f64,
+    pub pitch: f64,
+}
+
+#[derive(serde::Deserialize)]
+pub struct AreaPositionItem {
+    #[serde(rename = "areaId")]
+    pub area_id: String,
+    #[serde(rename = "sceneId")]
+    pub scene_id: String,
+    pub yaw: f64,
+    pub pitch: f64,
+}
+
+pub async fn update_club_marzipano_config_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Json(payload): Json<MarzipanoConfigPayload>,
+) -> Result<StatusCode, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    club_persistence::update_marzipano_config(&state.db_pool, club.id, payload.scenes)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    for tp in payload.table_positions.unwrap_or_default() {
+        let table_id = Uuid::parse_str(&tp.table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+        let position = serde_json::json!({
+            "sceneId": tp.scene_id,
+            "yaw": tp.yaw,
+            "pitch": tp.pitch,
+        });
+        table_persistence::update_marzipano_position(&state.db_pool, table_id, Some(position))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    for ap in payload.area_positions.unwrap_or_default() {
+        let area_id = Uuid::parse_str(&ap.area_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+        let position = serde_json::json!({
+            "sceneId": ap.scene_id,
+            "yaw": ap.yaw,
+            "pitch": ap.pitch,
+        });
+        crate::application::area_service::update_marzipano_position(
+            &state.db_pool,
+            area_id,
+            Some(position),
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    Ok(StatusCode::OK)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Marzipano config — event-level override
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn update_event_marzipano_config_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<Uuid>,
+    Json(payload): Json<MarzipanoConfigPayload>,
+) -> Result<StatusCode, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, event_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    event_persistence::update_marzipano_config(&state.db_pool, event_id, payload.scenes)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    for tp in payload.table_positions.unwrap_or_default() {
+        let table_id = Uuid::parse_str(&tp.table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+        let position = serde_json::json!({
+            "sceneId": tp.scene_id,
+            "yaw": tp.yaw,
+            "pitch": tp.pitch,
+        });
+        table_persistence::update_marzipano_position(&state.db_pool, table_id, Some(position))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    for ap in payload.area_positions.unwrap_or_default() {
+        let area_id = Uuid::parse_str(&ap.area_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+        let position = serde_json::json!({
+            "sceneId": ap.scene_id,
+            "yaw": ap.yaw,
+            "pitch": ap.pitch,
+        });
+        crate::application::area_service::update_marzipano_position(
+            &state.db_pool,
+            area_id,
+            Some(position),
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    Ok(StatusCode::OK)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Panorama upload
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn upload_panorama_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    mut multipart: axum::extract::Multipart,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let max_bytes = state.storage.max_bytes();
+
+    let mut filename = String::from("panorama.jpg");
+    let mut content_type = String::from("image/jpeg");
+    let mut file_bytes: Vec<u8> = Vec::new();
+
+    while let Some(field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+        let field_name = field.name().unwrap_or("").to_string();
+        if field_name == "file" {
+            if let Some(name) = field.file_name() {
+                filename = name.to_string();
+            }
+            if let Some(ct) = field.content_type() {
+                content_type = ct.to_string();
+            }
+            file_bytes = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?.to_vec();
+        }
+    }
+
+    if file_bytes.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if file_bytes.len() > max_bytes {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    let result = state
+        .storage
+        .upload_panorama(&club.id.to_string(), &filename, &content_type, file_bytes)
+        .await
+        .map_err(|e| {
+            warn!("panorama upload failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(serde_json::json!({
+        "publicUrl": result.public_url,
+        "objectKey": result.object_key,
+    })))
+}
