@@ -5,12 +5,12 @@ use axum::{routing::get, Router};
 use crate::bootstrap::state::AppState;
 use crate::controllers::club_owner_controller::{
     add_my_club_image, add_table_image_handler, checkin_handler, create_club_event,
-    create_club_table, create_manual_reservation_handler,
-    create_my_club_stripe_onboarding_link, delete_club_event, delete_my_club_image,
-    delete_table_image_handler, get_event_reservations_handler, get_my_club,
-    get_my_club_events, get_my_club_images, get_my_club_stripe_status, get_my_club_tables,
-    get_owner_stats_handler, get_table_images_handler, scan_code_handler, update_club_event,
-    update_my_club, update_reservation_status_handler,
+    create_club_table, create_manual_reservation_handler, create_my_club_stripe_onboarding_link,
+    delete_club_event, delete_my_club_image, delete_table_image_handler,
+    get_event_reservations_handler, get_my_club, get_my_club_events, get_my_club_images,
+    get_my_club_stripe_status, get_my_club_tables, get_owner_stats_handler,
+    get_table_images_handler, scan_code_handler, update_club_event, update_my_club,
+    update_reservation_status_handler,
 };
 use crate::controllers::event_image_controller::upload_event_image;
 

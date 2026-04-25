@@ -63,9 +63,11 @@ pub async fn enqueue_push_notification_for_user(
     .filter(|token| !token.is_empty());
 
     match push_token {
-        Some(token) => enqueue_push_notification(pool, &token, title, body, aggregate_type, aggregate_id)
-            .await
-            .map(Some),
+        Some(token) => {
+            enqueue_push_notification(pool, &token, title, body, aggregate_type, aggregate_id)
+                .await
+                .map(Some)
+        }
         None => Ok(None),
     }
 }

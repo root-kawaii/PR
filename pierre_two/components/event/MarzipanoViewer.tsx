@@ -52,6 +52,51 @@ export const MarzipanoViewer = forwardRef<
   // Track initialization
   const initializedRef = useRef(false);
 
+  const buildViewerConfig = useCallback(() => {
+    const availabilityMap: Record<string, boolean> = {};
+    tables.forEach((table) => {
+      availabilityMap[table.id] = table.available;
+    });
+
+    const scenesWithHotspots = scenes.map((scene) => ({
+      id: scene.id,
+      name: scene.name,
+      imageUrl: scene.imageUrl,
+      initialView: scene.initialView,
+      hotspots: [
+        ...scene.hotspots.map((h) => ({
+          id: h.id,
+          type: h.type,
+          yaw: h.yaw,
+          pitch: h.pitch,
+          targetSceneId: h.targetSceneId,
+          label: h.label,
+        })),
+        ...tables
+          .filter((table) => table.marzipanoPosition?.sceneId === scene.id)
+          .map((table) => ({
+            id: `table-${table.id}`,
+            type: "table" as const,
+            yaw: table.marzipanoPosition!.yaw,
+            pitch: table.marzipanoPosition!.pitch,
+            tableId: table.id,
+            tableName: table.name,
+            available: table.available,
+            capacity: table.capacity,
+            minSpend: table.minSpend.replace(" €", ""),
+            totalCost: table.totalCost.replace(" €", ""),
+            features: table.features || [],
+            locationDescription: table.locationDescription,
+          })),
+      ],
+    }));
+
+    return {
+      scenes: scenesWithHotspots,
+      availabilityMap,
+    };
+  }, [scenes, tables]);
+
   // Expose methods to parent via ref
   useImperativeHandle(
     ref,
@@ -98,50 +143,7 @@ export const MarzipanoViewer = forwardRef<
     initializedRef.current = true;
 
     try {
-      // Build availability map
-      const availabilityMap: Record<string, boolean> = {};
-      tables.forEach((table) => {
-        availabilityMap[table.id] = table.available;
-      });
-
-      // Build scenes with hotspots - only include serializable data
-      const scenesWithHotspots = scenes.map((scene) => ({
-        id: scene.id,
-        name: scene.name,
-        imageUrl: scene.imageUrl,
-        initialView: scene.initialView,
-        hotspots: [
-          ...scene.hotspots.map((h) => ({
-            id: h.id,
-            type: h.type,
-            yaw: h.yaw,
-            pitch: h.pitch,
-            targetSceneId: h.targetSceneId,
-            label: h.label,
-          })),
-          ...tables
-            .filter((table) => table.marzipanoPosition?.sceneId === scene.id)
-            .map((table) => ({
-              id: `table-${table.id}`,
-              type: "table" as const,
-              yaw: table.marzipanoPosition!.yaw,
-              pitch: table.marzipanoPosition!.pitch,
-              tableId: table.id,
-              tableName: table.name,
-              available: table.available,
-              capacity: table.capacity,
-              minSpend: table.minSpend.replace(' €', ''),
-              totalCost: table.totalCost.replace(' €', ''),
-              features: table.features || [],
-              locationDescription: table.locationDescription,
-            })),
-        ],
-      }));
-
-      const config = {
-        scenes: scenesWithHotspots,
-        availabilityMap,
-      };
+      const config = buildViewerConfig();
 
       // Test serialization first
       const configStr = JSON.stringify(config);
@@ -166,7 +168,27 @@ export const MarzipanoViewer = forwardRef<
       console.error("Failed to serialize config:", err);
       setError("Failed to initialize viewer");
     }
-  }, [viewerReady]); // Only depend on viewerReady - data is captured when effect runs
+  }, [viewerReady, buildViewerConfig]);
+
+  useEffect(() => {
+    if (!viewerReady || !initializedRef.current || !webViewRef.current) {
+      return;
+    }
+
+    try {
+      const configStr = JSON.stringify(buildViewerConfig());
+      webViewRef.current.injectJavaScript(`
+        try {
+          window.syncMarzipanoViewer(${configStr});
+        } catch (e) {
+          console.error('🔴 Error syncing Marzipano viewer:', e.message, e.stack);
+        }
+        true;
+      `);
+    } catch (err) {
+      console.error("Failed to sync viewer config:", err);
+    }
+  }, [buildViewerConfig, viewerReady]);
 
   // Stable message handler using refs
   const handleMessage = useCallback((event: WebViewMessageEvent) => {

@@ -48,7 +48,9 @@ fn compute_application_fee_cents(
     let percent = commission_percent.unwrap_or(Decimal::ZERO);
     let fixed_fee = commission_fixed_fee.unwrap_or(Decimal::ZERO);
     let percent_fee = (total_amount * percent / Decimal::new(100, 0)).round_dp(2);
-    let fee = (percent_fee + fixed_fee).max(Decimal::ZERO).min(total_amount);
+    let fee = (percent_fee + fixed_fee)
+        .max(Decimal::ZERO)
+        .min(total_amount);
     ((fee.to_f64().unwrap_or(0.0) * 100.0).round()) as i64
 }
 
@@ -1375,7 +1377,10 @@ pub async fn create_payment_link_checkout(
         .collect(),
     );
 
-    if let Some(config) = club_connect_config.as_ref().filter(|cfg| can_route_funds_to_connected_account(cfg)) {
+    if let Some(config) = club_connect_config
+        .as_ref()
+        .filter(|cfg| can_route_funds_to_connected_account(cfg))
+    {
         let destination = config
             .stripe_connected_account_id
             .clone()

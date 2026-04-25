@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { API_URL } from '../config/api';
 import { useAuth } from '../context/AuthContext';
+import { getSafeImageUrl } from '../utils/image';
 
 type UploadState = 'idle' | 'uploading' | 'done' | 'error';
 
@@ -15,6 +16,7 @@ export default function EventImageUpload({ currentUrl, onUploaded }: EventImageU
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [preview, setPreview] = useState<string | null>(currentUrl ?? null);
   const [error, setError] = useState<string | null>(null);
+  const previewSrc = getSafeImageUrl(preview, { allowBlob: true });
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -53,9 +55,9 @@ export default function EventImageUpload({ currentUrl, onUploaded }: EventImageU
 
   return (
     <div>
-      {preview ? (
+      {previewSrc ? (
         <div className="relative w-full h-40 rounded-lg overflow-hidden border border-gray-200 mb-2">
-          <img src={preview} alt="Locandina" className="w-full h-full object-cover" />
+          <img src={previewSrc} alt="Locandina" className="w-full h-full object-cover" />
           {uploadState === 'uploading' && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />

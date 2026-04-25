@@ -184,9 +184,11 @@ impl AppConfig {
             .unwrap_or(3000);
 
         let supabase_url = env::var("SUPABASE_URL").ok().filter(|s| !s.is_empty());
-        let supabase_service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY").ok().filter(|s| !s.is_empty());
-        let event_images_bucket = env::var("SUPABASE_EVENT_IMAGES_BUCKET")
-            .unwrap_or_else(|_| "event-images".to_string());
+        let supabase_service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let event_images_bucket =
+            env::var("SUPABASE_EVENT_IMAGES_BUCKET").unwrap_or_else(|_| "event-images".to_string());
 
         Self {
             database: DatabaseConfig {

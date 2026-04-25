@@ -1,7 +1,9 @@
 use crate::application::auth_service as user_persistence;
 use crate::application::outbox_service;
 use crate::middleware::auth::{AuthUser, SmsVerificationUser};
-use crate::models::{ApiError, AppState, AuthResponse, LoginRequest, RegisterRequest, User, UserResponse};
+use crate::models::{
+    ApiError, AppState, AuthResponse, LoginRequest, RegisterRequest, User, UserResponse,
+};
 use crate::services::sms_service;
 use crate::utils::jwt;
 use axum::{body::Bytes, extract::State, http::StatusCode, Json};
@@ -612,17 +614,20 @@ pub async fn send_sms_verification(
 ) -> Result<Json<SendSmsResponse>, (StatusCode, Json<ApiError>)> {
     let user_uuid = Uuid::parse_str(&claims.sub)
         .map_err(|_| ApiError::new(StatusCode::UNAUTHORIZED, "Sessione non valida"))?;
-    let normalized_phone_number = normalize_phone_number(&payload.phone_number).ok_or_else(|| {
-        ApiError::new(
-            StatusCode::BAD_REQUEST,
-            "Inserisci un numero di cellulare valido in formato internazionale",
-        )
-    })?;
+    let normalized_phone_number =
+        normalize_phone_number(&payload.phone_number).ok_or_else(|| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "Inserisci un numero di cellulare valido in formato internazionale",
+            )
+        })?;
 
     match user_persistence::find_user_by_id(&state.db_pool, user_uuid).await {
         Ok(Some(existing_user)) => {
             if existing_user.phone_number.as_deref() != Some(normalized_phone_number.as_str()) {
-                match user_persistence::find_user_by_phone(&state.db_pool, &normalized_phone_number).await {
+                match user_persistence::find_user_by_phone(&state.db_pool, &normalized_phone_number)
+                    .await
+                {
                     Ok(Some(other_user)) if other_user.id != user_uuid => {
                         return Err(ApiError::new(
                             StatusCode::CONFLICT,
@@ -632,7 +637,10 @@ pub async fn send_sms_verification(
                     Ok(_) => {}
                     Err(error) => {
                         tracing::error!(error = %error, "DB error checking phone uniqueness before SMS send");
-                        return Err(ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+                        return Err(ApiError::new(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Errore interno",
+                        ));
                     }
                 }
             }
@@ -640,7 +648,10 @@ pub async fn send_sms_verification(
         Ok(None) => return Err(ApiError::new(StatusCode::NOT_FOUND, "Account non trovato")),
         Err(error) => {
             tracing::error!(error = %error, "DB error loading user before SMS send");
-            return Err(ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+            return Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore interno",
+            ));
         }
     }
 
@@ -697,12 +708,13 @@ pub async fn verify_sms_code(
 ) -> Result<Json<VerifySmsResponse>, (StatusCode, Json<ApiError>)> {
     let user_uuid = Uuid::parse_str(&claims.sub)
         .map_err(|_| ApiError::new(StatusCode::UNAUTHORIZED, "Sessione non valida"))?;
-    let normalized_phone_number = normalize_phone_number(&payload.phone_number).ok_or_else(|| {
-        ApiError::new(
-            StatusCode::BAD_REQUEST,
-            "Inserisci un numero di cellulare valido in formato internazionale",
-        )
-    })?;
+    let normalized_phone_number =
+        normalize_phone_number(&payload.phone_number).ok_or_else(|| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "Inserisci un numero di cellulare valido in formato internazionale",
+            )
+        })?;
 
     match user_persistence::find_user_by_phone(&state.db_pool, &normalized_phone_number).await {
         Ok(Some(other_user)) if other_user.id != user_uuid => {
@@ -714,7 +726,10 @@ pub async fn verify_sms_code(
         Ok(_) => {}
         Err(error) => {
             tracing::error!(error = %error, "DB error checking phone uniqueness before SMS verify");
-            return Err(ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno"));
+            return Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore interno",
+            ));
         }
     }
 

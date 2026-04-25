@@ -6,8 +6,8 @@ use crate::middleware::auth::ClubOwnerUser;
 use crate::models::club_owner::{
     AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
     ClubOwnerRegisterRequest, ClubOwnerResponse, CreateManualReservationRequest, OwnerStats,
-    OwnerUpdateClubRequest, ScanResult, StripeConnectStatusResponse,
-    StripeOnboardingLinkResponse, TableImageRow, UpdateReservationStatusRequest,
+    OwnerUpdateClubRequest, ScanResult, StripeConnectStatusResponse, StripeOnboardingLinkResponse,
+    TableImageRow, UpdateReservationStatusRequest,
 };
 use crate::models::table::TableReservationResponse;
 use crate::models::{
@@ -29,11 +29,11 @@ pub struct EventFilterParams {
 }
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rust_decimal::Decimal;
+use std::sync::Arc;
 use stripe::{
     Account, AccountLink, AccountLinkType, AccountType, CreateAccount, CreateAccountCapabilities,
     CreateAccountCapabilitiesCardPayments, CreateAccountCapabilitiesTransfers, CreateAccountLink,
 };
-use std::sync::Arc;
 use tracing::{error, warn};
 use uuid::Uuid;
 
@@ -134,11 +134,10 @@ pub async fn login_club_owner(
     };
 
     // Verify password
-    let is_valid = verify(payload.password, &owner.password_hash)
-        .map_err(|e| {
-            tracing::error!("login_club_owner: bcrypt error: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let is_valid = verify(payload.password, &owner.password_hash).map_err(|e| {
+        tracing::error!("login_club_owner: bcrypt error: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     if !is_valid {
         return Err(StatusCode::UNAUTHORIZED);
@@ -321,6 +320,9 @@ pub async fn create_club_event(
     Json(mut payload): Json<CreateEventRequest>,
 ) -> Result<(StatusCode, Json<EventResponse>), StatusCode> {
     let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    if !crate::models::is_valid_event_image_url(&payload.image) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
 
     let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
         .await
@@ -527,7 +529,9 @@ pub async fn get_my_club_stripe_status(
 
     let connected_account_id = club.stripe_connected_account_id.clone();
     if let Some(ref account_id) = connected_account_id {
-        let account_id = account_id.parse().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let account_id = account_id
+            .parse()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         let account = Account::retrieve(&state.stripe_client, &account_id, &[])
             .await
             .map_err(|_| StatusCode::BAD_GATEWAY)?;
@@ -598,7 +602,9 @@ pub async fn create_my_club_stripe_onboarding_link(
                 "Non sono riuscito a recuperare il profilo del proprietario.",
             )
         })?
-        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "Proprietario del club non trovato."))?;
+        .ok_or_else(|| {
+            ApiError::new(StatusCode::NOT_FOUND, "Proprietario del club non trovato.")
+        })?;
 
     let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
         .await
@@ -922,9 +928,10 @@ pub async fn delete_table_image_handler(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let deleted = club_owner_persistence::delete_table_image_for_club(&state.db_pool, image_uuid, club.id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let deleted =
+        club_owner_persistence::delete_table_image_for_club(&state.db_pool, image_uuid, club.id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if deleted {
         Ok(StatusCode::NO_CONTENT)
@@ -1037,9 +1044,10 @@ pub async fn update_reservation_status_handler(
 ) -> Result<Json<TableReservationResponse>, StatusCode> {
     let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
     let reservation_uuid = Uuid::parse_str(&reservation_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let previous_reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid)
-        .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let previous_reservation =
+        table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
 
     let reservation = club_owner_persistence::update_reservation_status(
         &state.db_pool,
@@ -1279,6 +1287,11 @@ pub async fn update_club_event(
 ) -> Result<Json<EventResponse>, StatusCode> {
     let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
     let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if let Some(image) = payload.image.as_deref() {
+        if !crate::models::is_valid_event_image_url(image) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
 
     let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
         .await
@@ -1345,7 +1358,11 @@ pub async fn delete_club_event(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if deleted { Ok(StatusCode::NO_CONTENT) } else { Err(StatusCode::NOT_FOUND) }
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
 }
 
 /// Get aggregated stats for the authenticated club owner

@@ -3,6 +3,7 @@ import {
   StyleSheet,
   View,
   TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
 import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
@@ -30,6 +31,7 @@ export const TableReservationModal = ({
   const { theme } = useTheme();
   const [tables, setTables] = useState<Table[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasFetchedTables, setHasFetchedTables] = useState(false);
   const marzipanoViewerRef = useRef<MarzipanoViewerRef>(null);
   const [currentSceneName, setCurrentSceneName] = useState<string>("");
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
@@ -40,6 +42,7 @@ export const TableReservationModal = ({
   // Fetch tables when modal opens
   useEffect(() => {
     if (visible && event) {
+      setHasFetchedTables(false);
       fetchTables();
       // Set initial scene name if available
       if (event.marzipanoScenes && event.marzipanoScenes.length > 0) {
@@ -51,6 +54,7 @@ export const TableReservationModal = ({
       setSelectedTable(null);
       setCurrentSceneName("");
       setMenuVisible(false);
+      setHasFetchedTables(false);
     }
   }, [visible, event]);
 
@@ -75,6 +79,7 @@ export const TableReservationModal = ({
       setTables([]);
     } finally {
       setIsLoading(false);
+      setHasFetchedTables(true);
     }
   };
 
@@ -130,7 +135,7 @@ export const TableReservationModal = ({
     >
       <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
         {/* Fullscreen Marzipano 360° Viewer */}
-        {hasMarzipanoTour ? (
+        {hasMarzipanoTour && hasFetchedTables ? (
           <MarzipanoViewer
             ref={marzipanoViewerRef}
             scenes={event.marzipanoScenes!}
@@ -139,6 +144,13 @@ export const TableReservationModal = ({
             onSceneChange={handleSceneChange}
             style={styles.fullscreenViewer}
           />
+        ) : hasMarzipanoTour ? (
+          <View style={[styles.loadingTourContainer, { backgroundColor: theme.background }]}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <ThemedText style={[styles.loadingTourText, { color: theme.text }]}>
+              Caricamento tavoli del tour 360...
+            </ThemedText>
+          </View>
         ) : (
           <View style={[styles.noTourContainer, { backgroundColor: theme.background }]}>
             <ThemedText style={styles.noTourIcon}>🏛️</ThemedText>
@@ -212,6 +224,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#0a0a0a",
+  },
+  loadingTourContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#0a0a0a",
+  },
+  loadingTourText: {
+    fontSize: 15,
+    fontWeight: "500",
+    textAlign: "center",
   },
   noTourIcon: {
     fontSize: 48,

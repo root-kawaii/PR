@@ -48,15 +48,9 @@ pub async fn upload_event_image(
             continue;
         }
 
-        let content_type = field
-            .content_type()
-            .unwrap_or("image/jpeg")
-            .to_string();
+        let content_type = field.content_type().unwrap_or("image/jpeg").to_string();
 
-        let bytes = field
-            .bytes()
-            .await
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let bytes = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
 
         let url = storage_service::upload_event_image(
             &state.http_client,
