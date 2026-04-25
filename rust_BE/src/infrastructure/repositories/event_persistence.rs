@@ -228,7 +228,12 @@ pub async fn get_events_by_club_id(
                    tour_provider, marzipano_config, event_date, created_at, updated_at
             FROM events
             WHERE club_id = $1
-              AND (event_date IS NULL OR event_date >= $2)
+              AND COALESCE(
+                    event_date,
+                    CASE WHEN date ~ '^\d{4}-\d{2}-\d{2}'
+                         THEN LEFT(date, 10)::date
+                         ELSE NULL END
+                  ) >= $2
             ORDER BY event_date ASC NULLS LAST, created_at DESC
             "#,
         )
