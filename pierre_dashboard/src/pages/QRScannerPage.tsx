@@ -65,7 +65,7 @@ export default function QRScannerPage() {
     setCheckinLoading(true);
     trackEvent('owner_checkin_submitted', {
       code: result.code,
-      scan_type: result.type,
+      scan_type: result.scanType,
     });
     try {
       const res = await fetch(`${API_URL}/owner/checkin/${encodeURIComponent(result.code)}`, {
@@ -75,14 +75,14 @@ export default function QRScannerPage() {
       if (!res.ok) throw new Error('Errore check-in');
       trackEvent('owner_checkin_completed', {
         code: result.code,
-        scan_type: result.type,
+        scan_type: result.scanType,
       });
       setCheckinDone(true);
       setScanStatus('used');
     } catch (err) {
       trackEvent('owner_checkin_failed', {
         code: result.code,
-        scan_type: result.type,
+        scan_type: result.scanType,
         error_message: err instanceof Error ? err.message : 'Errore',
       });
       alert(err instanceof Error ? err.message : 'Errore');

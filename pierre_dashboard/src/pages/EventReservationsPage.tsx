@@ -4,7 +4,7 @@ import { ArrowLeft, Plus, X, Search, User, Phone, Mail, FileText, ChevronDown } 
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
-import type { TableReservation, TableResponse } from '../types';
+import type { TableResponse } from '../types';
 import { trackEvent } from '../config/analytics';
 
 // Matches the flat TableReservationResponse from the backend

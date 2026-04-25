@@ -94,10 +94,10 @@ export default function ClubSettingsPage() {
 
     return rawImages.map((image) => ({
       id: image.id,
-      clubId: image.clubId ?? image.club_id ?? '',
+      club_id: image.clubId ?? image.club_id ?? '',
       url: image.url,
-      displayOrder: image.displayOrder ?? image.display_order ?? 0,
-      altText: image.altText ?? image.alt_text ?? undefined,
+      display_order: image.displayOrder ?? image.display_order ?? 0,
+      alt_text: image.altText ?? image.alt_text ?? undefined,
     }));
   }, [imagesData]);
 
