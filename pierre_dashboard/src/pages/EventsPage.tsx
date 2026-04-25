@@ -470,13 +470,7 @@ export default function EventsPage() {
       {/* Events list */}
       {!filteredEvents.length ? (
         <p className="text-gray-500">
-<<<<<<< HEAD
-          {events?.length
-            ? "No events from this date onwards."
-            : "No events yet. Create your first event."}
-=======
           No events from this date onwards.
->>>>>>> 79cf1759 (fix: reservations 500, date filter on BE, phone required in manual modal)
         </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
