@@ -4,12 +4,14 @@ use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use uuid::Uuid;
 
+use crate::models::genre::GenreResponse;
+
 #[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
 pub struct Event {
     pub id: Uuid,
     pub title: String,
     pub venue: String,
-    pub date: String, // Format: "10 MAG | 23:00"
+    pub date: String,
     pub image: String,
     pub status: Option<String>,
     pub time: Option<String>,
@@ -41,6 +43,7 @@ pub struct CreateEventRequest {
     pub club_id: Option<Uuid>,
     pub tour_provider: Option<String>,
     pub marzipano_config: Option<JsonValue>,
+    pub genre_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +62,7 @@ pub struct UpdateEventRequest {
     pub club_id: Option<Uuid>,
     pub tour_provider: Option<String>,
     pub marzipano_config: Option<JsonValue>,
+    pub genre_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,24 +92,37 @@ pub struct EventResponse {
     #[serde(rename = "marzipanoScenes")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub marzipano_scenes: Option<JsonValue>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub genres: Vec<GenreResponse>,
 }
 
 impl From<Event> for EventResponse {
     fn from(event: Event) -> Self {
+        // Derive time from ISO date if the time column is empty/null
+        let time = match event.time.as_deref() {
+            Some(t) if !t.is_empty() => Some(t.to_string()),
+            _ => event
+                .date
+                .find('T')
+                .map(|pos| event.date[pos + 1..].chars().take(5).collect()),
+        };
+        // Treat empty string as no-status (allows clearing via dashboard)
+        let status = event.status.filter(|s| !s.is_empty());
         EventResponse {
             id: event.id.to_string(),
             title: event.title,
             venue: event.venue,
             date: event.date,
             image: event.image,
-            status: event.status,
-            time: event.time,
-            age_limit: event.age_limit,
-            end_time: event.end_time,
+            status,
+            time,
+            age_limit: event.age_limit.filter(|s| !s.is_empty()),
+            end_time: event.end_time.filter(|s| !s.is_empty()),
             price: event.price,
             description: event.description,
             tour_provider: event.tour_provider,
             marzipano_scenes: event.marzipano_config,
+            genres: vec![],
         }
     }
 }

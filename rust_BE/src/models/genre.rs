@@ -24,7 +24,7 @@ pub struct UpdateGenreRequest {
     pub color: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenreResponse {
     pub id: String,
     pub name: String,

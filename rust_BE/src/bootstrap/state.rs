@@ -14,6 +14,7 @@ pub struct AppState {
     pub stripe_webhook_secret: String,
     pub alert_webhook_url: Option<String>,
     pub payment_share_ttl_hours: i64,
+    pub http_client: reqwest::Client,
     pub config: Arc<AppConfig>,
 }
 
@@ -34,6 +35,7 @@ impl AppState {
             stripe_webhook_secret: config.stripe.webhook_secret.clone(),
             alert_webhook_url: config.notifications.alert_webhook_url.clone(),
             payment_share_ttl_hours: config.payment_share_ttl_hours,
+            http_client: reqwest::Client::new(),
             config,
         }
     }

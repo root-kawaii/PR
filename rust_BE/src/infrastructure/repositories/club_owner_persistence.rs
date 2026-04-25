@@ -169,6 +169,26 @@ pub async fn delete_table_image(pool: &PgPool, image_id: Uuid) -> Result<bool> {
     Ok(result.rows_affected() > 0)
 }
 
+/// Delete a table image only if it belongs to a table whose event belongs to `club_id`.
+pub async fn delete_table_image_for_club(pool: &PgPool, image_id: Uuid, club_id: Uuid) -> Result<bool> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM table_images
+        WHERE id = $1
+          AND table_id IN (
+              SELECT t.id FROM tables t
+              JOIN events e ON e.id = t.event_id
+              WHERE e.club_id = $2
+          )
+        "#,
+    )
+    .bind(image_id)
+    .bind(club_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 // ============================================================================
 // Event reservations
 // ============================================================================
@@ -184,7 +204,7 @@ pub async fn get_event_reservations(
                tr.contact_phone, tr.special_requests, tr.reservation_code,
                tr.created_at, tr.updated_at,
                tr.guest_user_ids, tr.payment_ids, tr.ticket_ids,
-               tr.is_manual, tr.manual_notes
+               tr.is_manual, tr.manual_notes, tr.payment_link_token
         FROM table_reservations tr
         WHERE tr.event_id = $1
         ORDER BY tr.created_at DESC
@@ -238,7 +258,8 @@ pub async fn create_manual_reservation(
         RETURNING id, table_id, user_id, event_id, status, num_people,
                   total_amount, amount_paid, contact_name, contact_email, contact_phone,
                   special_requests, reservation_code, created_at, updated_at,
-                  guest_user_ids, payment_ids, ticket_ids, is_manual, manual_notes
+                  guest_user_ids, payment_ids, ticket_ids, is_manual, manual_notes,
+                  payment_link_token
         "#,
     )
     .bind(Uuid::new_v4())
@@ -274,7 +295,8 @@ pub async fn update_reservation_status(
         RETURNING id, table_id, user_id, event_id, status, num_people,
                   total_amount, amount_paid, contact_name, contact_email, contact_phone,
                   special_requests, reservation_code, created_at, updated_at,
-                  guest_user_ids, payment_ids, ticket_ids, is_manual, manual_notes
+                  guest_user_ids, payment_ids, ticket_ids, is_manual, manual_notes,
+                  payment_link_token
         "#,
     )
     .bind(status)

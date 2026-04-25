@@ -603,7 +603,7 @@ export default function ClubSettingsPage() {
               >
                 <img
                   src={img.url}
-                  alt={img.altText ?? ''}
+                  alt={img.alt_text ?? ''}
                   className="w-full h-full object-cover"
                 />
                 <button
@@ -612,9 +612,9 @@ export default function ClubSettingsPage() {
                 >
                   <Trash2 size={14} />
                 </button>
-                {img.altText && (
+                {img.alt_text && (
                   <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-2 py-1 truncate">
-                    {img.altText}
+                    {img.alt_text}
                   </div>
                 )}
               </div>

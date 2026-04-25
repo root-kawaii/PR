@@ -12,14 +12,21 @@ use crate::models::club_owner::{
 use crate::models::table::TableReservationResponse;
 use crate::models::{
     ApiError, AppState, ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest,
-    EventResponse, TableResponse, TablesResponse, UpdateClubRequest,
+    EventResponse, TableResponse, TablesResponse, UpdateClubRequest, UpdateEventRequest,
 };
 use crate::utils::jwt;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
+use chrono::NaiveDate;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct EventFilterParams {
+    pub from_date: Option<NaiveDate>,
+}
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rust_decimal::Decimal;
 use stripe::{
@@ -120,12 +127,18 @@ pub async fn login_club_owner(
     {
         Ok(Some(owner)) => owner,
         Ok(None) => return Err(StatusCode::UNAUTHORIZED),
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            tracing::error!("login_club_owner: DB error: {:?}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
     };
 
     // Verify password
     let is_valid = verify(payload.password, &owner.password_hash)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("login_club_owner: bcrypt error: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if !is_valid {
         return Err(StatusCode::UNAUTHORIZED);
@@ -186,10 +199,12 @@ pub async fn get_my_club(
     Ok(Json(ClubResponse::from(club)))
 }
 
-/// Get all events for the authenticated club owner's club
+/// Get all events for the authenticated club owner's club.
+/// Accepts optional `?from_date=YYYY-MM-DD` to filter server-side.
 pub async fn get_my_club_events(
     State(state): State<Arc<AppState>>,
     ClubOwnerUser(claims): ClubOwnerUser,
+    Query(params): Query<EventFilterParams>,
 ) -> Result<Json<Vec<EventResponse>>, StatusCode> {
     let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
 
@@ -198,11 +213,25 @@ pub async fn get_my_club_events(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let events = event_persistence::get_events_by_club_id(&state.db_pool, club.id)
+    let events =
+        event_persistence::get_events_by_club_id(&state.db_pool, club.id, params.from_date)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let event_ids: Vec<uuid::Uuid> = events.iter().map(|e| e.id).collect();
+    let genres_map = event_persistence::get_genres_for_events(&state.db_pool, &event_ids)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let responses: Vec<EventResponse> = events.into_iter().map(EventResponse::from).collect();
+    let responses: Vec<EventResponse> = events
+        .into_iter()
+        .map(|e| {
+            let id = e.id;
+            let mut r = EventResponse::from(e);
+            r.genres = genres_map.get(&id).cloned().unwrap_or_default();
+            r
+        })
+        .collect();
     Ok(Json(responses))
 }
 
@@ -221,8 +250,19 @@ pub async fn create_club_event(
 
     // Force club_id to the owner's club
     payload.club_id = Some(club.id);
+    let genre_ids = payload.genre_ids.clone().unwrap_or_default();
 
     let event = event_persistence::create_event(&state.db_pool, payload)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if !genre_ids.is_empty() {
+        event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    let genres = event_persistence::get_event_genres(&state.db_pool, event.id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -242,7 +282,9 @@ pub async fn create_club_event(
     )
     .await;
 
-    Ok((StatusCode::CREATED, Json(EventResponse::from(event))))
+    let mut response = EventResponse::from(event);
+    response.genres = genres;
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// Get tables for a specific event owned by the club owner
@@ -787,16 +829,21 @@ pub async fn add_table_image_handler(
     Ok((StatusCode::CREATED, Json(image)))
 }
 
-/// Delete a table image
+/// Delete a table image (ownership check: image must belong to owner's club)
 pub async fn delete_table_image_handler(
     State(state): State<Arc<AppState>>,
     ClubOwnerUser(claims): ClubOwnerUser,
     Path(image_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
     let image_uuid = Uuid::parse_str(&image_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let deleted = club_owner_persistence::delete_table_image(&state.db_pool, image_uuid)
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let deleted = club_owner_persistence::delete_table_image_for_club(&state.db_pool, image_uuid, club.id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -1142,6 +1189,84 @@ pub async fn checkin_handler(
             }))
         }
     }
+}
+
+/// Update an event owned by the club owner (with ownership check)
+pub async fn update_club_event(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<String>,
+    Json(mut payload): Json<UpdateEventRequest>,
+) -> Result<Json<EventResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Prevent changing the event's club association
+    payload.club_id = None;
+    let genre_ids = payload.genre_ids.clone();
+
+    let updated = event_persistence::update_event(&state.db_pool, event_uuid, payload)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if let Some(ids) = genre_ids {
+        event_persistence::set_event_genres(&state.db_pool, event_uuid, &ids)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    let genres = event_persistence::get_event_genres(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut response = EventResponse::from(updated);
+    response.genres = genres;
+    Ok(Json(response))
+}
+
+/// Delete an event owned by the club owner (with ownership check)
+pub async fn delete_club_event(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let event = event_persistence::get_event_by_id(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let deleted = event_persistence::delete_event(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if deleted { Ok(StatusCode::NO_CONTENT) } else { Err(StatusCode::NOT_FOUND) }
 }
 
 /// Get aggregated stats for the authenticated club owner
