@@ -306,6 +306,7 @@ pub struct CreatePaymentIntentRequest {
 pub struct CreatePaymentIntentResponse {
     pub client_secret: String,
     pub payment_intent_id: String,
+    pub stripe_publishable_key: String,
     pub amount: String, // Formatted as "X.XX €"
     pub total_cost: Option<String>,
     pub per_person_amount: Option<String>,

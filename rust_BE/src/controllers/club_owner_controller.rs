@@ -171,6 +171,85 @@ pub async fn login_club_owner(
     Ok(Json(response))
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct ChangeClubOwnerPasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ChangeClubOwnerPasswordResponse {
+    pub message: String,
+}
+
+/// Change the authenticated club owner's password.
+pub async fn change_club_owner_password(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Json(payload): Json<ChangeClubOwnerPasswordRequest>,
+) -> Result<Json<ChangeClubOwnerPasswordResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    if payload.current_password.trim().is_empty() || payload.new_password.len() < 8 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if payload.current_password == payload.new_password {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let owner = club_owner_persistence::find_club_owner_by_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|error| {
+            error!(%error, %owner_id, "Failed to load club owner for password change");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let is_valid = verify(&payload.current_password, &owner.password_hash).map_err(|error| {
+        error!(%error, %owner_id, "bcrypt verify error during club owner password change");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    if !is_valid {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    let new_password_hash = hash(payload.new_password, DEFAULT_COST).map_err(|error| {
+        error!(%error, %owner_id, "Failed to hash new club owner password");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    club_owner_persistence::update_club_owner_password_hash(
+        &state.db_pool,
+        owner_id,
+        &new_password_hash,
+    )
+    .await
+    .map_err(|error| {
+        error!(%error, %owner_id, "Failed to update club owner password hash");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "password_changed",
+        Some(&owner_id.to_string()),
+        Some("club_owner"),
+        Some(owner_id),
+        serde_json::json!({
+            "owner_id": owner_id,
+            "outcome": "success",
+        }),
+    )
+    .await;
+
+    Ok(Json(ChangeClubOwnerPasswordResponse {
+        message: "Password aggiornata correttamente.".to_string(),
+    }))
+}
+
 /// Get the authenticated club owner's club
 pub async fn get_my_club(
     State(state): State<Arc<AppState>>,

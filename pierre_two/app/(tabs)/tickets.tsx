@@ -443,7 +443,14 @@ export default function BookingsScreen() {
                           </View>
                         )}
 
-                        <TouchableOpacity style={s.expandBtn} onPress={() => setExpandedTicket(isExpanded ? null : ticket.id)}>
+                        <TouchableOpacity style={s.expandBtn} onPress={() => {
+                          if (isExpanded) {
+                            trackEvent('ticket_qr_collapsed', { ticket_id: ticket.id });
+                          } else {
+                            trackEvent('ticket_qr_expanded', { ticket_id: ticket.id, event_id: ticket.event.id });
+                          }
+                          setExpandedTicket(isExpanded ? null : ticket.id);
+                        }}>
                           <Text style={[s.expandText, { color: theme.textTertiary }]}>
                             {isExpanded ? 'Nascondi' : 'Mostra QR Code'}
                           </Text>

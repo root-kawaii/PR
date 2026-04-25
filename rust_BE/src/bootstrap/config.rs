@@ -15,6 +15,7 @@ pub struct AuthConfig {
 #[derive(Clone, Debug)]
 pub struct StripeConfig {
     pub api_key: String,
+    pub publishable_key: String,
     pub webhook_secret: String,
 }
 
@@ -80,6 +81,10 @@ impl AppConfig {
         let stripe_api_key = env::var("STRIPE_SECRET_KEY")
             .or_else(|_| env::var("STRIPE_API_KEY"))
             .expect("STRIPE_SECRET_KEY or STRIPE_API_KEY must be set in .env");
+        let stripe_publishable_key = env::var("STRIPE_PUBLISHABLE_KEY")
+            .or_else(|_| env::var("EXPO_PUBLIC_STRIPE_KEY"))
+            .expect("STRIPE_PUBLISHABLE_KEY or EXPO_PUBLIC_STRIPE_KEY must be set in .env");
+        validate_stripe_key_pair(&stripe_api_key, &stripe_publishable_key);
 
         let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET env var must be set");
         if jwt_secret.len() < 32 {
@@ -179,6 +184,7 @@ impl AppConfig {
             auth: AuthConfig { jwt_secret },
             stripe: StripeConfig {
                 api_key: stripe_api_key,
+                publishable_key: stripe_publishable_key,
                 webhook_secret: stripe_webhook_secret,
             },
             notifications: NotificationsConfig {
@@ -213,4 +219,24 @@ impl AppConfig {
             port,
         }
     }
+}
+
+fn validate_stripe_key_pair(secret_key: &str, publishable_key: &str) {
+    let secret_mode = stripe_key_mode(secret_key, "sk_")
+        .expect("STRIPE_SECRET_KEY must start with sk_test_ or sk_live_");
+    let publishable_mode = stripe_key_mode(publishable_key, "pk_")
+        .expect("STRIPE_PUBLISHABLE_KEY must start with pk_test_ or pk_live_");
+
+    if secret_mode != publishable_mode {
+        panic!(
+            "Stripe key mode mismatch: STRIPE_SECRET_KEY is {secret_mode}, but STRIPE_PUBLISHABLE_KEY is {publishable_mode}"
+        );
+    }
+}
+
+fn stripe_key_mode<'a>(key: &'a str, expected_prefix: &str) -> Option<&'a str> {
+    key.strip_prefix(expected_prefix)
+        .and_then(|rest| rest.split_once('_'))
+        .map(|(mode, _)| mode)
+        .filter(|mode| matches!(*mode, "test" | "live"))
 }

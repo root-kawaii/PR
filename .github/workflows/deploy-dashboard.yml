@@ -5,7 +5,7 @@ on:
 
 jobs:
   deploy_dashboard:
-    name: Deploy Production Dashboard To Netlify
+    name: Deploy Production Dashboard To Vercel
     runs-on: ubuntu-latest
     environment:
       name: Production
@@ -24,6 +24,15 @@ jobs:
           cache: "npm"
           cache-dependency-path: pierre_dashboard/package-lock.json
 
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        working-directory: ./pierre_dashboard
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+
       - name: Install dependencies
         working-directory: ./pierre_dashboard
         run: npm ci
@@ -31,13 +40,14 @@ jobs:
       - name: Build dashboard
         working-directory: ./pierre_dashboard
         env:
-          VITE_API_URL: ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}
+          VITE_API_URL: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
           VITE_APP_ENV: ${{ vars.APP_ENV || 'production' }}
+          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
         run: npm run build
 
-      - name: Deploy to Netlify
+      - name: Deploy to Vercel
         working-directory: ./pierre_dashboard
         env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx netlify-cli deploy --dir=dist --prod --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"

@@ -132,7 +132,7 @@ jobs:
     needs: migrations
     environment:
       name: Production
-      url: ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}
+      url: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
     # Run on tag push (always) or manual trigger (if toggled on)
     # Proceeds even if migrations were skipped (no pending)
     if: >-
@@ -152,13 +152,13 @@ jobs:
 
       - name: Deploy to Fly.io
         working-directory: ./rust_BE
-        run: flyctl deploy --remote-only --ha=false --app "${{ vars.FLY_APP_NAME || 'pierre-two-backend' }}"
+        run: flyctl deploy --config fly.production.toml --remote-only --ha=false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Verify deployment
         env:
-          API_URL: ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}
+          API_URL: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
         run: |
           echo "Waiting for deployment to be ready..."
           sleep 10
@@ -213,7 +213,7 @@ jobs:
         working-directory: ./pierre_two
         env:
           APP_ENV: ${{ vars.APP_ENV || 'production' }}
-          EXPO_PUBLIC_API_URL: ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}
+          EXPO_PUBLIC_API_URL: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
           EXPO_PUBLIC_SUPPORT_URL: ${{ vars.SUPPORT_URL || 'https://pierre.app/support' }}
           EXPO_PUBLIC_PRIVACY_URL: ${{ vars.PRIVACY_URL || 'https://pierre.app/privacy' }}
           EXPO_PUBLIC_TERMS_URL: ${{ vars.TERMS_URL || 'https://pierre.app/terms' }}
@@ -253,7 +253,7 @@ jobs:
           fi
 
           if [ "${{ needs.deploy_backend.result }}" = "success" ]; then
-            echo "Backend deployed to ${{ vars.API_URL || 'https://pierre-two-backend.fly.dev' }}" >> $GITHUB_STEP_SUMMARY
+            echo "Backend deployed to ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ "${{ needs.build_app.result }}" = "success" ]; then

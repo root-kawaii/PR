@@ -276,7 +276,13 @@ export default function ClubSettingsPage() {
       }
 
       const data: StripeOnboardingLinkResponse = await res.json();
-      window.location.href = data.onboarding_url;
+      const onboardingUrl = data.onboarding_url ?? data.onboardingUrl;
+
+      if (!onboardingUrl) {
+        throw new Error('Stripe non ha restituito un link di onboarding valido.');
+      }
+
+      window.location.href = onboardingUrl;
     } catch (err) {
       trackEvent('owner_stripe_connect_failed', {
         club_id: club?.id ?? null,

@@ -331,6 +331,17 @@ pub struct RegisterPushTokenRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChangePasswordResponse {
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct DeleteAccountRequest {
     pub password: String,
 }
@@ -410,6 +421,98 @@ fn parse_push_token_request(body: &Bytes) -> Result<RegisterPushTokenRequest, St
     }
 
     Err(StatusCode::BAD_REQUEST)
+}
+
+pub async fn change_password(
+    State(state): State<Arc<AppState>>,
+    AuthUser(claims): AuthUser,
+    Json(payload): Json<ChangePasswordRequest>,
+) -> Result<Json<ChangePasswordResponse>, (StatusCode, axum::Json<crate::models::ApiError>)> {
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| ApiError::new(StatusCode::UNAUTHORIZED, "Sessione non valida"))?;
+
+    if payload.current_password.trim().is_empty() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "Inserisci la password attuale",
+        ));
+    }
+
+    if payload.new_password.len() < 8 {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "La nuova password deve essere di almeno 8 caratteri",
+        ));
+    }
+
+    if payload.current_password == payload.new_password {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "La nuova password deve essere diversa da quella attuale",
+        ));
+    }
+
+    let user = match user_persistence::find_user_by_id(&state.db_pool, user_id).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return Err(ApiError::new(StatusCode::NOT_FOUND, "Account non trovato")),
+        Err(e) => {
+            error!(error = %e, %user_id, "Failed to load user for password change");
+            return Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore interno",
+            ));
+        }
+    };
+
+    let is_valid = match verify(&payload.current_password, &user.password_hash) {
+        Ok(valid) => valid,
+        Err(e) => {
+            error!(error = %e, %user_id, "bcrypt verify error during password change");
+            return Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore interno",
+            ));
+        }
+    };
+
+    if !is_valid {
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "Password attuale non corretta",
+        ));
+    }
+
+    let new_password_hash = hash(payload.new_password, DEFAULT_COST).map_err(|e| {
+        error!(error = %e, %user_id, "Failed to hash new password");
+        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno")
+    })?;
+
+    user_persistence::update_user_password_hash(&state.db_pool, user_id, &new_password_hash)
+        .await
+        .map_err(|e| {
+            error!(error = %e, %user_id, "Failed to update password hash");
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Errore interno")
+        })?;
+
+    let _ = outbox_service::enqueue_analytics_event(
+        &state.db_pool,
+        &state.config,
+        "password_changed",
+        Some(&user_id.to_string()),
+        Some("user"),
+        Some(user_id),
+        serde_json::json!({
+            "user_id": user_id,
+            "outcome": "success",
+        }),
+    )
+    .await;
+
+    info!(%user_id, "User password changed");
+
+    Ok(Json(ChangePasswordResponse {
+        message: "Password aggiornata correttamente.".to_string(),
+    }))
 }
 
 pub async fn delete_account(

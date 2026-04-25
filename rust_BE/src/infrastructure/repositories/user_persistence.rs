@@ -98,6 +98,29 @@ pub async fn update_last_login(pool: &PgPool, user_id: Uuid) -> Result<()> {
     Ok(())
 }
 
+/// Update a user's password hash.
+pub async fn update_user_password_hash(
+    pool: &PgPool,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE users
+        SET password_hash = $1,
+            updated_at = NOW()
+        WHERE id = $2
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(password_hash)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn user_is_active(pool: &PgPool, user_id: Uuid) -> Result<bool> {
     let is_active = sqlx::query_scalar::<_, bool>(
         r#"
