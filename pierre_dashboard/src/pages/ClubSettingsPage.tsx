@@ -375,7 +375,15 @@ export default function ClubSettingsPage() {
 
   return (
     <div className="max-w-4xl">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Impostazioni Locale</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Impostazioni Locale</h1>
+        <a
+          href="/dashboard/club/tour"
+          className="rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white hover:bg-pink-700"
+        >
+          Configura tour 360°
+        </a>
+      </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
