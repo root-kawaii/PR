@@ -72,6 +72,7 @@ pub struct AppConfig {
     pub storage: StorageConfig,
     pub app_base_url: String,
     pub owner_app_base_url: String,
+    pub auto_run_db_migrations: bool,
     pub payment_share_ttl_hours: i64,
     pub port: u16,
 }
@@ -114,6 +115,10 @@ impl AppConfig {
             .ok()
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| app_base_url.clone());
+        let auto_run_db_migrations = env::var("AUTO_RUN_DB_MIGRATIONS")
+            .ok()
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
 
         let alert_webhook_url = env::var("ALERT_WEBHOOK_URL").ok().filter(|s| !s.is_empty());
         let twilio_account_sid = env::var("TWILIO_ACCOUNT_SID")
@@ -235,6 +240,7 @@ impl AppConfig {
             },
             app_base_url,
             owner_app_base_url,
+            auto_run_db_migrations,
             payment_share_ttl_hours,
             port,
         }
