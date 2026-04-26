@@ -22,6 +22,27 @@ The recommended local setup on `develop` is:
 The backend can now auto-apply every SQL file in `DB/migrations/` on startup when
 `AUTO_RUN_DB_MIGRATIONS=true` (enabled in `.env.example`).
 
+## One-command local start
+
+From the repo root you can now use:
+
+```bash
+bash scripts/dev-local.sh ios
+```
+
+This `ios` mode boots the iOS Simulator and opens the Expo app against the local backend.
+If the Expo dev build is not installed yet, the script now runs `npx expo run:ios`
+first to install it into the simulator automatically.
+
+Other modes:
+
+```bash
+bash scripts/dev-local.sh android
+bash scripts/dev-local.sh app
+bash scripts/dev-local.sh backend
+bash scripts/dev-local.sh db
+```
+
 The recommended local setup on `develop` is:
 
 - mobile app -> local backend on `http://127.0.0.1:3000`
