@@ -104,6 +104,44 @@ export default function BookingsScreen() {
     }
   };
 
+  const parseEuroAmount = (value?: string) =>
+    value ? Number.parseFloat(value.replace(/[^0-9.]/g, '')) || 0 : 0;
+
+  const getReservationStatusLabel = (reservation: TableReservation) => {
+    const paidAmount = parseEuroAmount(reservation.amountPaid);
+    const totalAmount = parseEuroAmount(reservation.totalAmount);
+
+    switch (reservation.status.toLowerCase()) {
+      case 'pending':
+        return paidAmount > 0 && paidAmount < totalAmount
+          ? 'In attesa quote'
+          : 'In attesa';
+      case 'confirmed':
+        return 'Confermata';
+      case 'cancelled':
+        return 'Cancellata';
+      case 'completed':
+        return 'Completata';
+      default:
+        return reservation.status;
+    }
+  };
+
+  const getReservationPaymentCaption = (reservation: TableReservation) => {
+    const paidAmount = parseEuroAmount(reservation.amountPaid);
+    const totalAmount = parseEuroAmount(reservation.totalAmount);
+
+    if (paidAmount > 0 && paidAmount < totalAmount) {
+      return 'Quota iniziale ricevuta, in attesa delle quote degli ospiti.';
+    }
+
+    if (totalAmount > 0 && paidAmount >= totalAmount) {
+      return 'Tutte le quote del tavolo risultano pagate.';
+    }
+
+    return 'Pagamento ancora da completare.';
+  };
+
   const isEventInFuture = (dateStr: string): boolean => {
     const monthMap: Record<string, number> = {
       'GEN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAG': 4, 'GIU': 5,
@@ -278,8 +316,8 @@ export default function BookingsScreen() {
 
               {filteredReservations.map(reservation => {
                 const statusColor = getReservationStatusColor(reservation.status);
-                const paidAmount = reservation.amountPaid ? parseFloat(reservation.amountPaid.replace(/[^0-9.]/g, '')) : 0;
-                const totalAmount = reservation.totalAmount ? parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, '')) : 0;
+                const paidAmount = parseEuroAmount(reservation.amountPaid);
+                const totalAmount = parseEuroAmount(reservation.totalAmount);
                 const progress = totalAmount > 0 ? Math.min(100, (paidAmount / totalAmount) * 100) : 0;
                 return (
                   <TouchableOpacity
@@ -311,7 +349,7 @@ export default function BookingsScreen() {
                         </View>
                       </View>
                       <View style={[s.statusBadge, { backgroundColor: `${statusColor}33` }]}>
-                        <Text style={[s.statusText, { color: statusColor }]}>{reservation.status}</Text>
+                        <Text style={[s.statusText, { color: statusColor }]}>{getReservationStatusLabel(reservation)}</Text>
                       </View>
                     </View>
 
@@ -338,6 +376,9 @@ export default function BookingsScreen() {
                         </View>
                         <Text style={[s.progressText, { color: theme.textTertiary }]}>
                           {reservation.amountPaid} / {reservation.totalAmount}
+                        </Text>
+                        <Text style={[s.progressSubtext, { color: theme.textTertiary }]}>
+                          {getReservationPaymentCaption(reservation)}
                         </Text>
                       </View>
                     )}
@@ -548,6 +589,7 @@ const s = StyleSheet.create({
   progressBar: { height: 6, borderRadius: 999, overflow: 'hidden', marginBottom: 7 },
   progressFill: { height: '100%', borderRadius: 2 },
   progressText: { fontSize: 11, textAlign: 'center' },
+  progressSubtext: { fontSize: 11, textAlign: 'center', marginTop: 4, lineHeight: 16 },
   codeBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1 },
   codeBtnText: { fontSize: 13, fontWeight: '600', letterSpacing: 1 },
   chevron: { position: 'absolute', right: 14, top: '50%', marginTop: -9 },

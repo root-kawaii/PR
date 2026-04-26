@@ -1,4 +1,4 @@
-import { TouchableOpacity, View, Image, StyleSheet } from 'react-native';
+import { TouchableOpacity, View, Image, StyleSheet, useWindowDimensions } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/context/ThemeContext';
 import { Event } from '@/types';
@@ -27,26 +27,70 @@ const formatEventTime = (event: Event) => {
   }
 };
 
+const withAlpha = (hexColor: string, alpha: string) =>
+  /^#([0-9a-f]{6})$/i.test(hexColor) ? `${hexColor}${alpha}` : hexColor;
+
 export const EventCard = ({ event, onPress }: EventCardProps) => {
   const { theme } = useTheme();
+  const { width } = useWindowDimensions();
+  const cardWidth = Math.max(280, Math.min(336, Math.round(width * 0.82)));
+  const cardHeight = Math.round(cardWidth * 1.34);
+  const infoPanelBackground =
+    theme.statusBarStyle === 'dark'
+      ? withAlpha(theme.modalBackground, 'CC')
+      : withAlpha(theme.modalBackground, 'F0');
 
   return (
-    <TouchableOpacity style={styles.eventCard} onPress={onPress} activeOpacity={0.9}>
-      <View style={[styles.eventImageContainer, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+    <TouchableOpacity
+      style={[styles.eventCard, { width: cardWidth }]}
+      onPress={onPress}
+      activeOpacity={0.9}
+    >
+      <View
+        style={[
+          styles.eventImageContainer,
+          {
+            width: cardWidth,
+            height: cardHeight,
+            backgroundColor: theme.backgroundElevated,
+            borderColor: withAlpha(theme.border, 'A6'),
+          },
+        ]}
+      >
         <Image source={{ uri: event.image }} style={styles.eventImage} />
         <LinearGradient
-          colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.22)', 'rgba(8,8,8,0.97)']}
+          colors={theme.gradientOverlay as [string, string]}
           style={styles.imageOverlay}
         />
         <LinearGradient
-          colors={['rgba(201,168,76,0.15)', 'rgba(0,0,0,0)']}
+          colors={[withAlpha(theme.primary, '2E'), withAlpha(theme.primary, '00')]}
           style={styles.topGlow}
         />
+        <View
+          pointerEvents="none"
+          style={[styles.imageOutline, { borderColor: withAlpha(theme.textInverse, '14') }]}
+        />
         <View style={[styles.topBar, { borderColor: theme.border }]}>
-          <View style={[styles.iconChip, { backgroundColor: `${theme.background}d9`, borderColor: theme.border }]}>
+          <View
+            style={[
+              styles.iconChip,
+              {
+                backgroundColor: withAlpha(theme.background, 'D9'),
+                borderColor: withAlpha(theme.border, 'B3'),
+              },
+            ]}
+          >
             <IconSymbol name="ticket.fill" size={14} color={theme.primary} />
           </View>
-          <View style={styles.timeBadge}>
+          <View
+            style={[
+              styles.timeBadge,
+              {
+                backgroundColor: withAlpha(theme.background, 'C4'),
+                borderColor: withAlpha(theme.border, '99'),
+              },
+            ]}
+          >
             <IconSymbol name="clock.fill" size={14} color={theme.primary} />
             <ThemedText style={[styles.timeBadgeText, { color: theme.text }]}>{formatEventTime(event)}</ThemedText>
           </View>
@@ -57,7 +101,15 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
           </View>
         )}
 
-        <View style={[styles.infoPanel, { backgroundColor: 'rgba(10,10,10,0.74)', borderColor: theme.border }]}>
+        <View
+          style={[
+            styles.infoPanel,
+            {
+              backgroundColor: infoPanelBackground,
+              borderColor: withAlpha(theme.border, 'A6'),
+            },
+          ]}
+        >
           <View style={styles.kickerRow}>
             <ThemedText style={[styles.kickerText, { color: theme.primary }]}>
               Evento in evidenza
@@ -116,12 +168,8 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
 
 const styles = StyleSheet.create({
   eventCard: {
-    width: 336,
-    marginRight: 18,
   },
   eventImageContainer: {
-    width: 336,
-    height: 450,
     borderRadius: 26,
     overflow: 'hidden',
     position: 'relative',
@@ -133,6 +181,11 @@ const styles = StyleSheet.create({
   },
   imageOverlay: {
     ...StyleSheet.absoluteFillObject,
+  },
+  imageOutline: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
   },
   topGlow: {
     position: 'absolute',
@@ -173,6 +226,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     zIndex: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   timeBadgeText: {
     fontSize: 14,

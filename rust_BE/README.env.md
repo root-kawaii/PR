@@ -7,7 +7,20 @@
    cp .env.example .env
    ```
 
-2. Fill in your actual credentials in `.env`
+2. Start the local Postgres container from the repo root:
+   ```bash
+   docker compose up -d postgres
+   ```
+
+3. Fill in your actual credentials in `.env`
+
+The recommended local setup on `develop` is:
+
+- mobile app -> local backend on `http://127.0.0.1:3000`
+- local backend -> local Docker Postgres on `127.0.0.1:5433`
+
+The backend can now auto-apply every SQL file in `DB/migrations/` on startup when
+`AUTO_RUN_DB_MIGRATIONS=true` (enabled in `.env.example`).
 
 The recommended local setup on `develop` is:
 
@@ -20,6 +33,10 @@ That is why `.env.example` is written around the staging pooler host but keeps t
 
 ### Database
 - **DATABASE_URL**: PostgreSQL connection string
+  - Recommended local format: `postgresql://postgres:postgres@127.0.0.1:5433/pierre_local`
+- **AUTO_RUN_DB_MIGRATIONS**: Automatically apply `DB/migrations/*.sql` at backend startup
+  - Recommended local value: `true`
+  - Keep `false` in deployed environments unless you intentionally want startup migrations
   - Recommended local format: `postgresql://postgres.<ref>:<password>@<pooler-host>:5432/postgres`
   - Use the staging Supabase pooler credentials for day-to-day development
 

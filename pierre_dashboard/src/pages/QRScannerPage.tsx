@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type { ScanResult } from '../types';
 import { trackEvent } from '../config/analytics';
+import { PageHeader, SectionCard } from '../components/ui';
+import { ui } from '../components/ui-classes';
 
 type ScanStatus = 'idle' | 'loading' | 'valid' | 'used' | 'invalid';
 
@@ -156,10 +158,13 @@ export default function QRScannerPage() {
 
   return (
     <div className="max-w-xl">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Scanner QR</h1>
+      <PageHeader
+        title="Scanner QR"
+        description="Controlla rapidamente biglietti e prenotazioni tavolo con fotocamera o inserimento manuale."
+      />
 
       {/* Camera scanner */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4">
+      <SectionCard className="mb-4 p-6">
         <h2 className="text-base font-semibold text-gray-900 mb-3">Scansione con fotocamera</h2>
 
         {cameraError && (
@@ -178,7 +183,7 @@ export default function QRScannerPage() {
         {!cameraActive ? (
           <button
             onClick={startCamera}
-            className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg py-8 text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors"
+            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gray-300 py-8 text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/10"
           >
             <Search size={20} />
             <span>Avvia fotocamera</span>
@@ -186,16 +191,16 @@ export default function QRScannerPage() {
         ) : !showCameraModal ? (
           <button
             onClick={stopCamera}
-            className="w-full flex items-center justify-center gap-2 text-sm text-gray-500 hover:text-gray-700"
+            className="flex min-h-10 w-full items-center justify-center gap-2 text-sm text-gray-500 transition-colors hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/10"
           >
             <X size={16} />
             Ferma fotocamera
           </button>
         ) : null}
-      </div>
+      </SectionCard>
 
       {/* Manual input */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4">
+      <SectionCard className="mb-4 p-6">
         <h2 className="text-base font-semibold text-gray-900 mb-3">Inserimento manuale</h2>
         <form
           onSubmit={(e) => { e.preventDefault(); handleScan(manualCode, 'manual'); }}
@@ -205,22 +210,22 @@ export default function QRScannerPage() {
             value={manualCode}
             onChange={e => setManualCode(e.target.value)}
             placeholder="Inserisci codice prenotazione o biglietto"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900 font-mono text-sm"
+            className={`${ui.input} ${ui.tabularNums} flex-1 font-mono`}
           />
           <button
             type="submit"
             disabled={!manualCode.trim() || scanStatus === 'loading'}
-            className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+            className={ui.primaryButton}
           >
             <Search size={16} />
             Verifica
           </button>
         </form>
-      </div>
+      </SectionCard>
 
       {/* Result */}
       {scanStatus !== 'idle' && (
-        <div className={`rounded-xl border-2 p-6 ${
+        <SectionCard className={`border-2 p-6 ${
           scanStatus === 'valid' ? 'border-green-400 bg-green-50' :
           scanStatus === 'used' ? 'border-amber-400 bg-amber-50' :
           scanStatus === 'loading' ? 'border-gray-200 bg-white' :
@@ -237,14 +242,14 @@ export default function QRScannerPage() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <CheckCircle size={28} className="text-green-600" />
-                <span className="text-xl font-bold text-green-700">VALIDO</span>
+                <span className="text-xl font-bold text-green-700">Codice valido</span>
               </div>
               <ScanResultDetails result={result} />
               {!checkinDone ? (
                 <button
                   onClick={handleCheckin}
                   disabled={checkinLoading}
-                  className="mt-4 flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
                 >
                   <UserCheck size={18} />
                   {checkinLoading ? 'Registrazione...' : 'Segna come entrato'}
@@ -263,7 +268,7 @@ export default function QRScannerPage() {
               <div className="flex items-center gap-2 mb-4">
                 <AlertCircle size={28} className="text-amber-600" />
                 <span className="text-xl font-bold text-amber-700">
-                  {checkinDone ? 'CHECK-IN EFFETTUATO ORA' : 'GIA UTILIZZATO'}
+                  {checkinDone ? 'Check-in appena registrato' : 'Codice gia utilizzato'}
                 </span>
               </div>
               <ScanResultDetails result={result} />
@@ -273,7 +278,7 @@ export default function QRScannerPage() {
           {scanStatus === 'invalid' && (
             <div className="flex items-center gap-2">
               <XCircle size={28} className="text-red-600" />
-              <span className="text-xl font-bold text-red-700">NON VALIDO</span>
+              <span className="text-xl font-bold text-red-700">Codice non valido</span>
             </div>
           )}
 
@@ -283,7 +288,7 @@ export default function QRScannerPage() {
           >
             Nuova scansione
           </button>
-        </div>
+        </SectionCard>
       )}
 
       {/* Mobile fullscreen camera modal */}
@@ -291,7 +296,7 @@ export default function QRScannerPage() {
         <div className="fixed inset-0 bg-black z-50 flex flex-col">
           <div className="flex items-center justify-between p-4 shrink-0">
             <span className="text-white font-semibold">Scansione QR</span>
-            <button onClick={stopCamera} className="text-white p-1">
+            <button onClick={stopCamera} className="inline-flex size-10 items-center justify-center rounded-xl text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
               <X size={24} />
             </button>
           </div>
