@@ -19,11 +19,6 @@ on:
         required: false
         type: boolean
         default: true
-      deploy_dashboard:
-        description: "Deploy dashboard to Vercel"
-        required: false
-        type: boolean
-        default: true
       build_app:
         description: "Trigger EAS production build"
         required: false
@@ -177,47 +172,6 @@ jobs:
             exit 1
           fi
 
-  deploy_dashboard:
-    name: Deploy Dashboard to Vercel
-    runs-on: ubuntu-latest
-    if: >-
-      startsWith(github.ref, 'refs/tags/v') || github.event.inputs.deploy_dashboard == 'true'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: "24"
-          cache: "npm"
-          cache-dependency-path: pierre_dashboard/package-lock.json
-
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-
-      - name: Install dependencies
-        working-directory: ./pierre_dashboard
-        run: npm ci
-
-      - name: Build dashboard
-        working-directory: ./pierre_dashboard
-        env:
-          VITE_API_URL: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
-          VITE_APP_ENV: ${{ vars.APP_ENV || 'production' }}
-          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
-          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
-        run: npm run build
-
-      - name: Deploy to Vercel
-        working-directory: ./pierre_dashboard
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: team_PT50uRjbghMd8DEOFcz76KH4
-          VERCEL_PROJECT_ID: prj_GAqsmPZJy1vUVRmbZROfU7Sieo2K
-        run: vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
-
   build_app:
     name: Build Production App With EAS
     runs-on: ubuntu-latest
@@ -270,7 +224,7 @@ jobs:
   summary:
     name: Production Deployment Summary
     runs-on: ubuntu-latest
-    needs: [migrations, deploy_backend, deploy_dashboard, build_app]
+    needs: [migrations, deploy_backend, build_app]
     if: always()
 
     steps:
@@ -289,7 +243,6 @@ jobs:
           echo "## Jobs Status" >> $GITHUB_STEP_SUMMARY
           echo "- Migrations: ${{ needs.migrations.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Backend Deploy: ${{ needs.deploy_backend.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Dashboard Deploy: ${{ needs.deploy_dashboard.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- App Build: ${{ needs.build_app.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
