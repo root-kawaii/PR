@@ -1,7 +1,4 @@
-// ====================================
-// components/reservation/TableReservationDetailModal.tsx
-// ====================================
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Modal,
   View,
@@ -9,144 +6,199 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  ActivityIndicator,
-  TextInput,
+  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { TableReservation } from "@/types";
+import { useTheme } from "@/context/ThemeContext";
+import { TableReservation, PaymentShare } from "@/types";
+import { API_URL } from "@/config/api";
+import { trackEvent } from "@/config/analytics";
 
 type TableReservationDetailModalProps = {
   visible: boolean;
   reservation: TableReservation | null;
   onClose: () => void;
-  onPaymentSubmit: (numPeople: number) => Promise<void>;
 };
 
 export const TableReservationDetailModal = ({
   visible,
   reservation,
   onClose,
-  onPaymentSubmit,
 }: TableReservationDetailModalProps) => {
-  const [numPeople, setNumPeople] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const { theme } = useTheme();
+  const [paymentShares, setPaymentShares] = useState<PaymentShare[]>([]);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [slotsFilled, setSlotsFilled] = useState(0);
+  const [slotsTotal, setSlotsTotal] = useState(0);
+  const [showReservationDetails, setShowReservationDetails] = useState(false);
+  const [showPaymentSummary, setShowPaymentSummary] = useState(false);
+
+  useEffect(() => {
+    if (visible && reservation?.id) {
+      trackEvent("reservation_detail_opened", {
+        reservation_id: reservation.id,
+        event_id: reservation.event?.id || null,
+        status: reservation.status,
+      });
+      fetchPaymentStatus();
+    }
+  }, [visible, reservation?.id]);
+
+  useEffect(() => {
+    if (visible) {
+      setShowReservationDetails(false);
+      setShowPaymentSummary(false);
+    }
+  }, [visible, reservation?.id]);
 
   if (!reservation) return null;
 
-  const minSpendPerPerson = parseFloat(
-    reservation.table?.minSpend?.replace(" €", "") || "0"
-  );
-  const totalAmount = parseFloat(reservation.totalAmount.replace(" €", ""));
-  const amountPaid = parseFloat(reservation.amountPaid.replace(" €", ""));
-  const amountRemaining = parseFloat(
-    reservation.amountRemaining.replace(" €", "")
-  );
-  const contributionAmount = minSpendPerPerson * numPeople;
+  const totalAmount = parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, ""));
+  const amountPaid = parseFloat(reservation.amountPaid.replace(/[^0-9.]/g, ""));
 
-  const handlePayment = async () => {
-    setLoading(true);
+  const fetchPaymentStatus = async () => {
     try {
-      await onPaymentSubmit(numPeople);
-      setNumPeople(1);
+      const response = await fetch(
+        `${API_URL}/reservations/${reservation!.id}/payment-status`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setPaymentShares(data.paymentShares || []);
+        setShareLink(data.shareLink || null);
+        setSlotsFilled(data.slotsFilled ?? 0);
+        setSlotsTotal(data.slotsTotal ?? 0);
+        trackEvent("reservation_payment_status_loaded", {
+          reservation_id: reservation!.id,
+          payment_share_count: (data.paymentShares || []).length,
+          slots_filled: data.slotsFilled ?? 0,
+          slots_total: data.slotsTotal ?? 0,
+          has_share_link: Boolean(data.shareLink),
+        });
+      }
     } catch (error) {
-      console.error("Payment failed:", error);
-    } finally {
-      setLoading(false);
+      console.error("Failed to fetch payment status:", error);
+      trackEvent("reservation_payment_status_failed", {
+        reservation_id: reservation!.id,
+      });
     }
   };
 
-  // Calculate remaining capacity
-  const tableCapacity = reservation.table?.capacity || 0;
-  const currentPeople = reservation.numPeople || 0;
-  const remainingCapacity = tableCapacity - currentPeople;
-  const canAddPeople = remainingCapacity > 0;
-
-  const incrementPeople = () => {
-    if (numPeople < remainingCapacity) {
-      setNumPeople(numPeople + 1);
-    }
-  };
-
-  const decrementPeople = () => {
-    if (numPeople > 1) {
-      setNumPeople(numPeople - 1);
-    }
+  const handleShareTableLink = async () => {
+    if (!shareLink) return;
+    try {
+      trackEvent("reservation_share_link_opened", {
+        reservation_id: reservation.id,
+      });
+      await Share.share({
+        message: `Unisciti al mio tavolo "${reservation.table?.name || ""}"! Paga la tua quota qui: ${shareLink}`,
+        url: shareLink,
+      });
+    } catch (_) {}
   };
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "confirmed":
-        return "#10b981";
+      case "paid":
+        return theme.success;
       case "pending":
-        return "#f59e0b";
+      case "checkout_pending":
+        return theme.warning;
       case "completed":
-        return "#3b82f6";
+        return theme.info;
       case "cancelled":
-        return "#ef4444";
+      case "expired":
+        return theme.error;
       default:
-        return "#6b7280";
+        return theme.textTertiary;
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status.toLowerCase()) {
-      case "confirmed":
-        return "Confermata";
-      case "pending":
-        return "In attesa";
-      case "completed":
-        return "Completata";
-      case "cancelled":
-        return "Cancellata";
-      default:
-        return status;
+      case "confirmed": return "Confermata";
+      case "pending": return "In attesa";
+      case "checkout_pending": return "In pagamento";
+      case "paid": return "Pagato";
+      case "completed": return "Completata";
+      case "cancelled": return "Cancellata";
+      case "expired": return "Scaduto";
+      default: return status;
     }
   };
 
+  const getShareStatusText = (status: string, isOwner: boolean) => {
+    const normalized = status.toLowerCase();
+
+    if (isOwner && normalized === "paid") {
+      return "Quota iniziale pagata";
+    }
+
+    switch (normalized) {
+      case "checkout_pending":
+        return "Pagamento in corso";
+      case "paid":
+        return "Quota pagata";
+      case "expired":
+        return "Link scaduto";
+      default:
+        return getStatusText(status);
+    }
+  };
+
+  const guestShares = paymentShares.filter((s) => !s.isOwner);
+  const paidGuestShares = guestShares.filter((s) => s.status === "paid");
+  const reservationStatusHint =
+    reservation.status.toLowerCase() === "pending" && amountPaid > 0 && amountPaid < totalAmount
+      ? "La tua quota iniziale e' stata ricevuta. Mancano ancora le quote degli ospiti."
+      : reservation.status.toLowerCase() === "confirmed" && guestShares.length > 0
+        ? "Tutte le quote del tavolo risultano pagate."
+        : null;
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, { borderBottomColor: theme.backgroundSurface }]}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
-              <IconSymbol name="chevron.left" size={24} color="#fff" />
+              <IconSymbol name="chevron.left" size={24} color={theme.text} />
             </TouchableOpacity>
-            <ThemedText style={styles.headerTitle}>
+            <ThemedText style={[styles.headerTitle, { color: theme.text }]}>
               Dettagli Prenotazione
             </ThemedText>
             <View style={{ width: 40 }} />
           </View>
 
-          <ScrollView
-            style={styles.scrollView}
-            showsVerticalScrollIndicator={false}
-          >
+          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
             {/* Event Image & Info */}
             {reservation.event && (
               <View style={styles.eventSection}>
-                <Image
-                  source={{ uri: reservation.event.image }}
-                  style={styles.eventImage}
+                <Image source={{ uri: reservation.event.image }} style={styles.eventImage} />
+                <LinearGradient
+                  colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.3)", "rgba(8,8,8,0.96)"]}
+                  style={styles.eventOverlay}
                 />
-                <View style={styles.eventOverlay} />
                 <View style={styles.eventInfo}>
-                  <ThemedText style={styles.eventTitle}>
+                  <View style={[styles.heroPill, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}40` }]}>
+                    <IconSymbol name="wineglass.fill" size={12} color={theme.primary} />
+                    <ThemedText style={[styles.heroPillText, { color: theme.primary }]}>
+                      Prenotazione tavolo
+                    </ThemedText>
+                  </View>
+                  <ThemedText style={[styles.eventTitle, { color: theme.text }]}>
                     {reservation.event.title}
                   </ThemedText>
                   <View style={styles.eventMeta}>
-                    <IconSymbol name="mappin" size={14} color="#9ca3af" />
-                    <ThemedText style={styles.eventVenue}>
-                      {reservation.event.venue}
-                    </ThemedText>
+                    <IconSymbol name="mappin" size={14} color={theme.textTertiary} />
+                    <ThemedText style={styles.eventVenue}>{reservation.event.venue}</ThemedText>
                   </View>
                   <View style={styles.eventMeta}>
-                    <IconSymbol name="calendar" size={14} color="#9ca3af" />
-                    <ThemedText style={styles.eventDate}>
-                      {reservation.event.date}
-                    </ThemedText>
+                    <IconSymbol name="calendar" size={14} color={theme.textTertiary} />
+                    <ThemedText style={styles.eventDate}>{reservation.event.date}</ThemedText>
                   </View>
                 </View>
               </View>
@@ -154,159 +206,171 @@ export const TableReservationDetailModal = ({
 
             {/* Reservation Code & Status */}
             <View style={styles.section}>
-              <View style={styles.codeStatusRow}>
-                <View style={styles.codeContainer}>
-                  <ThemedText style={styles.label}>
-                    Codice Prenotazione
-                  </ThemedText>
-                  <ThemedText style={styles.reservationCode}>
-                    {reservation.reservationCode}
-                  </ThemedText>
+              <View style={[styles.heroSummaryCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                <LinearGradient
+                  colors={[`${theme.primary}14`, "rgba(0,0,0,0)", `${theme.secondary}10`] as [string, string, string]}
+                  style={styles.heroSummaryGlow}
+                />
+                <View style={styles.codeStatusRow}>
+                  <View style={styles.codeContainer}>
+                    <ThemedText style={[styles.label, { color: theme.textTertiary }]}>
+                      Codice Prenotazione
+                    </ThemedText>
+                    <ThemedText style={[styles.reservationCode, { color: theme.text }]}>
+                      {reservation.reservationCode}
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(reservation.status) }]}>
+                    <ThemedText style={[styles.statusText, { color: theme.textInverse }]}>
+                      {getStatusText(reservation.status)}
+                    </ThemedText>
+                  </View>
                 </View>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: getStatusColor(reservation.status) },
-                  ]}
-                >
-                  <ThemedText style={styles.statusText}>
-                    {getStatusText(reservation.status)}
+                {reservationStatusHint && (
+                  <ThemedText style={[styles.statusHint, { color: theme.textTertiary }]}>
+                    {reservationStatusHint}
                   </ThemedText>
+                )}
+
+                <View style={styles.summaryGrid}>
+                  <View style={[styles.summaryTile, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                    <ThemedText style={[styles.summaryTileLabel, { color: theme.textTertiary }]}>Posti confermati</ThemedText>
+                    <ThemedText style={[styles.summaryTileValue, { color: theme.text }]}>
+                      {reservation.numPeople}/{reservation.table?.capacity || 0}
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.summaryTile, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                    <ThemedText style={[styles.summaryTileLabel, { color: theme.textTertiary }]}>Rimanente</ThemedText>
+                    <ThemedText style={[styles.summaryTileValue, { color: theme.primary }]}>
+                      {reservation.amountRemaining}
+                    </ThemedText>
+                  </View>
                 </View>
               </View>
             </View>
+
+            {/* Share Link Button */}
+            {shareLink && (
+              <View style={styles.section}>
+                <TouchableOpacity
+                  style={[styles.shareLinkCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.primary }]}
+                  onPress={handleShareTableLink}
+                >
+                  <View style={styles.shareLinkLeft}>
+                    <View style={[styles.shareLinkIconWrap, { backgroundColor: `${theme.primary}16` }]}>
+                      <IconSymbol name="arrow.right.square.fill" size={18} color={theme.primary} />
+                    </View>
+                    <View>
+                      <ThemedText style={[styles.shareLinkTitle, { color: theme.text }]}>
+                        Condividi Link Tavolo
+                      </ThemedText>
+                      <ThemedText style={[styles.shareLinkSub, { color: theme.textTertiary }]}>
+                        {slotsFilled}/{slotsTotal} posti occupati
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <IconSymbol name="chevron.right" size={16} color={theme.textTertiary} />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Table Info */}
             {reservation.table && (
               <View style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>
+                <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                   Informazioni Tavolo
                 </ThemedText>
-                <View style={styles.card}>
-                  <View style={styles.infoRow}>
-                    <ThemedText style={styles.infoLabel}>Tavolo</ThemedText>
-                    <ThemedText style={styles.infoValue}>
+                <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Tavolo</ThemedText>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                       {reservation.table.name}
                     </ThemedText>
                   </View>
                   {reservation.table.zone && (
-                    <View style={styles.infoRow}>
-                      <ThemedText style={styles.infoLabel}>Zona</ThemedText>
-                      <ThemedText style={styles.infoValue}>
+                    <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                      <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Zona</ThemedText>
+                      <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                         {reservation.table.zone}
                       </ThemedText>
                     </View>
                   )}
-                  <View style={styles.infoRow}>
-                    <ThemedText style={styles.infoLabel}>Capacità</ThemedText>
-                    <ThemedText style={styles.infoValue}>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Capacità</ThemedText>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>
                       {reservation.table.capacity} persone
                     </ThemedText>
                   </View>
-                  <View style={styles.infoRow}>
-                    <ThemedText style={styles.infoLabel}>
-                      Min. a persona
-                    </ThemedText>
-                    <ThemedText style={styles.infoValue}>
-                      {reservation.table.minSpend}
-                    </ThemedText>
-                  </View>
                   {reservation.table.locationDescription && (
-                    <View style={styles.locationContainer}>
-                      <IconSymbol name="location" size={16} color="#9ca3af" />
-                      <ThemedText style={styles.locationText}>
+                    <View style={[styles.locationContainer, { borderTopColor: theme.border }]}>
+                      <IconSymbol name="location.fill" size={16} color={theme.textTertiary} />
+                      <ThemedText style={[styles.locationText, { color: theme.textTertiary }]}>
                         {reservation.table.locationDescription}
                       </ThemedText>
                     </View>
                   )}
-                  {reservation.table.features &&
-                    reservation.table.features.length > 0 && (
-                      <View style={styles.featuresContainer}>
-                        {reservation.table.features.map((feature, index) => (
-                          <View key={index} style={styles.featureItem}>
-                            <IconSymbol
-                              name="checkmark.circle"
-                              size={14}
-                              color="#10b981"
-                            />
-                            <ThemedText style={styles.featureText}>
-                              {feature}
-                            </ThemedText>
-                          </View>
-                        ))}
-                      </View>
-                    )}
+                  {reservation.table.features && reservation.table.features.length > 0 && (
+                    <View style={[styles.featuresContainer, { borderTopColor: theme.border }]}>
+                      {reservation.table.features.map((feature, index) => (
+                        <View key={index} style={styles.featureItem}>
+                          <IconSymbol name="checkmark.circle" size={14} color={theme.success} />
+                          <ThemedText style={[styles.featureText, { color: theme.textSecondary }]}>
+                            {feature}
+                          </ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                  )}
                 </View>
               </View>
             )}
 
-            {/* Table Capacity */}
-            <View style={styles.section}>
-              <ThemedText style={styles.sectionTitle}>
-                Capienza Tavolo
-              </ThemedText>
-              <View style={styles.card}>
-                <View style={styles.capacityRow}>
-                  <View style={styles.capacityInfo}>
-                    <ThemedText style={styles.capacityLabel}>
-                      Persone Attuali
-                    </ThemedText>
-                    <ThemedText style={styles.capacityValue}>
-                      {currentPeople}
-                    </ThemedText>
-                  </View>
-                  <View style={styles.capacityDivider} />
-                  <View style={styles.capacityInfo}>
-                    <ThemedText style={styles.capacityLabel}>
-                      Capacità Massima
-                    </ThemedText>
-                    <ThemedText style={styles.capacityValue}>
-                      {tableCapacity}
-                    </ThemedText>
-                  </View>
-                  <View style={styles.capacityDivider} />
-                  <View style={styles.capacityInfo}>
-                    <ThemedText style={styles.capacityLabel}>
-                      Posti Disponibili
-                    </ThemedText>
-                    <ThemedText style={[
-                      styles.capacityValue,
-                      { color: remainingCapacity > 0 ? '#10b981' : '#ef4444' }
-                    ]}>
-                      {remainingCapacity}
-                    </ThemedText>
-                  </View>
-                </View>
-                {!canAddPeople && (
-                  <View style={styles.fullCapacityBanner}>
-                    <IconSymbol name="exclamationmark.triangle.fill" size={16} color="#f59e0b" />
-                    <ThemedText style={styles.fullCapacityText}>
-                      Tavolo al completo
-                    </ThemedText>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            {/* Participants */}
-            {reservation.participants && reservation.participants.length > 0 && (
+            {/* Payment Shares */}
+            {paymentShares.length > 0 && (
               <View style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>
-                  Partecipanti ({reservation.participants.length})
+                <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
+                  Quote tavolo
                 </ThemedText>
-                <View style={styles.card}>
-                  {reservation.participants.map((participant) => (
-                    <View key={participant.userId} style={styles.participantRow}>
-                      <View style={styles.participantIcon}>
-                        <IconSymbol name="person" size={20} color="#ec4899" />
+                {guestShares.length > 0 && (
+                  <ThemedText style={[styles.sectionSubtitle, { color: theme.textTertiary }]}>
+                    Quota iniziale registrata. Ospiti: {paidGuestShares.length}/{guestShares.length} quote pagate
+                  </ThemedText>
+                )}
+                <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  {paymentShares.map((share) => (
+                    <View key={share.id} style={[styles.shareRow, { borderBottomColor: theme.border }]}>
+                      <View style={[
+                        styles.shareIcon,
+                        { backgroundColor: share.isOwner ? `${theme.primary}1A` : `${getStatusColor(share.status)}1A` }
+                      ]}>
+                        <IconSymbol
+                          name={share.isOwner ? "heart.fill" : "person"}
+                          size={18}
+                          color={share.isOwner ? theme.primary : getStatusColor(share.status)}
+                        />
                       </View>
-                      <View style={styles.participantInfo}>
-                        <ThemedText style={styles.participantName}>
-                          {participant.userName}
+                      <View style={styles.shareInfo}>
+                        <ThemedText style={[styles.shareName, { color: theme.text }]}>
+                          {share.isOwner
+                            ? "Tu"
+                            : share.guestName || share.phoneNumber || "Ospite"}
                         </ThemedText>
-                        <ThemedText style={styles.participantDetails}>
-                          {participant.numPeople} {participant.numPeople === 1 ? 'persona' : 'persone'} • {participant.amountPaid}
+                        <ThemedText style={[styles.shareMeta, { color: theme.textTertiary }]}>
+                          {share.isOwner ? "Pagamento iniziale del tavolo" : "Quota ospite"}
                         </ThemedText>
+                        <View style={styles.shareStatusRow}>
+                          <View style={[
+                            styles.shareStatusBadge,
+                            { backgroundColor: `${getStatusColor(share.status)}33` }
+                          ]}>
+                            <ThemedText style={[styles.shareStatusText, { color: getStatusColor(share.status) }]}>
+                              {getShareStatusText(share.status, share.isOwner)}
+                            </ThemedText>
+                          </View>
+                          <ThemedText style={[styles.shareAmount, { color: theme.text }]}>
+                            {share.amount}
+                          </ThemedText>
+                        </View>
                       </View>
                     </View>
                   ))}
@@ -316,194 +380,108 @@ export const TableReservationDetailModal = ({
 
             {/* Reservation Details */}
             <View style={styles.section}>
-              <ThemedText style={styles.sectionTitle}>
-                Dettagli Prenotazione
-              </ThemedText>
-              <View style={styles.card}>
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>
-                    Nome contatto
+              <TouchableOpacity
+                style={[styles.accordionHeader, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}
+                onPress={() => setShowReservationDetails((prev) => !prev)}
+                activeOpacity={0.85}
+              >
+                <View>
+                  <ThemedText style={[styles.accordionTitle, { color: theme.text }]}>
+                    Dettagli Prenotazione
                   </ThemedText>
-                  <ThemedText style={styles.infoValue}>
-                    {reservation.contactName}
-                  </ThemedText>
-                </View>
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>
-                    Nome contatto
-                  </ThemedText>
-                  <ThemedText style={styles.infoValue}>
-                    {reservation.contactName}
+                  <ThemedText style={[styles.accordionSubtitle, { color: theme.textTertiary }]}>
+                    Contatto e richieste speciali
                   </ThemedText>
                 </View>
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>Email</ThemedText>
-                  <ThemedText style={styles.infoValueSmall}>
-                    {reservation.contactEmail}
-                  </ThemedText>
-                </View>
-                <View style={styles.infoRow}>
-                  <ThemedText style={styles.infoLabel}>Telefono</ThemedText>
-                  <ThemedText style={styles.infoValue}>
-                    {reservation.contactPhone}
-                  </ThemedText>
-                </View>
-                {reservation.specialRequests && (
-                  <View style={styles.specialRequestsContainer}>
-                    <ThemedText style={styles.infoLabel}>
-                      Richieste speciali
-                    </ThemedText>
-                    <ThemedText style={styles.specialRequestsText}>
-                      {reservation.specialRequests}
-                    </ThemedText>
+                <IconSymbol
+                  name={showReservationDetails ? "chevron.up" : "chevron.down"}
+                  size={18}
+                  color={theme.textTertiary}
+                />
+              </TouchableOpacity>
+              {showReservationDetails && (
+                <View style={[styles.card, styles.accordionCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Nome contatto</ThemedText>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>{reservation.contactName}</ThemedText>
                   </View>
-                )}
-              </View>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Email</ThemedText>
+                    <ThemedText style={[styles.infoValueSmall, { color: theme.text }]}>{reservation.contactEmail}</ThemedText>
+                  </View>
+                  <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Telefono</ThemedText>
+                    <ThemedText style={[styles.infoValue, { color: theme.text }]}>{reservation.contactPhone}</ThemedText>
+                  </View>
+                  {reservation.specialRequests && (
+                    <View style={[styles.specialRequestsContainer, { borderTopColor: theme.border }]}>
+                      <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Richieste speciali</ThemedText>
+                      <ThemedText style={[styles.specialRequestsText, { color: theme.textSecondary }]}>
+                        {reservation.specialRequests}
+                      </ThemedText>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* Payment Summary */}
             <View style={styles.section}>
-              <ThemedText style={styles.sectionTitle}>
-                Riepilogo Pagamento
-              </ThemedText>
-              <View style={styles.card}>
-                <View style={styles.paymentRow}>
-                  <ThemedText style={styles.paymentLabel}>
-                    Importo totale
+              <TouchableOpacity
+                style={[styles.accordionHeader, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}
+                onPress={() => setShowPaymentSummary((prev) => !prev)}
+                activeOpacity={0.85}
+              >
+                <View>
+                  <ThemedText style={[styles.accordionTitle, { color: theme.text }]}>
+                    Riepilogo Pagamento
                   </ThemedText>
-                  <ThemedText style={styles.paymentValue}>
-                    {reservation.totalAmount}
-                  </ThemedText>
-                </View>
-                <View style={styles.paymentRow}>
-                  <ThemedText style={styles.paymentLabel}>
-                    Già pagato
-                  </ThemedText>
-                  <ThemedText
-                    style={[styles.paymentValue, { color: "#10b981" }]}
-                  >
-                    {reservation.amountPaid}
+                  <ThemedText style={[styles.accordionSubtitle, { color: theme.textTertiary }]}>
+                    Totale, pagato e importo rimanente
                   </ThemedText>
                 </View>
-                <View style={styles.divider} />
-                <View style={styles.paymentRow}>
-                  <ThemedText style={styles.paymentLabelTotal}>
-                    Rimanente
-                  </ThemedText>
-                  <ThemedText style={styles.paymentValueTotal}>
-                    {reservation.amountRemaining}
-                  </ThemedText>
-                </View>
-
-                {/* Progress Bar */}
-                <View style={styles.progressContainer}>
-                  <View style={styles.progressBar}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        { width: `${(amountPaid / totalAmount) * 100}%` },
-                      ]}
-                    />
+                <IconSymbol
+                  name={showPaymentSummary ? "chevron.up" : "chevron.down"}
+                  size={18}
+                  color={theme.textTertiary}
+                />
+              </TouchableOpacity>
+              {showPaymentSummary && (
+                <View style={[styles.card, styles.accordionCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+                  <View style={styles.paymentRow}>
+                    <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Importo totale</ThemedText>
+                    <ThemedText style={[styles.paymentValue, { color: theme.text }]}>{reservation.totalAmount}</ThemedText>
                   </View>
-                  <ThemedText style={styles.progressText}>
-                    {Math.round((amountPaid / totalAmount) * 100)}% pagato
-                  </ThemedText>
+                  <View style={styles.paymentRow}>
+                    <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Già pagato</ThemedText>
+                    <ThemedText style={[styles.paymentValue, { color: theme.success }]}>{reservation.amountPaid}</ThemedText>
+                  </View>
+                  <View style={[styles.divider, { backgroundColor: theme.border }]} />
+                  <View style={styles.paymentRow}>
+                    <ThemedText style={[styles.paymentLabelTotal, { color: theme.text }]}>Rimanente</ThemedText>
+                    <ThemedText style={[styles.paymentValueTotal, { color: theme.primary }]}>{reservation.amountRemaining}</ThemedText>
+                  </View>
+
+                  <View style={styles.progressContainer}>
+                    <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${totalAmount > 0 ? Math.min((amountPaid / totalAmount) * 100, 100) : 0}%`,
+                            backgroundColor: theme.success,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <ThemedText style={[styles.progressText, { color: theme.textTertiary }]}>
+                      {totalAmount > 0 ? Math.round((amountPaid / totalAmount) * 100) : 0}% pagato
+                    </ThemedText>
+                  </View>
                 </View>
-              </View>
+              )}
             </View>
 
-            {/* Payment Contribution */}
-            {canAddPeople && amountRemaining > 0 && reservation.status !== "cancelled" && (
-              <View style={styles.section}>
-                <ThemedText style={styles.sectionTitle}>
-                  Aggiungi Persone
-                </ThemedText>
-                <View style={styles.card}>
-                  <ThemedText style={styles.contributionDescription}>
-                    Ci sono ancora {remainingCapacity} {remainingCapacity === 1 ? 'posto disponibile' : 'posti disponibili'} al tavolo.
-                    Seleziona per quante persone vuoi pagare la quota minima di{" "}
-                    {reservation.table?.minSpend} a persona.
-                  </ThemedText>
-
-                  {/* People Counter */}
-                  <View style={styles.counterContainer}>
-                    <ThemedText style={styles.counterLabel}>
-                      Numero di persone da aggiungere
-                    </ThemedText>
-                    <View style={styles.counter}>
-                      <TouchableOpacity
-                        style={[
-                          styles.counterButton,
-                          numPeople <= 1 && styles.counterButtonDisabled,
-                        ]}
-                        onPress={decrementPeople}
-                        disabled={numPeople <= 1}
-                      >
-                        <IconSymbol
-                          name="minus"
-                          size={20}
-                          color={numPeople <= 1 ? "#6b7280" : "#fff"}
-                        />
-                      </TouchableOpacity>
-                      <View style={styles.counterValueContainer}>
-                        <ThemedText style={styles.counterValue}>
-                          {numPeople}
-                        </ThemedText>
-                      </View>
-                      <TouchableOpacity
-                        style={[
-                          styles.counterButton,
-                          numPeople >= remainingCapacity &&
-                            styles.counterButtonDisabled,
-                        ]}
-                        onPress={incrementPeople}
-                        disabled={numPeople >= remainingCapacity}
-                      >
-                        <IconSymbol
-                          name="plus"
-                          size={20}
-                          color={
-                            numPeople >= remainingCapacity
-                              ? "#6b7280"
-                              : "#fff"
-                          }
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* Contribution Amount */}
-                  <View style={styles.contributionAmountContainer}>
-                    <ThemedText style={styles.contributionAmountLabel}>
-                      Importo da pagare
-                    </ThemedText>
-                    <ThemedText style={styles.contributionAmount}>
-                      {contributionAmount.toFixed(2)} €
-                    </ThemedText>
-                  </View>
-
-                  {/* Pay Button */}
-                  <TouchableOpacity
-                    style={[
-                      styles.payButton,
-                      loading && styles.payButtonDisabled,
-                    ]}
-                    onPress={handlePayment}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <ThemedText style={styles.payButtonText}>
-                        Paga {contributionAmount.toFixed(2)} €
-                      </ThemedText>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* Spacing at bottom */}
             <View style={{ height: 30 }} />
           </ScrollView>
         </View>
@@ -513,116 +491,100 @@ export const TableReservationDetailModal = ({
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
+  container: { flex: 1, backgroundColor: "#000" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 60,
+    paddingTop: 28,
+    paddingBottom: 18,
     borderBottomWidth: 1,
     borderBottomColor: "#1f2937",
   },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  eventSection: {
-    position: "relative",
-    height: 250,
-  },
-  eventImage: {
-    width: "100%",
-    height: "100%",
-  },
+  backButton: { padding: 8, marginLeft: -8 },
+  headerTitle: { fontSize: 20, fontWeight: "700", color: "#fff" },
+  scrollView: { flex: 1 },
+  eventSection: { position: "relative", height: 280 },
+  eventImage: { width: "100%", height: "100%" },
   eventOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
   },
-  eventInfo: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 20,
-  },
-  eventTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#fff",
-    marginBottom: 4,
-  },
-  eventMeta: {
+  eventInfo: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 20 },
+  heroPill: {
     flexDirection: "row",
     alignItems: "center",
+    alignSelf: "flex-start",
     gap: 6,
-    marginBottom: 4,
-  },
-  eventVenue: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.9)",
-  },
-  eventDate: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.9)",
-  },
-  section: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#fff",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
     marginBottom: 12,
   },
-  codeStatusRow: {
+  heroPillText: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
+  eventTitle: { fontSize: 24, fontWeight: "700", color: "#fff", marginBottom: 4 },
+  eventMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
+  eventVenue: { fontSize: 14, color: "rgba(255, 255, 255, 0.9)" },
+  eventDate: { fontSize: 14, color: "rgba(255, 255, 255, 0.9)" },
+  section: { paddingHorizontal: 16, paddingTop: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#fff", marginBottom: 12 },
+  sectionSubtitle: { fontSize: 13, marginTop: -6, marginBottom: 12 },
+  accordionHeader: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
     gap: 12,
   },
-  codeContainer: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 13,
-    color: "#9ca3af",
-    marginBottom: 1,
-    fontWeight: "500",
-  },
-  reservationCode: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#fff",
-    letterSpacing: 1,
-  },
-  statusBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  accordionTitle: { fontSize: 17, fontWeight: "700" },
+  accordionSubtitle: { fontSize: 12, marginTop: 3 },
+  accordionCard: { marginTop: 10 },
+  heroSummaryCard: {
+    position: "relative",
+    overflow: "hidden",
     borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#fff",
-    textTransform: "uppercase",
+  heroSummaryGlow: {
+    ...StyleSheet.absoluteFillObject,
   },
+  codeStatusRow: {
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "flex-start", gap: 12,
+  },
+  codeContainer: { flex: 1 },
+  label: { fontSize: 13, color: "#9ca3af", marginBottom: 1, fontWeight: "500" },
+  reservationCode: { fontSize: 20, fontWeight: "700", color: "#fff", letterSpacing: 1 },
+  statusBadge: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 20 },
+  statusText: { fontSize: 12, fontWeight: "700", color: "#fff", textTransform: "uppercase" },
+  statusHint: { fontSize: 13, lineHeight: 18, marginTop: 12 },
+  summaryGrid: { flexDirection: "row", gap: 12, marginTop: 16 },
+  summaryTile: { flex: 1, borderRadius: 16, borderWidth: 1, padding: 14 },
+  summaryTileLabel: { fontSize: 12, fontWeight: "600", marginBottom: 6 },
+  summaryTileValue: { fontSize: 18, fontWeight: "800" },
+  shareLinkCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  shareLinkLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  shareLinkIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shareLinkTitle: { fontSize: 15, fontWeight: "700" },
+  shareLinkSub: { fontSize: 12, marginTop: 2 },
   card: {
     backgroundColor: "#1a1a1a",
     borderRadius: 16,
@@ -631,266 +593,49 @@ const styles = StyleSheet.create({
     borderColor: "#2a2a2a",
   },
   infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2a2a2a",
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#2a2a2a",
   },
-  infoLabel: {
-    fontSize: 14,
-    color: "#9ca3af",
-    fontWeight: "500",
-  },
-  infoValue: {
-    fontSize: 14,
-    color: "#fff",
-    fontWeight: "600",
-  },
-  infoValueSmall: {
-    fontSize: 12,
-    color: "#fff",
-    fontWeight: "600",
-    maxWidth: "60%",
-    textAlign: "right",
-  },
+  infoLabel: { fontSize: 14, color: "#9ca3af", fontWeight: "500" },
+  infoValue: { fontSize: 14, color: "#fff", fontWeight: "600" },
+  infoValueSmall: { fontSize: 12, color: "#fff", fontWeight: "600", maxWidth: "60%", textAlign: "right" },
   locationContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#2a2a2a",
+    flexDirection: "row", alignItems: "center", gap: 8,
+    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#2a2a2a",
   },
-  locationText: {
-    fontSize: 13,
-    color: "#9ca3af",
-    flex: 1,
-  },
+  locationText: { fontSize: 13, color: "#9ca3af", flex: 1 },
   featuresContainer: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#2a2a2a",
-    gap: 8,
+    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#2a2a2a", gap: 8,
   },
-  featureItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+  featureItem: { flexDirection: "row", alignItems: "center", gap: 8 },
+  featureText: { fontSize: 13, color: "#d1d5db" },
+  specialRequestsContainer: { paddingTop: 12, borderTopWidth: 1, borderTopColor: "#2a2a2a" },
+  specialRequestsText: { fontSize: 13, color: "#d1d5db", marginTop: 6, lineHeight: 18 },
+  shareRow: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: "#2a2a2a",
   },
-  featureText: {
-    fontSize: 13,
-    color: "#d1d5db",
+  shareIcon: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: "center", justifyContent: "center", marginRight: 12,
   },
-  specialRequestsContainer: {
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#2a2a2a",
-  },
-  specialRequestsText: {
-    fontSize: 13,
-    color: "#d1d5db",
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  capacityRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingVertical: 12,
-  },
-  capacityInfo: {
-    flex: 1,
-    alignItems: "center",
-  },
-  capacityLabel: {
-    fontSize: 11,
-    color: "#9ca3af",
-    marginBottom: 4,
-    textAlign: "center",
-  },
-  capacityValue: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  capacityDivider: {
-    width: 1,
-    backgroundColor: "#2a2a2a",
-    marginHorizontal: 8,
-  },
-  fullCapacityBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 12,
-    paddingTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "rgba(245, 158, 11, 0.1)",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(245, 158, 11, 0.3)",
-  },
-  fullCapacityText: {
-    fontSize: 13,
-    color: "#f59e0b",
-    fontWeight: "600",
-  },
-  participantRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2a2a2a",
-  },
-  participantIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(236, 72, 153, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  participantInfo: {
-    flex: 1,
-  },
-  participantName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#fff",
-    marginBottom: 2,
-  },
-  participantDetails: {
-    fontSize: 13,
-    color: "#9ca3af",
-  },
+  shareInfo: { flex: 1 },
+  shareName: { fontSize: 15, fontWeight: "600", color: "#fff", marginBottom: 4 },
+  shareMeta: { fontSize: 12, marginBottom: 6 },
+  shareStatusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  shareStatusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  shareStatusText: { fontSize: 11, fontWeight: "600" },
+  shareAmount: { fontSize: 14, fontWeight: "600", color: "#fff" },
   paymentRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 8,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8,
   },
-  paymentLabel: {
-    fontSize: 14,
-    color: "#9ca3af",
-  },
-  paymentValue: {
-    fontSize: 16,
-    color: "#fff",
-    fontWeight: "600",
-  },
-  paymentLabelTotal: {
-    fontSize: 16,
-    color: "#fff",
-    fontWeight: "700",
-  },
-  paymentValueTotal: {
-    fontSize: 20,
-    color: "#ec4899",
-    fontWeight: "700",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#2a2a2a",
-    marginVertical: 8,
-  },
-  progressContainer: {
-    marginTop: 16,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: "#2a2a2a",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#10b981",
-    borderRadius: 4,
-  },
-  progressText: {
-    fontSize: 12,
-    color: "#9ca3af",
-    marginTop: 6,
-    textAlign: "center",
-  },
-  contributionDescription: {
-    fontSize: 14,
-    color: "#9ca3af",
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  counterContainer: {
-    marginBottom: 20,
-  },
-  counterLabel: {
-    fontSize: 10,
-    color: "#9ca3af",
-    marginBottom: 12,
-    fontWeight: "500",
-  },
-  counter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-  },
-  counterButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#2a2a2a",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  counterButtonDisabled: {
-    opacity: 0.4,
-  },
-  counterValueContainer: {
-    minWidth: 60,
-    alignItems: "center",
-  },
-  counterValue: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  contributionAmountContainer: {
-    backgroundColor: "#0f0f0f",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  contributionAmountLabel: {
-    fontSize: 14,
-    color: "#9ca3af",
-    fontWeight: "500",
-  },
-  contributionAmount: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#ec4899",
-  },
-  payButton: {
-    backgroundColor: "#ec4899",
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  payButtonDisabled: {
-    opacity: 0.6,
-  },
-  payButtonText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
-  },
+  paymentLabel: { fontSize: 14, color: "#9ca3af" },
+  paymentValue: { fontSize: 16, color: "#fff", fontWeight: "600" },
+  paymentLabelTotal: { fontSize: 16, color: "#fff", fontWeight: "700" },
+  paymentValueTotal: { fontSize: 20, color: "#ec4899", fontWeight: "700" },
+  divider: { height: 1, backgroundColor: "#2a2a2a", marginVertical: 8 },
+  progressContainer: { marginTop: 16 },
+  progressBar: { height: 8, backgroundColor: "#2a2a2a", borderRadius: 4, overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: "#10b981", borderRadius: 4 },
+  progressText: { fontSize: 12, color: "#9ca3af", marginTop: 6, textAlign: "center" },
 });

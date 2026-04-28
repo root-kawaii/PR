@@ -1,0 +1,23 @@
+PLACEHOLDER IMAGE NEEDED
+
+This directory needs a 360° equirectangular placeholder image.
+
+Required: placeholder-nightclub.jpg
+
+Specifications:
+- Format: JPEG
+- Resolution: 4096x2048 pixels (2:1 ratio)
+- Size: < 2MB
+- Projection: Equirectangular
+
+Quick sources:
+1. Freepik: https://www.freepik.com/free-photos-vectors/equirectangular-360
+2. Pixabay: https://pixabay.com/images/search/360%20panorama/
+3. Pexels: https://www.pexels.com/search/360/
+
+Search terms:
+- "equirectangular nightclub"
+- "360 panorama club interior"
+- "360 degree bar interior"
+
+Once downloaded, save as: placeholder-nightclub.jpg

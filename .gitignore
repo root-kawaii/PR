@@ -2,6 +2,10 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
+!.env.staging.example
+!**/.env.production.example
+!**/.env.staging.example
 *.env
 
 # Dependencies
@@ -24,3 +28,10 @@ node_modules/
 # Logs
 rust_BE/logs/*.log
 rust_BE/server.log
+
+
+
+.claude/
+
+# Vercel
+.vercel

@@ -1,11 +1,89 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { User, AuthResponse, LoginRequest, RegisterRequest } from '../types';
 import { API_URL } from '../config/api';
-const TOKEN_KEY = '@auth_token';
-const USER_KEY = '@auth_user';
+import { identifyAnalyticsUser, resetAnalytics, trackEvent } from '../config/analytics';
+import { getExpoExtraString } from '../config/expoExtra';
+import { configureNotificationHandler, registerPushToken } from '../config/pushNotifications';
+
+const LEGACY_TOKEN_KEY = 'auth_token';
+const LEGACY_USER_KEY = 'auth_user';
+const authStorageNamespace = [
+  getExpoExtraString('appEnv') || 'development',
+  API_URL,
+]
+  .join(':')
+  .replace(/[^A-Za-z0-9._-]/g, '_');
+const TOKEN_KEY = `auth_token_${authStorageNamespace}`;
+const USER_KEY = `auth_user_${authStorageNamespace}`;
+
+// expo-secure-store and expo-notifications are only available in native builds (not Expo Go).
+// Fall back gracefully so the app works during local development.
+let SecureStore: typeof import('expo-secure-store') | null = null;
+try { SecureStore = require('expo-secure-store'); } catch { /* Expo Go */ }
+const _memStore: Record<string, string> = {};
+
+configureNotificationHandler();
+
+/** Extract a human-readable message from a failed response (handles JSON or plain text). */
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const text = await response.text();
+    if (!text) return fallback;
+    const json = JSON.parse(text);
+    return json.error || json.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Parse a successful response as JSON, throwing a clean error if it fails. */
+async function safeJson<T>(response: Response, fallback: string): Promise<T> {
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new Error(fallback);
+  }
+}
+
+/** Decode JWT exp claim without a library — returns null if unparseable. */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const payload = token.split('.')[1];
+    const decoded = JSON.parse(atob(payload));
+    return typeof decoded.exp === 'number' ? decoded.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  const exp = getTokenExpiry(token);
+  if (exp === null) return false; // can't determine — assume valid
+  return Date.now() / 1000 >= exp;
+}
+
+async function secureGet(key: string): Promise<string | null> {
+  if (!SecureStore) return _memStore[key] ?? null;
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function secureSet(key: string, value: string): Promise<void> {
+  if (!SecureStore) { _memStore[key] = value; return; }
+  await SecureStore.setItemAsync(key, value);
+}
+
+async function secureDelete(key: string): Promise<void> {
+  if (!SecureStore) { delete _memStore[key]; return; }
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch {
+    // ignore if key doesn't exist
+  }
+}
 
 interface AuthContextType {
   user: User | null;
@@ -14,7 +92,9 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (nextUser: User) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,103 +103,216 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const previousAnalyticsUserIdRef = useRef<string | null>(null);
 
-  // Load saved auth data on mount
   useEffect(() => {
     loadAuthData();
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      if (previousAnalyticsUserIdRef.current) {
+        resetAnalytics();
+        previousAnalyticsUserIdRef.current = null;
+      }
+      return;
+    }
+
+    identifyAnalyticsUser(user);
+    previousAnalyticsUserIdRef.current = user.id;
+  }, [user]);
+
   const loadAuthData = async () => {
     try {
       const [savedToken, savedUser] = await Promise.all([
-        AsyncStorage.getItem(TOKEN_KEY),
-        AsyncStorage.getItem(USER_KEY),
+        secureGet(TOKEN_KEY),
+        secureGet(USER_KEY),
+      ]);
+      await Promise.all([
+        secureDelete(LEGACY_TOKEN_KEY),
+        secureDelete(LEGACY_USER_KEY),
       ]);
 
       if (savedToken && savedUser) {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
+        if (isTokenExpired(savedToken)) {
+          // Token expired — clear storage and start fresh
+          await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+        } else {
+          try {
+            setToken(savedToken);
+            setUser(JSON.parse(savedUser));
+          } catch {
+            // Corrupt stored data — clear and force re-login
+            await Promise.all([secureDelete(TOKEN_KEY), secureDelete(USER_KEY)]);
+          }
+        }
       }
-    } catch (error) {
-      console.error('Failed to load auth data:', error);
+    } catch {
+      // Storage read failed — start unauthenticated
     } finally {
       setIsLoading(false);
     }
   };
 
+  const logout = useCallback(async () => {
+    if (user) {
+      trackEvent('auth_logout', {
+        user_id: user.id,
+      });
+    }
+    setUser(null);
+    setToken(null);
+    await Promise.all([
+      secureDelete(TOKEN_KEY),
+      secureDelete(USER_KEY),
+      secureDelete(LEGACY_TOKEN_KEY),
+      secureDelete(LEGACY_USER_KEY),
+    ]);
+  }, [user]);
+
+  const updateUser = useCallback(async (nextUser: User) => {
+    setUser(nextUser);
+    await secureSet(USER_KEY, JSON.stringify(nextUser));
+  }, []);
+
   const login = async (credentials: LoginRequest) => {
+    trackEvent('auth_login_submitted');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    let response: Response;
     try {
-      console.log('=== DEBUG INFO ===');
-      console.log('Attempting login with URL:', `${API_URL}/auth/login`);
-      console.log('Platform:', Platform.OS);
-      console.log('Is Physical Device:', Constants.isDevice);
-      console.log('Device Name:', Constants.deviceName);
-      console.log('==================');
-      const response = await fetch(`${API_URL}/auth/login`, {
+      response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials),
+        signal: controller.signal,
       });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || 'Login failed');
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        trackEvent('auth_login_failed', {
+          error_type: 'timeout',
+        });
+        throw new Error('Connessione scaduta. Controlla la tua rete e riprova.');
       }
-
-      const data: AuthResponse = await response.json();
-
-      // Save to state and async storage
-      setUser(data.user);
-      setToken(data.token);
-      await AsyncStorage.setItem(TOKEN_KEY, data.token);
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
+      trackEvent('auth_login_failed', {
+        error_type: 'network',
+      });
+      throw e;
+    } finally {
+      clearTimeout(timeout);
     }
+
+    if (!response.ok) {
+      const errorMessage = await extractErrorMessage(response, 'Login failed');
+      trackEvent('auth_login_failed', {
+        status_code: response.status,
+        error_message: errorMessage,
+      });
+      throw new Error(errorMessage);
+    }
+
+    const data: AuthResponse = await safeJson(response, 'Login failed');
+
+    setUser(data.user);
+    setToken(data.token);
+    await Promise.all([
+      secureSet(TOKEN_KEY, data.token),
+      secureSet(USER_KEY, JSON.stringify(data.user)),
+    ]);
+    trackEvent('auth_login_succeeded', {
+      user_id: data.user.id,
+    });
+    registerPushToken(API_URL, data.token).catch((e) => {
+      console.error('[PushToken] Failed to register push token:', e);
+    });
   };
 
-  const register = async (data: RegisterRequest) => {
-    try {
-      const response = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      if (!token || !user) {
+        throw new Error('Devi effettuare il login per eliminare l’account.');
+      }
+
+      trackEvent('account_deletion_submitted', {
+        user_id: user.id,
+      });
+
+      const response = await fetch(`${API_URL}/auth/account`, {
+        method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ password }),
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || 'Registration failed');
+        const errorMessage = await extractErrorMessage(
+          response,
+          'Impossibile eliminare l’account.',
+        );
+        trackEvent('account_deletion_failed', {
+          user_id: user.id,
+          status_code: response.status,
+          error_message: errorMessage,
+        });
+        throw new Error(errorMessage);
       }
 
-      const authData: AuthResponse = await response.json();
+      trackEvent('account_deletion_succeeded', {
+        user_id: user.id,
+      });
 
-      // Save to state and async storage
-      setUser(authData.user);
-      setToken(authData.token);
-      await AsyncStorage.setItem(TOKEN_KEY, authData.token);
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(authData.user));
-    } catch (error) {
-      console.error('Registration error:', error);
-      throw error;
-    }
-  };
-
-  const logout = async () => {
-    try {
-      // Clear state
       setUser(null);
       setToken(null);
+      await Promise.all([
+        secureDelete(TOKEN_KEY),
+        secureDelete(USER_KEY),
+        secureDelete(LEGACY_TOKEN_KEY),
+        secureDelete(LEGACY_USER_KEY),
+      ]);
+    },
+    [token, user],
+  );
 
-      // Clear async storage
-      await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
-    } catch (error) {
-      console.error('Logout error:', error);
+  const register = async (data: RegisterRequest) => {
+    trackEvent('auth_register_submitted');
+    const response = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const errorMessage = await extractErrorMessage(response, 'Registration failed');
+      trackEvent('auth_register_failed', {
+        status_code: response.status,
+        error_message: errorMessage,
+      });
+      throw new Error(errorMessage);
     }
+
+    const authData: AuthResponse = await safeJson(response, 'Registration failed');
+
+    if (!authData.user.phone_verified) {
+      trackEvent('auth_register_pending_phone_verification', {
+        user_id: authData.user.id,
+      });
+      return;
+    }
+
+    setUser(authData.user);
+    setToken(authData.token);
+    await Promise.all([
+      secureSet(TOKEN_KEY, authData.token),
+      secureSet(USER_KEY, JSON.stringify(authData.user)),
+    ]);
+    trackEvent('auth_register_succeeded', {
+      user_id: authData.user.id,
+    });
+    registerPushToken(API_URL, authData.token).catch((e) => {
+      console.error('[PushToken] Failed to register push token:', e);
+    });
   };
 
   const value = {
@@ -129,7 +322,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: !!user && !!token,
     login,
     register,
+    deleteAccount,
     logout,
+    updateUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

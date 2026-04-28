@@ -46,6 +46,8 @@ type RawStripeStatus = Partial<StripeConnectStatus & {
   chargesEnabled?: boolean;
   payoutsEnabled?: boolean;
   detailsSubmitted?: boolean;
+  platformCommissionPercent?: string | number | null;
+  platformCommissionFixedFee?: string | number | null;
 }>;
 
 interface ApiErrorResponse {
@@ -92,10 +94,10 @@ export default function ClubSettingsPage() {
 
     return rawImages.map((image) => ({
       id: image.id,
-      clubId: image.clubId ?? image.club_id ?? '',
+      club_id: image.clubId ?? image.club_id ?? '',
       url: image.url,
-      displayOrder: image.displayOrder ?? image.display_order ?? 0,
-      altText: image.altText ?? image.alt_text ?? undefined,
+      display_order: image.displayOrder ?? image.display_order ?? 0,
+      alt_text: image.altText ?? image.alt_text ?? undefined,
     }));
   }, [imagesData]);
 
@@ -113,8 +115,10 @@ export default function ClubSettingsPage() {
         rawStripeStatus.payouts_enabled ?? rawStripeStatus.payoutsEnabled ?? false,
       details_submitted:
         rawStripeStatus.details_submitted ?? rawStripeStatus.detailsSubmitted ?? false,
-      platform_commission_percent: null,
-      platform_commission_fixed_fee: null,
+      platform_commission_percent:
+        rawStripeStatus.platform_commission_percent ?? rawStripeStatus.platformCommissionPercent ?? null,
+      platform_commission_fixed_fee:
+        rawStripeStatus.platform_commission_fixed_fee ?? rawStripeStatus.platformCommissionFixedFee ?? null,
     };
   }, [stripeStatus]);
 
@@ -272,7 +276,13 @@ export default function ClubSettingsPage() {
       }
 
       const data: StripeOnboardingLinkResponse = await res.json();
-      window.location.href = data.onboarding_url;
+      const onboardingUrl = data.onboarding_url ?? data.onboardingUrl;
+
+      if (!onboardingUrl) {
+        throw new Error('Stripe non ha restituito un link di onboarding valido.');
+      }
+
+      window.location.href = onboardingUrl;
     } catch (err) {
       trackEvent('owner_stripe_connect_failed', {
         club_id: club?.id ?? null,
@@ -599,7 +609,7 @@ export default function ClubSettingsPage() {
               >
                 <img
                   src={img.url}
-                  alt={img.altText ?? ''}
+                  alt={img.alt_text ?? ''}
                   className="w-full h-full object-cover"
                 />
                 <button
@@ -608,9 +618,9 @@ export default function ClubSettingsPage() {
                 >
                   <Trash2 size={14} />
                 </button>
-                {img.altText && (
+                {img.alt_text && (
                   <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-2 py-1 truncate">
-                    {img.altText}
+                    {img.alt_text}
                   </div>
                 )}
               </div>

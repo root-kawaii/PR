@@ -1,7 +1,11 @@
-use crate::models::{AppState, CreateTicketRequest, UpdateTicketRequest, TicketResponse, TicketWithEventResponse, EventSummary};
-use crate::persistences::ticket_persistence;
+use crate::application::ticket_service as ticket_persistence;
+use crate::middleware::auth::ClubOwnerUser;
+use crate::models::{
+    AppState, CreateTicketRequest, PaginationParams, TicketResponse, TicketWithEventResponse,
+    UpdateTicketRequest,
+};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -19,11 +23,19 @@ pub struct TicketsWithEventsResponse {
     pub tickets: Vec<TicketWithEventResponse>,
 }
 
-/// Get all tickets (admin endpoint - returns all tickets from all users)
+/// Get all tickets (admin endpoint - paginated, default limit=50)
 pub async fn get_all_tickets(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<TicketsResponse>, StatusCode> {
-    match ticket_persistence::get_all_tickets(&state.db_pool).await {
+    match ticket_persistence::get_all_tickets(
+        &state.read_db_pool,
+        pagination.limit,
+        pagination.offset,
+    )
+    .await
+    {
         Ok(tickets) => {
             let responses: Vec<TicketResponse> = tickets.into_iter().map(|t| t.into()).collect();
             Ok(Json(TicketsResponse { tickets: responses }))
@@ -39,35 +51,12 @@ pub async fn get_user_tickets_with_events(
 ) -> Result<Json<TicketsWithEventsResponse>, StatusCode> {
     let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    match ticket_persistence::get_tickets_with_events_by_user_id(&state.db_pool, user_uuid).await {
-        Ok(results) => {
-            let tickets: Vec<TicketWithEventResponse> = results
-                .into_iter()
-                .map(|(ticket_id, event_id, _user_id, ticket_code, ticket_type, price, status, purchase_date, qr_code, _created_at, _updated_at, event_title, event_venue, event_date, event_image, event_status)| {
-                    TicketWithEventResponse {
-                        id: ticket_id.to_string(),
-                        ticket_code,
-                        ticket_type,
-                        price: format!("{:.2} €", price),
-                        status,
-                        purchase_date: purchase_date.to_rfc3339(),
-                        qr_code,
-                        event: EventSummary {
-                            id: event_id.to_string(),
-                            title: event_title,
-                            venue: event_venue,
-                            date: event_date,
-                            image: event_image,
-                            status: event_status,
-                        },
-                    }
-                })
-                .collect();
+    let tickets =
+        ticket_persistence::list_user_tickets_with_event_details(&state.read_db_pool, user_uuid)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-            Ok(Json(TicketsWithEventsResponse { tickets }))
-        }
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
+    Ok(Json(TicketsWithEventsResponse { tickets }))
 }
 
 /// Get a single ticket by ID
@@ -77,7 +66,7 @@ pub async fn get_ticket(
 ) -> Result<Json<TicketResponse>, StatusCode> {
     let ticket_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    match ticket_persistence::get_ticket_by_id(&state.db_pool, ticket_id).await {
+    match ticket_persistence::get_ticket_by_id(&state.read_db_pool, ticket_id).await {
         Ok(Some(ticket)) => Ok(Json(ticket.into())),
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -89,15 +78,16 @@ pub async fn get_ticket_by_code(
     State(state): State<Arc<AppState>>,
     Path(code): Path<String>,
 ) -> Result<Json<TicketResponse>, StatusCode> {
-    match ticket_persistence::get_ticket_by_code(&state.db_pool, &code).await {
+    match ticket_persistence::get_ticket_by_code(&state.read_db_pool, &code).await {
         Ok(Some(ticket)) => Ok(Json(ticket.into())),
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
-/// Create a new ticket
+/// Create a new ticket (requires club_owner JWT)
 pub async fn create_ticket(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateTicketRequest>,
 ) -> Result<(StatusCode, Json<TicketResponse>), StatusCode> {
@@ -107,8 +97,9 @@ pub async fn create_ticket(
     }
 }
 
-/// Update a ticket
+/// Update a ticket (requires club_owner JWT)
 pub async fn update_ticket(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateTicketRequest>,
@@ -122,8 +113,9 @@ pub async fn update_ticket(
     }
 }
 
-/// Delete a ticket
+/// Delete a ticket (requires club_owner JWT)
 pub async fn delete_ticket(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {

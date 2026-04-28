@@ -11,10 +11,6 @@ interface TablesData {
   tables: TableResponse[];
 }
 
-interface TableImagesData {
-  images: TableImage[];
-}
-
 type FilterAvailability = 'all' | 'available' | 'reserved';
 
 export default function EventTablesPage() {
@@ -38,7 +34,7 @@ export default function EventTablesPage() {
 
   // Image management
   const [imageTableId, setImageTableId] = useState<string | null>(null);
-  const { data: imagesData, loading: imagesLoading, refetch: refetchImages } = useFetch<TableImagesData>(
+  const { data: tableImages, loading: imagesLoading, refetch: refetchImages } = useFetch<TableImage[]>(
     imageTableId ? `/owner/tables/${imageTableId}/images` : ''
   );
   const [newImageUrl, setNewImageUrl] = useState('');
@@ -106,7 +102,7 @@ export default function EventTablesPage() {
         body: JSON.stringify({
           url: newImageUrl,
           alt_text: newImageAlt || undefined,
-          display_order: imagesData?.images.length ?? 0,
+          display_order: (tableImages ?? []).length,
         }),
       });
       if (!res.ok) throw new Error('Errore nel caricamento');
@@ -305,9 +301,9 @@ export default function EventTablesPage() {
               <p className="text-gray-500 text-sm mb-4">Caricamento...</p>
             ) : (
               <div className="grid grid-cols-2 gap-3 mb-4">
-                {(imagesData?.images ?? []).map((img) => (
+                {(tableImages ?? []).map((img) => (
                   <div key={img.id} className="relative group rounded-lg overflow-hidden aspect-video bg-gray-100">
-                    <img src={img.url} alt={img.altText ?? ''} className="w-full h-full object-cover" />
+                    <img src={img.url} alt={img.alt_text ?? ''} className="w-full h-full object-cover" />
                     <button
                       onClick={() => handleDeleteImage(img.id)}
                       className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -316,7 +312,7 @@ export default function EventTablesPage() {
                     </button>
                   </div>
                 ))}
-                {!imagesData?.images.length && (
+                {!(tableImages ?? []).length && (
                   <p className="col-span-2 text-sm text-gray-400">Nessuna immagine</p>
                 )}
               </div>
@@ -356,6 +352,7 @@ export default function EventTablesPage() {
         <p className="text-gray-500">Nessun risultato per i filtri applicati.</p>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -411,6 +408,7 @@ export default function EventTablesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

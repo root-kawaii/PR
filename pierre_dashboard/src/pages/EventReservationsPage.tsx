@@ -1,14 +1,32 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Plus, X, Search, User, Phone, Mail, FileText, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Plus, X, Search, User, Phone, Mail, FileText } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
-import type { TableReservation, TableResponse } from '../types';
+import type { TableResponse } from '../types';
 import { trackEvent } from '../config/analytics';
+import { EmptyState, PageHeader, SectionCard } from '../components/ui';
+import { ui } from '../components/ui-classes';
 
-interface ReservationsData {
-  reservations: TableReservation[];
+// Matches the flat TableReservationResponse from the backend
+interface OwnerReservation {
+  id: string;
+  reservationCode: string;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  numPeople: number;
+  totalAmount: string;
+  amountPaid: string;
+  amountRemaining: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  specialRequests?: string;
+  tableId: string;
+  eventId: string;
+  isManual: boolean;
+  manualNotes?: string;
+  createdAt: string;
 }
 
 interface TablesData {
@@ -29,11 +47,38 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 };
 
+const parseEuroAmount = (value: string) =>
+  Number.parseFloat(value.replace(/[^0-9.]/g, '')) || 0;
+
+function getReservationStatusLabel(reservation: OwnerReservation): string {
+  if (
+    reservation.status === 'pending' &&
+    parseEuroAmount(reservation.amountPaid) > 0 &&
+    parseEuroAmount(reservation.amountRemaining) > 0
+  ) {
+    return 'In attesa quote';
+  }
+
+  return STATUS_LABELS[reservation.status] ?? reservation.status;
+}
+
+function getReservationPaymentNote(reservation: OwnerReservation): string | null {
+  if (
+    reservation.status === 'pending' &&
+    parseEuroAmount(reservation.amountPaid) > 0 &&
+    parseEuroAmount(reservation.amountRemaining) > 0
+  ) {
+    return 'quota iniziale ricevuta';
+  }
+
+  return null;
+}
+
 export default function EventReservationsPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { token } = useAuth();
 
-  const { data, loading, refetch } = useFetch<ReservationsData>(`/owner/events/${eventId}/reservations`);
+  const { data: reservationsData, loading, refetch } = useFetch<OwnerReservation[]>(`/owner/events/${eventId}/reservations`);
   const { data: tablesData } = useFetch<TablesData>(`/owner/events/${eventId}/tables`);
 
   const [search, setSearch] = useState('');
@@ -52,8 +97,10 @@ export default function EventReservationsPage() {
   // Status change
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const reservations = data?.reservations ?? [];
+  const reservations = reservationsData ?? [];
   const tables = tablesData?.tables ?? [];
+
+  const getTable = (tableId: string) => tables.find(t => t.id === tableId);
 
   useEffect(() => {
     if (loading || !eventId) {
@@ -67,11 +114,12 @@ export default function EventReservationsPage() {
   }, [eventId, loading, reservations.length]);
 
   const filtered = reservations.filter((r) => {
+    const table = getTable(r.tableId);
     const matchesSearch =
       search === '' ||
       r.contactName.toLowerCase().includes(search.toLowerCase()) ||
       r.reservationCode.toLowerCase().includes(search.toLowerCase()) ||
-      r.table.name.toLowerCase().includes(search.toLowerCase());
+      (table?.name ?? '').toLowerCase().includes(search.toLowerCase());
     const matchesStatus = filterStatus === 'all' || r.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -163,7 +211,7 @@ export default function EventReservationsPage() {
   };
 
   if (loading) {
-    return <div className="text-gray-500">Caricamento...</div>;
+    return <div className={ui.helperText}>Caricamento prenotazioni...</div>;
   }
 
   return (
@@ -171,38 +219,43 @@ export default function EventReservationsPage() {
       <div className="mb-6">
         <Link
           to={`/dashboard/events/${eventId}/tables`}
-          className="flex items-center gap-1 text-gray-500 hover:text-gray-700 text-sm mb-3"
+          className={`${ui.backLink} mb-3`}
         >
           <ArrowLeft size={16} />
           Torna ai Tavoli
         </Link>
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Prenotazioni</h1>
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            <Plus size={18} />
-            Prenotazione Manuale
-          </button>
-        </div>
+        <PageHeader
+          className="mb-0"
+          title="Prenotazioni"
+          description="Consulta le richieste per tavolo, controlla quote pagate e aggiorna rapidamente lo stato di ogni prenotazione."
+          action={
+            <button
+              onClick={() => setShowForm(true)}
+              className={ui.primaryButton}
+            >
+              <Plus size={18} />
+              Prenotazione manuale
+            </button>
+          }
+        />
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      <SectionCard className="mb-4 p-4">
+      <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-48">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Cerca per nome, codice o tavolo..."
-            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900 text-sm"
+            className={`${ui.input} pl-9`}
           />
         </div>
         <select
           value={filterStatus}
           onChange={e => setFilterStatus(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900 text-sm bg-white"
+          className={ui.select}
         >
           <option value="all">Tutti gli stati</option>
           <option value="pending">In attesa</option>
@@ -211,9 +264,10 @@ export default function EventReservationsPage() {
           <option value="cancelled">Cancellata</option>
         </select>
       </div>
+      </SectionCard>
 
       {/* Summary bar */}
-      <div className="flex gap-4 mb-4 text-sm text-gray-500">
+      <div className={`mb-4 flex gap-4 text-sm text-gray-500 ${ui.tabularNums}`}>
         <span>{filtered.length} prenotazioni</span>
         <span>
           {filtered.reduce((sum, r) => sum + r.numPeople, 0)} persone totali
@@ -222,29 +276,37 @@ export default function EventReservationsPage() {
 
       {/* Table */}
       {!filtered.length ? (
-        <p className="text-gray-500">
-          {reservations.length === 0
-            ? 'Nessuna prenotazione per questa serata.'
-            : 'Nessun risultato per i filtri applicati.'}
-        </p>
+        <EmptyState
+          title={
+            reservations.length === 0
+              ? 'Nessuna prenotazione registrata'
+              : 'Nessun risultato'
+          }
+          description={
+            reservations.length === 0
+              ? 'Per questa serata non ci sono ancora prenotazioni. Puoi inserirne una manualmente.'
+              : 'Nessuna prenotazione corrisponde ai filtri attivi. Prova a modificare ricerca o stato.'
+          }
+        />
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className={ui.tableWrap}>
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Codice</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Cliente</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Tavolo</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Persone</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Importo</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Stato</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Azioni</th>
+                <th className={ui.tableHeader}>Codice</th>
+                <th className={ui.tableHeader}>Cliente</th>
+                <th className={ui.tableHeader}>Tavolo</th>
+                <th className={ui.tableHeader}>Persone</th>
+                <th className={ui.tableHeader}>Importo</th>
+                <th className={ui.tableHeader}>Stato</th>
+                <th className={ui.tableHeader}>Azioni</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((r) => (
-                <tr key={r.id} className={`hover:bg-gray-50 ${r.isManual ? 'bg-amber-50/30' : ''}`}>
-                  <td className="px-4 py-3">
+                <tr key={r.id} className={`${ui.tableRow} ${r.isManual ? 'bg-amber-50/30' : ''}`}>
+                  <td className={`${ui.tableCell} ${ui.tabularNums}`}>
                     <div className="flex items-center gap-1.5">
                       <span className="font-mono text-xs text-gray-700">{r.reservationCode}</span>
                       {r.isManual && (
@@ -254,7 +316,7 @@ export default function EventReservationsPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className={ui.tableCell}>
                     <div>
                       <p className="font-medium text-gray-900 text-sm">{r.contactName}</p>
                       {r.contactPhone && (
@@ -262,54 +324,57 @@ export default function EventReservationsPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-600 text-sm">
-                    {r.table.name}
-                    {r.table.zone && <span className="text-gray-400"> · {r.table.zone}</span>}
+                  <td className={ui.tableCell}>
+                    {getTable(r.tableId)?.name ?? r.tableId}
+                    {getTable(r.tableId)?.zone && <span className="text-gray-400"> · {getTable(r.tableId)?.zone}</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 text-sm">{r.numPeople}</td>
-                  <td className="px-4 py-3 text-gray-600 text-sm">
+                  <td className={`${ui.tableCell} ${ui.tabularNums}`}>{r.numPeople}</td>
+                  <td className={`${ui.tableCell} ${ui.tabularNums}`}>
                     <div>
                       <span className="font-medium">{r.amountPaid}</span>
+                      {getReservationPaymentNote(r) && (
+                        <span className="text-amber-600 text-xs block">{getReservationPaymentNote(r)}</span>
+                      )}
                       {r.amountRemaining !== '0.00 €' && r.amountRemaining !== '€0.00' && (
                         <span className="text-red-500 text-xs block">da pagare: {r.amountRemaining}</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className={ui.tableCell}>
                     <span className={`inline-block px-2 py-1 text-xs rounded-full font-medium ${STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {STATUS_LABELS[r.status] ?? r.status}
+                      {getReservationStatusLabel(r)}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="relative">
+                  <td className={ui.tableCell}>
+                    <div className="relative max-w-[150px]">
                       <select
                         disabled={updatingId === r.id}
                         value={r.status}
                         onChange={e => handleStatusChange(r.id, e.target.value)}
-                        className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-700 bg-white cursor-pointer disabled:opacity-50"
+                        className={`${ui.select} min-h-8 py-1.5 text-xs`}
                       >
                         <option value="pending">In attesa</option>
-                        <option value="confirmed">Confirma</option>
-                        <option value="completed">Completa</option>
-                        <option value="cancelled">Cancella</option>
+                        <option value="confirmed">Confermata</option>
+                        <option value="completed">Completata</option>
+                        <option value="cancelled">Cancellata</option>
                       </select>
-                      <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       {/* Manual reservation modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className={ui.modalOverlay}>
+          <div className={ui.modalPanel}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900">Prenotazione Manuale</h2>
-              <button onClick={() => { setShowForm(false); resetForm(); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setShowForm(false); resetForm(); }} className={ui.iconButton}>
                 <X size={20} />
               </button>
             </div>
@@ -320,7 +385,7 @@ export default function EventReservationsPage() {
                   value={formTableId}
                   onChange={e => setFormTableId(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900 bg-white"
+                  className={ui.select}
                 >
                   <option value="">Seleziona tavolo</option>
                   {tables.map(t => (
@@ -341,7 +406,7 @@ export default function EventReservationsPage() {
                   onChange={e => setFormName(e.target.value)}
                   required
                   placeholder="Mario Rossi"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                  className={ui.input}
                 />
               </div>
 
@@ -349,13 +414,14 @@ export default function EventReservationsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     <Phone size={14} className="inline mr-1" />
-                    Telefono
+                    Telefono *
                   </label>
                   <input
                     value={formPhone}
                     onChange={e => setFormPhone(e.target.value)}
+                    required
                     placeholder="+39 333 1234567"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                    className={ui.input}
                   />
                 </div>
                 <div>
@@ -368,7 +434,7 @@ export default function EventReservationsPage() {
                     value={formEmail}
                     onChange={e => setFormEmail(e.target.value)}
                     placeholder="mario@example.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                    className={ui.input}
                   />
                 </div>
               </div>
@@ -381,7 +447,7 @@ export default function EventReservationsPage() {
                   value={formNumPeople}
                   onChange={e => setFormNumPeople(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                  className={ui.input}
                 />
               </div>
 
@@ -395,14 +461,14 @@ export default function EventReservationsPage() {
                   onChange={e => setFormNotes(e.target.value)}
                   rows={3}
                   placeholder="Es. Ha chiamato giovedì sera, richiede angolo tranquillo..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900 resize-none"
+                  className={`${ui.textarea} resize-none`}
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50"
+                className={`${ui.primaryButton} w-full`}
               >
                 {submitting ? 'Creazione...' : 'Crea Prenotazione'}
               </button>

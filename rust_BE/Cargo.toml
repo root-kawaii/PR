@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Axum - Modern, ergonomic web framework (like Express for Node.js)
-axum = "0.7"
+axum = { version = "0.7", features = ["multipart"] }
 
 # Tokio - Async runtime (Rust's async needs a runtime, tokio is the most popular)
 # We need "macros" feature for #[tokio::main]
@@ -28,7 +28,7 @@ tower-http = { version = "0.5", features = ["cors", "trace", "request-id"] }
 # UUID - For generating unique IDs
 uuid = { version = "1", features = ["v4", "serde"] }
 dotenv = "0.15"
-async-stripe = { version = "*", default-features = false, features = ["runtime-async-std-surf"] }
+async-stripe = { version = "=0.41.0", default-features = false, features = ["runtime-tokio-hyper-rustls", "checkout", "connect"] }
 
 # Authentication dependencies
 bcrypt = "0.15"
@@ -39,11 +39,19 @@ rand = "0.8"
 
 # Twilio for SMS verification
 reqwest = { version = "0.11", features = ["json"] }
+bytes = "1"
 
 # SHA256 hashing for idempotency request fingerprinting
 sha2 = "0.10"
+
+# HMAC + hex for Stripe webhook signature verification
+hmac = "0.12"
+hex = "0.4"
 
 # Structured logging infrastructure
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "time", "fmt"] }
 tracing-appender = "0.2"
+
+# Rate limiting for auth endpoints (per-IP, in-memory token bucket)
+tower_governor = { version = "0.4", features = ["axum"] }

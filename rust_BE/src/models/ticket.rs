@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 
 #[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
 pub struct Ticket {
@@ -91,6 +91,7 @@ pub struct TicketWithEventResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventSummary {
     pub id: String,
     pub title: String,
