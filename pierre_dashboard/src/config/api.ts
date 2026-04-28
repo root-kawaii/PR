@@ -1,5 +1,5 @@
 const DEFAULT_DEV_API_URL = 'http://localhost:3000';
-const DEFAULT_PROD_API_URL = 'https://pierre-two-backend.fly.dev';
+const DEFAULT_PROD_API_URL = 'https://pierreclubs-backend-prod.fly.dev';
 
 function trimTrailingSlash(url: string) {
   return url.replace(/\/+$/, '');

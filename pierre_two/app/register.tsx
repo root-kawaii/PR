@@ -1,92 +1,133 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useAuth } from '../context/AuthContext';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native";
+import { useRouter } from "expo-router";
+import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
+import { trackEvent } from "../config/analytics";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import Constants from "expo-constants";
 
-const API_URL = 'http://172.20.10.5:3000';
+type RegistrationStep = "info" | "phone-verification";
 
-type RegistrationStep = 'info' | 'phone-verification';
+const withAlpha = (hexColor: string, alpha: string) =>
+  /^#([0-9a-f]{6})$/i.test(hexColor) ? `${hexColor}${alpha}` : hexColor;
 
 export default function RegisterScreen() {
+  const API_URL = Constants.expoConfig?.extra?.apiUrl;
+
   // Step management
-  const [step, setStep] = useState<RegistrationStep>('info');
+  const [step, setStep] = useState<RegistrationStep>("info");
 
   // User info
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState<Date | undefined>(undefined);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Phone verification
-  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationCode, setVerificationCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [tempUserId, setTempUserId] = useState<string | null>(null);
+  const [tempAuthToken, setTempAuthToken] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
-  const { register } = useAuth();
+  const { login } = useAuth();
+  const { theme } = useTheme();
   const router = useRouter();
 
   // Step 1: Validate and create account (without phone verification yet)
   const handleContinueToPhoneVerification = async () => {
-    // Validation
-    if (!name || !email || !password || !dateOfBirth || !phone) {
-      Alert.alert('Error', 'Please fill in all required fields');
+    if (!name.trim()) {
+      Alert.alert("Errore", "Inserisci il tuo nome completo");
       return;
     }
-
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+    if (!email.trim() || !email.includes("@")) {
+      Alert.alert("Errore", "Inserisci un indirizzo email valido");
       return;
     }
-
+    if (!dateOfBirth) {
+      Alert.alert("Errore", "Seleziona la tua data di nascita");
+      return;
+    }
+    // Italian mobile: starts with 3, 9-10 digits (e.g. 3331234567)
+    const italianMobileRegex = /^3\d{8,9}$/;
+    if (!italianMobileRegex.test(phone.trim())) {
+      Alert.alert("Errore", "Inserisci un numero di cellulare italiano valido (es. 3331234567)");
+      return;
+    }
+    if (password.length < 8) {
+      Alert.alert("Errore", "La password deve contenere almeno 8 caratteri");
+      return;
+    }
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-
-    if (!email.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
-    }
-
-    // Validate phone number (must be 10 digits for Italian numbers)
-    if (phone.length < 8) {
-      Alert.alert('Error', 'Please enter a valid phone number');
+      Alert.alert("Errore", "Le password non coincidono");
       return;
     }
 
     setIsLoading(true);
     try {
-      // Create the account first
+      trackEvent("registration_account_create_submitted");
       const response = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           password,
-          date_of_birth: dateOfBirth.toISOString().split('T')[0],
+          phone_number: `+39${phone.trim()}`,
+          date_of_birth: dateOfBirth.toISOString().split("T")[0],
         }),
       });
 
-      const data = await response.json();
-
+      let errorMessage = "Registrazione fallita";
       if (!response.ok) {
-        throw new Error(data.message || 'Registration failed');
+        try {
+          const text = await response.text();
+          if (text) {
+            const json = JSON.parse(text);
+            errorMessage = json.error || json.message || errorMessage;
+          }
+        } catch { /* use fallback */ }
+        if (response.status === 409 && errorMessage === "Registrazione fallita") errorMessage = "Esiste già un account con questa email o numero di telefono";
+        throw new Error(errorMessage);
       }
 
-      // Store temp user ID for phone verification
-      setTempUserId(data.user.id);
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Risposta non valida dal server");
+      }
 
-      // Move to phone verification step
-      setStep('phone-verification');
+      if (!data?.user?.id) {
+        throw new Error("Risposta non valida dal server");
+      }
+
+      setTempUserId(data.user.id);
+      setTempAuthToken(data.token);
+      trackEvent("registration_account_created", {
+        user_id: data.user.id,
+      });
+      setStep("phone-verification");
     } catch (error: any) {
-      Alert.alert('Registration Failed', error.message || 'Could not create account');
+      trackEvent("registration_account_create_failed", {
+        error_message: error.message || "unknown_error",
+      });
+      Alert.alert("Registrazione fallita", error.message || "Impossibile creare l'account");
     } finally {
       setIsLoading(false);
     }
@@ -94,27 +135,47 @@ export default function RegisterScreen() {
 
   // Step 2: Send verification code
   const handleSendVerificationCode = async () => {
-    if (!tempUserId || !phone) return;
+    if (!tempAuthToken || !phone) return;
 
     setIsLoading(true);
     try {
+      trackEvent("registration_phone_verification_requested", {
+        user_id: tempUserId,
+      });
       const response = await fetch(`${API_URL}/auth/send-sms-verification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tempAuthToken}`,
+        },
         body: JSON.stringify({
-          user_id: tempUserId,
           phone_number: `+39${phone.trim()}`,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send verification code');
+        let msg = "Invio del codice fallito";
+        try {
+          const text = await response.text();
+          if (text) {
+            const json = JSON.parse(text);
+            msg = json.error || json.message || msg;
+          }
+        } catch { /* use fallback */ }
+        throw new Error(msg);
       }
 
       setCodeSent(true);
-      Alert.alert('Success', 'Verification code sent to your phone!');
+      trackEvent("registration_phone_verification_sent", {
+        user_id: tempUserId,
+      });
+      Alert.alert("Codice inviato", `Codice di verifica inviato al +39${phone.trim()}`);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to send verification code');
+      trackEvent("registration_phone_verification_send_failed", {
+        user_id: tempUserId,
+        error_message: error.message || "unknown_error",
+      });
+      Alert.alert("Errore", error.message || "Impossibile inviare il codice. Riprova.");
     } finally {
       setIsLoading(false);
     }
@@ -122,109 +183,204 @@ export default function RegisterScreen() {
 
   // Step 3: Verify code and complete registration
   const handleVerifyAndCompleteRegistration = async () => {
-    if (!tempUserId || !phone || !verificationCode) {
-      Alert.alert('Error', 'Please enter the verification code');
+    if (!verificationCode || verificationCode.trim().length !== 6) {
+      Alert.alert("Errore", "Inserisci il codice a 6 cifre");
+      return;
+    }
+    if (!tempAuthToken || !phone) {
+      Alert.alert("Errore", "Dati di registrazione mancanti. Ricomincia dall'inizio.");
+      return;
+    }
+    if (!dateOfBirth) {
+      Alert.alert("Errore", "Data di nascita mancante. Ricomincia dall'inizio.");
       return;
     }
 
     setIsVerifying(true);
     try {
+      trackEvent("registration_phone_verification_submitted", {
+        user_id: tempUserId,
+      });
       const response = await fetch(`${API_URL}/auth/verify-sms-code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tempAuthToken}`,
+        },
         body: JSON.stringify({
-          user_id: tempUserId,
           phone_number: `+39${phone.trim()}`,
           verification_code: verificationCode.trim(),
         }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.verified) {
-        throw new Error(data.message || 'Invalid verification code');
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Risposta non valida dal server");
       }
 
-      // Phone verified! Now complete the login
-      Alert.alert('Success', 'Phone verified! Logging you in...', [
-        {
-          text: 'OK',
-          onPress: async () => {
-            try {
-              await register({
-                name: name.trim(),
-                email: email.trim(),
-                password,
-                phone_number: `+39${phone.trim()}`,
-                date_of_birth: dateOfBirth!.toISOString().split('T')[0],
-              });
-              router.replace('/(tabs)');
-            } catch (error) {
-              Alert.alert('Error', 'Account created but login failed. Please log in manually.');
-              router.replace('/');
-            }
-          },
-        },
-      ]);
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || "Verifica fallita");
+      }
+      if (!data.verified) {
+        throw new Error("Codice non valido o scaduto. Richiedi un nuovo codice.");
+      }
+
+      // Phone verified — log in with existing credentials (account already created in step 1)
+      setIsVerifying(false);
+      try {
+        await login({
+          email: email.trim().toLowerCase(),
+          password,
+        });
+        setTempAuthToken(null);
+        trackEvent("registration_completed", {
+          user_id: tempUserId,
+        });
+        router.replace("/(tabs)");
+      } catch (err: any) {
+        trackEvent("registration_auto_login_failed", {
+          user_id: tempUserId,
+          error_message: err.message || "unknown_error",
+        });
+        Alert.alert(
+          "Errore di accesso",
+          err.message || "Account creato ma accesso fallito. Effettua il login manualmente.",
+        );
+        router.replace("/login");
+      }
     } catch (error: any) {
-      Alert.alert('Verification Failed', error.message || 'Invalid code. Please try again.');
-    } finally {
+      trackEvent("registration_phone_verification_failed", {
+        user_id: tempUserId,
+        error_message: error.message || "unknown_error",
+      });
+      Alert.alert("Verifica fallita", error.message || "Codice non valido. Riprova.");
       setIsVerifying(false);
     }
   };
 
   const formatDate = (date: Date | undefined) => {
-    if (!date) return 'Not Set';
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    if (!date) return "Non impostata";
+    return date.toLocaleDateString("it-IT", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
+    setShowDatePicker(Platform.OS === "ios");
     if (selectedDate) {
       setDateOfBirth(selectedDate);
     }
   };
 
+  const stepBar = (
+    <View style={styles.stepBarContainer}>
+      <View style={styles.stepRow}>
+        <View style={[styles.stepDot, { backgroundColor: theme.primary }]} />
+        <View style={[styles.stepLine, { backgroundColor: step === 'phone-verification' ? theme.primary : theme.border }]} />
+        <View style={[styles.stepDot, { backgroundColor: step === 'phone-verification' ? theme.primary : theme.border }]} />
+      </View>
+      <View style={styles.stepLabels}>
+        <Text style={[styles.stepLabel, { color: theme.primary }]}>Dati</Text>
+        <Text style={[styles.stepLabel, { color: step === 'phone-verification' ? theme.primary : theme.textTertiary }]}>Verifica</Text>
+      </View>
+    </View>
+  );
+
   // Render different UI based on step
-  if (step === 'phone-verification') {
+  if (step === "phone-verification") {
     return (
       <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={[styles.container, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.content}>
-            <Text style={styles.title}>Verify Your Phone</Text>
-            <Text style={styles.subtitle}>
-              We'll send a verification code to +39 {phone}
+          <View
+            style={[
+              styles.content,
+              {
+                backgroundColor: theme.cardBackground,
+                borderColor: withAlpha(theme.border, "A6"),
+                shadowColor: theme.background,
+              },
+            ]}
+          >
+            <View style={styles.brandContainer}>
+              <Text style={[styles.wordmark, { color: theme.primary }]}>PIERRE</Text>
+              <View style={[styles.wordmarkLine, { backgroundColor: theme.primary }]} />
+            </View>
+            {stepBar}
+            <Text style={[styles.title, { color: theme.text }]}>
+              Verifica Telefono
+            </Text>
+            <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
+              Invieremo un codice a +39 {phone}
             </Text>
 
             <View style={styles.form}>
-              <View style={styles.phoneDisplay}>
-                <Text style={styles.phoneDisplayLabel}>Phone Number</Text>
-                <Text style={styles.phoneDisplayValue}>+39 {phone}</Text>
+              <View
+                style={[
+                  styles.phoneDisplay,
+                  {
+                    backgroundColor: theme.backgroundElevated,
+                    borderColor: theme.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.phoneDisplayLabel,
+                    { color: theme.textTertiary },
+                  ]}
+                >
+                  Numero di telefono
+                </Text>
+                <Text style={[styles.phoneDisplayValue, { color: theme.text }]}>
+                  +39 {phone}
+                </Text>
               </View>
 
               {!codeSent ? (
                 <TouchableOpacity
-                  style={[styles.button, isLoading && styles.buttonDisabled]}
+                  style={[
+                    styles.button,
+                    { backgroundColor: theme.primary },
+                    isLoading && styles.buttonDisabled,
+                  ]}
                   onPress={handleSendVerificationCode}
                   disabled={isLoading}
                 >
-                  <Text style={styles.buttonText}>
-                    {isLoading ? 'Sending...' : 'Send Verification Code'}
+                  <Text
+                    style={[styles.buttonText, { color: theme.textInverse }]}
+                  >
+                    {isLoading ? "Invio in corso..." : "Invia codice di verifica"}
                   </Text>
                 </TouchableOpacity>
               ) : (
                 <>
-                  <Text style={styles.instructionText}>
-                    Enter the 6-digit code sent to your phone
+                  <Text
+                    style={[
+                      styles.instructionText,
+                      { color: theme.textTertiary },
+                    ]}
+                  >
+                    Inserisci il codice a 6 cifre inviato al tuo telefono
                   </Text>
 
                   <TextInput
-                    style={styles.codeInput}
+                    style={[
+                      styles.codeInput,
+                      {
+                        backgroundColor: theme.backgroundElevated,
+                        borderColor: theme.border,
+                        color: theme.text,
+                      },
+                    ]}
                     placeholder="000000"
-                    placeholderTextColor="#999"
+                    placeholderTextColor={theme.textTertiary}
                     value={verificationCode}
                     onChangeText={setVerificationCode}
                     keyboardType="number-pad"
@@ -233,12 +389,19 @@ export default function RegisterScreen() {
                   />
 
                   <TouchableOpacity
-                    style={[styles.button, (isVerifying || verificationCode.length !== 6) && styles.buttonDisabled]}
+                    style={[
+                      styles.button,
+                      { backgroundColor: theme.primary },
+                      (isVerifying || verificationCode.length !== 6) &&
+                        styles.buttonDisabled,
+                    ]}
                     onPress={handleVerifyAndCompleteRegistration}
                     disabled={isVerifying || verificationCode.length !== 6}
                   >
-                    <Text style={styles.buttonText}>
-                      {isVerifying ? 'Verifying...' : 'Verify & Complete'}
+                    <Text
+                      style={[styles.buttonText, { color: theme.textInverse }]}
+                    >
+                      {isVerifying ? "Verifica in corso..." : "Verifica e completa"}
                     </Text>
                   </TouchableOpacity>
 
@@ -247,8 +410,8 @@ export default function RegisterScreen() {
                     onPress={handleSendVerificationCode}
                     disabled={isLoading}
                   >
-                    <Text style={styles.resendText}>
-                      Didn't receive the code? Resend
+                    <Text style={[styles.resendText, { color: theme.primary }]}>
+                      Non hai ricevuto il codice? Invia di nuovo
                     </Text>
                   </TouchableOpacity>
                 </>
@@ -257,12 +420,14 @@ export default function RegisterScreen() {
               <TouchableOpacity
                 style={styles.backButton}
                 onPress={() => {
-                  setStep('info');
+                  setStep("info");
                   setCodeSent(false);
-                  setVerificationCode('');
+                  setVerificationCode("");
                 }}
               >
-                <Text style={styles.linkText}>← Back to registration</Text>
+                <Text style={[styles.linkText, { color: theme.primary }]}>
+                  ← Torna alla registrazione
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -274,28 +439,60 @@ export default function RegisterScreen() {
   // Step 1: Basic Info
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={[styles.container, { backgroundColor: theme.background }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Sign up to get started</Text>
+        <View
+          style={[
+            styles.content,
+            {
+              backgroundColor: theme.cardBackground,
+              borderColor: withAlpha(theme.border, "A6"),
+              shadowColor: theme.background,
+            },
+          ]}
+        >
+          <View style={styles.brandContainer}>
+            <Text style={[styles.wordmark, { color: theme.primary }]}>PIERRE</Text>
+            <View style={[styles.wordmarkLine, { backgroundColor: theme.primary }]} />
+          </View>
+          {stepBar}
+          <Text style={[styles.title, { color: theme.text }]}>
+            Crea Account
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
+            Registrati per iniziare
+          </Text>
 
           <View style={styles.form}>
             <TextInput
-              style={styles.input}
-              placeholder="Full Name"
-              placeholderTextColor="#999"
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
+              placeholder="Nome e cognome"
+              placeholderTextColor={theme.textTertiary}
               value={name}
               onChangeText={setName}
               editable={!isLoading}
             />
 
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
               placeholder="Email"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.textTertiary}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -303,12 +500,22 @@ export default function RegisterScreen() {
               editable={!isLoading}
             />
 
-            <View style={styles.phoneInputContainer}>
-              <Text style={styles.phonePrefix}>+39</Text>
+            <View
+              style={[
+                styles.phoneInputContainer,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <Text style={[styles.phonePrefix, { color: theme.text }]}>
+                +39
+              </Text>
               <TextInput
-                style={styles.phoneInput}
+                style={[styles.phoneInput, { color: theme.text }]}
                 placeholder="3935130925"
-                placeholderTextColor="#999"
+                placeholderTextColor={theme.textTertiary}
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
@@ -317,59 +524,111 @@ export default function RegisterScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.input}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                },
+              ]}
               onPress={() => setShowDatePicker(true)}
               disabled={isLoading}
             >
-              <Text style={dateOfBirth ? styles.datePickerText : styles.datePickerPlaceholder}>
-                {dateOfBirth ? formatDate(dateOfBirth) : 'Date of Birth'}
+              <Text
+                style={
+                  dateOfBirth
+                    ? [styles.datePickerText, { color: theme.text }]
+                    : [
+                        styles.datePickerPlaceholder,
+                        { color: theme.textTertiary },
+                      ]
+                }
+              >
+                {dateOfBirth ? formatDate(dateOfBirth) : "Data di nascita"}
               </Text>
             </TouchableOpacity>
 
             {showDatePicker && (
-              <DateTimePicker
-                value={dateOfBirth || new Date()}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={onDateChange}
-                maximumDate={new Date()}
-              />
+              <View style={[styles.datePickerWrapper, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                <DateTimePicker
+                  value={dateOfBirth || new Date()}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={onDateChange}
+                  maximumDate={new Date()}
+                  textColor={theme.text}
+                />
+                {Platform.OS === "ios" && (
+                  <TouchableOpacity
+                    style={[styles.dateConfirmButton, { backgroundColor: theme.primary }]}
+                    onPress={() => setShowDatePicker(false)}
+                  >
+                    <Text style={[styles.dateConfirmText, { color: theme.textInverse }]}>Conferma</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
 
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
               placeholder="Password"
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.textTertiary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              textContentType="newPassword"
+              autoComplete="new-password"
               editable={!isLoading}
             />
 
             <TextInput
-              style={styles.input}
-              placeholder="Confirm Password"
-              placeholderTextColor="#999"
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.backgroundElevated,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
+              placeholder="Conferma Password"
+              placeholderTextColor={theme.textTertiary}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
+              textContentType="newPassword"
+              autoComplete="new-password"
               editable={!isLoading}
             />
 
             <TouchableOpacity
-              style={[styles.button, isLoading && styles.buttonDisabled]}
+              style={[
+                styles.button,
+                { backgroundColor: theme.primary },
+                isLoading && styles.buttonDisabled,
+              ]}
               onPress={handleContinueToPhoneVerification}
               disabled={isLoading}
             >
-              <Text style={styles.buttonText}>
-                {isLoading ? 'Creating Account...' : 'Continue →'}
+              <Text style={[styles.buttonText, { color: theme.textInverse }]}>
+                {isLoading ? "Creazione account..." : "Continua →"}
               </Text>
             </TouchableOpacity>
 
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Already have an account? </Text>
+              <Text style={[styles.footerText, { color: theme.textTertiary }]}>
+                Hai gia un account?{" "}
+              </Text>
               <TouchableOpacity onPress={() => router.back()}>
-                <Text style={styles.linkText}>Log In</Text>
+                <Text style={[styles.linkText, { color: theme.primary }]}>
+                  Accedi
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -382,145 +641,196 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
   },
   scrollContent: {
     flexGrow: 1,
   },
   content: {
-    flex: 1,
-    justifyContent: 'center',
+    flexGrow: 1,
+    justifyContent: "center",
     padding: 24,
-    paddingTop: 60,
+    margin: 24,
+    borderRadius: 28,
+    borderWidth: 1,
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
+  },
+  brandContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  wordmark: {
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: 12,
+    paddingLeft: 12,
+  },
+  wordmarkLine: {
+    width: 28,
+    height: 1,
+    marginTop: 10,
+    opacity: 0.5,
+  },
+  stepBarContainer: {
+    marginBottom: 32,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  stepLine: {
+    flex: 1,
+    height: 1,
+    marginHorizontal: 8,
+    maxWidth: 80,
+  },
+  stepLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 0,
+    marginTop: 6,
+    width: 120,
+    alignSelf: 'center',
+  },
+  stepLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 0.5,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 8,
+    fontSize: 28,
+    fontWeight: "700",
+    marginBottom: 6,
+    textAlign: "center",
   },
   subtitle: {
-    fontSize: 16,
-    color: '#999',
+    fontSize: 15,
     marginBottom: 32,
+    lineHeight: 22,
+    textAlign: "center",
   },
   form: {
     gap: 16,
   },
   input: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     fontSize: 16,
-    color: '#fff',
     borderWidth: 1,
-    borderColor: '#333',
   },
   phoneInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#333',
     paddingLeft: 16,
   },
   phonePrefix: {
     fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
+    fontWeight: "600",
     marginRight: 8,
   },
   phoneInput: {
     flex: 1,
     padding: 16,
     fontSize: 16,
-    color: '#fff',
   },
   button: {
-    backgroundColor: '#6C63FF',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    alignItems: "center",
     marginTop: 8,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "700",
   },
   footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     marginTop: 16,
   },
   footerText: {
-    color: '#999',
     fontSize: 14,
   },
   linkText: {
-    color: '#6C63FF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   datePickerText: {
-    color: '#fff',
     fontSize: 16,
   },
   datePickerPlaceholder: {
-    color: '#999',
     fontSize: 16,
   },
   phoneDisplay: {
-    backgroundColor: '#1a1a1a',
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#333',
   },
   phoneDisplayLabel: {
-    color: '#999',
     fontSize: 14,
     marginBottom: 8,
   },
   phoneDisplayValue: {
-    color: '#fff',
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   instructionText: {
-    color: '#999',
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 16,
   },
   codeInput: {
-    backgroundColor: '#1a1a1a',
     borderRadius: 12,
     padding: 16,
     fontSize: 24,
-    color: '#fff',
     borderWidth: 1,
-    borderColor: '#333',
-    textAlign: 'center',
+    textAlign: "center",
     letterSpacing: 8,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   resendButton: {
     marginTop: 16,
     padding: 12,
   },
   resendText: {
-    color: '#6C63FF',
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
   },
   backButton: {
     marginTop: 24,
     padding: 12,
+  },
+  datePickerWrapper: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  dateConfirmButton: {
+    margin: 12,
+    marginTop: 4,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  dateConfirmText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

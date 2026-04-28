@@ -1,50 +1,221 @@
-// src/controllers/event_controller.rs (or wherever your handlers are)
+use crate::application::event_service as event_persistence;
+use crate::application::outbox_service;
+use crate::middleware::auth::ClubOwnerUser;
+use crate::models::{
+    is_valid_event_image_url, AppState, CreateEventRequest, EventResponse, PaginationParams,
+    UpdateEventRequest,
+};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
-use uuid::Uuid;
+use serde::Serialize;
 use std::sync::Arc;
+use tracing::warn;
+use uuid::Uuid;
 
-use crate::persistences::event_persistence::{
-    load_all_events_service,
-    load_event_service,
-    create_event_service,
-    erase_event_service,
-};
-use crate::models::{EventEntity, EventRequest, AppState};
+#[derive(Serialize)]
+pub struct EventsResponse {
+    pub events: Vec<EventResponse>,
+}
 
+/// Get all events (paginated, default limit=50)
 pub async fn get_all_events(
-    State(app_state): State<Arc<AppState>>
-) -> Result<Json<Vec<EventEntity>>, StatusCode> {
-    let events = load_all_events_service(&app_state).await?;
-    Ok(Json(events))
+    State(state): State<Arc<AppState>>,
+    Query(pagination): Query<PaginationParams>,
+) -> Result<Json<EventsResponse>, StatusCode> {
+    match event_persistence::get_all_events(
+        &state.read_db_pool,
+        pagination.limit,
+        pagination.offset,
+    )
+    .await
+    {
+        Ok(events) => {
+            if let Err(error) = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "events_list_viewed",
+                None,
+                Some("event"),
+                None,
+                serde_json::json!({
+                    "limit": pagination.limit,
+                    "offset": pagination.offset,
+                    "result_count": events.len(),
+                    "outcome": "success",
+                }),
+            )
+            .await
+            {
+                warn!(error = %error, "Failed to enqueue events list analytics event");
+            }
+
+            let event_ids: Vec<Uuid> = events.iter().map(|e| e.id).collect();
+            let genres_map =
+                event_persistence::get_genres_for_events(&state.read_db_pool, &event_ids)
+                    .await
+                    .unwrap_or_default();
+
+            let responses: Vec<EventResponse> = events
+                .into_iter()
+                .map(|e| {
+                    let id = e.id;
+                    let mut r = EventResponse::from(e);
+                    r.genres = genres_map.get(&id).cloned().unwrap_or_default();
+                    r
+                })
+                .collect();
+
+            Ok(Json(EventsResponse { events: responses }))
+        }
+        Err(error) => {
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "events_list_view_failed",
+                None,
+                Some("event"),
+                None,
+                &error.to_string(),
+                serde_json::json!({
+                    "limit": pagination.limit,
+                    "offset": pagination.offset,
+                }),
+            )
+            .await;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
-pub async fn get_events(
-    Path(id): Path<Uuid>,
-    State(app_state): State<Arc<AppState>>
-) -> Result<Json<EventEntity>, StatusCode> {
-    let event = load_event_service(id, &app_state).await?;
-    Ok(Json(event))
+/// Get a single event by ID
+pub async fn get_event(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<EventResponse>, StatusCode> {
+    let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match event_persistence::get_event_by_id(&state.read_db_pool, event_id).await {
+        Ok(Some(event)) => {
+            if let Err(error) = outbox_service::enqueue_analytics_event(
+                &state.db_pool,
+                &state.config,
+                "event_detail_viewed",
+                None,
+                Some("event"),
+                Some(event_id),
+                serde_json::json!({
+                    "event_id": event_id,
+                    "outcome": "success",
+                }),
+            )
+            .await
+            {
+                warn!(error = %error, event_id = %event_id, "Failed to enqueue event detail analytics event");
+            }
+
+            let genres = event_persistence::get_event_genres(&state.read_db_pool, event_id)
+                .await
+                .unwrap_or_default();
+
+            let mut response = EventResponse::from(event);
+            response.genres = genres;
+            Ok(Json(response))
+        }
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(error) => {
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "event_detail_view_failed",
+                None,
+                Some("event"),
+                Some(event_id),
+                &error.to_string(),
+                serde_json::json!({
+                    "event_id": event_id,
+                }),
+            )
+            .await;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
-pub async fn post_events(
-    State(app_state): State<Arc<AppState>>,
-    Json(payload): Json<EventRequest>
-) -> Result<(StatusCode, Json<EventEntity>), StatusCode> {
-    let event = create_event_service(payload, &app_state).await?;
-    Ok((StatusCode::CREATED, Json(event)))
+/// Create a new event (requires club_owner JWT)
+pub async fn create_event(
+    _: ClubOwnerUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateEventRequest>,
+) -> Result<(StatusCode, Json<EventResponse>), StatusCode> {
+    if !is_valid_event_image_url(&payload.image) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let genre_ids = payload.genre_ids.clone().unwrap_or_default();
+
+    match event_persistence::create_event(&state.db_pool, payload).await {
+        Ok(event) => {
+            if !genre_ids.is_empty() {
+                let _ =
+                    event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids).await;
+            }
+            let genres = event_persistence::get_event_genres(&state.db_pool, event.id)
+                .await
+                .unwrap_or_default();
+            let mut response = EventResponse::from(event);
+            response.genres = genres;
+            Ok((StatusCode::CREATED, Json(response)))
+        }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
-pub async fn delete_events(
-    Path(id): Path<Uuid>,
-    State(app_state): State<Arc<AppState>>
-) -> StatusCode {
-    match erase_event_service(id, &app_state).await {
-        Ok(rows) if rows > 0 => StatusCode::NO_CONTENT,
-        Ok(_) => StatusCode::NOT_FOUND,
-        Err(e) => e,
+/// Update an event (requires club_owner JWT)
+pub async fn update_event(
+    _: ClubOwnerUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateEventRequest>,
+) -> Result<Json<EventResponse>, StatusCode> {
+    let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if let Some(image) = payload.image.as_deref() {
+        if !is_valid_event_image_url(image) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+    let genre_ids = payload.genre_ids.clone();
+
+    match event_persistence::update_event(&state.db_pool, event_id, payload).await {
+        Ok(Some(event)) => {
+            if let Some(ids) = genre_ids {
+                let _ = event_persistence::set_event_genres(&state.db_pool, event_id, &ids).await;
+            }
+            let genres = event_persistence::get_event_genres(&state.db_pool, event_id)
+                .await
+                .unwrap_or_default();
+            let mut response = EventResponse::from(event);
+            response.genres = genres;
+            Ok(Json(response))
+        }
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+/// Delete an event (requires club_owner JWT)
+pub async fn delete_event(
+    _: ClubOwnerUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match event_persistence::delete_event(&state.db_pool, event_id).await {
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }

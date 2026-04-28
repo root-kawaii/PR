@@ -1,0 +1,56 @@
+name: Staging App Deploy (OTA)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ota-update:
+    name: EAS OTA Update → staging channel
+    runs-on: ubuntu-latest
+    environment:
+      name: Staging
+    concurrency:
+      group: staging-ota
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: pierre_two/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./pierre_two
+        run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Push OTA update to staging channel
+        working-directory: ./pierre_two
+        env:
+          APP_ENV: ${{ vars.APP_ENV || 'staging' }}
+          EXPO_PUBLIC_API_URL: ${{ vars.API_URL || secrets.STAGING_API_URL }}
+        run: |
+          eas update \
+            --branch "${{ vars.EAS_UPDATE_BRANCH || 'staging' }}" \
+            --message "Staging: ${{ github.sha }}" \
+            --platform ios \
+            --non-interactive
+
+      - name: Summary
+        run: |
+          echo "# Staging OTA Update" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** staging" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All devices with the staging build will receive this update on next app open." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Track at: https://expo.dev/accounts/root-kawaii/projects/pierre_two/updates" >> $GITHUB_STEP_SUMMARY

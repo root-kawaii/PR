@@ -1,237 +1,61 @@
-// src/main.rs
-use std::env;
-use std::sync::Arc;
 use dotenv::dotenv;
-use sqlx::PgPool;
-use axum::{
-    routing::{get, post},
-    Router,
-    middleware::from_fn,
-};
-use tower_http::cors::{CorsLayer, Any};
-use tracing::{info, error};
+use std::fs;
+use std::path::PathBuf;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tracing::info;
 
-// Declare your modules
-mod models;
+mod api;
+mod application;
+mod bootstrap;
 mod controllers;
-mod persistences;
-mod utils;
-mod services;
 mod idempotency;
-mod logging;
+mod infrastructure;
+mod jobs;
 mod middleware;
-
-// Import specific items from your modules
-use crate::models::AppState;
-use crate::idempotency::{IdempotencyService, IdempotencyConfig};
-use crate::controllers::payment_controller::{
-    get_all_payments,
-    get_payment,
-    post_payment,
-    post_authorized_payment,
-    capture_payment,
-    cancel_payment,
-    delete_payment,
-};
-use crate::controllers::event_new_controller::{
-    get_all_events,
-    get_event,
-    create_event,
-    update_event,
-    delete_event,
-};
-use crate::controllers::auth_controller::{
-    register,
-    login,
-    send_sms_verification,
-    verify_sms_code,
-};
-use crate::controllers::genre_controller::{
-    get_all_genres,
-    get_genre,
-    create_genre,
-    update_genre,
-    delete_genre,
-};
-use crate::controllers::club_controller::{
-    get_all_clubs,
-    get_club,
-    create_club,
-    update_club,
-    delete_club,
-};
-use crate::controllers::ticket_controller::{
-    get_all_tickets,
-    get_user_tickets_with_events,
-    get_ticket,
-    get_ticket_by_code,
-    create_ticket,
-    update_ticket,
-    delete_ticket,
-};
-use crate::controllers::table_controller::{
-    get_all_tables,
-    get_tables_by_event,
-    get_available_tables_by_event,
-    get_table,
-    create_table,
-    update_table,
-    delete_table,
-    get_all_reservations,
-    get_user_reservations_with_details,
-    get_reservations_by_table,
-    get_reservation,
-    get_reservation_by_code,
-    create_reservation,
-    update_reservation,
-    delete_reservation,
-    add_payment_to_reservation,
-    link_ticket_to_reservation,
-    get_tickets_for_reservation,
-    create_payment_intent,
-    create_reservation_with_payment,
-};
-
-pub fn create_router(app_state: Arc<AppState>) -> Router {
-    // Configure CORS to allow requests from React Native
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
-    // Configure request ID middleware
-    let (set_request_id, propagate_request_id) = crate::middleware::request_id::request_id_layer();
-
-    Router::new()
-        // Auth routes
-        .route("/auth/register", post(register))
-        .route("/auth/login", post(login))
-        .route("/auth/send-sms-verification", post(send_sms_verification))
-        .route("/auth/verify-sms-code", post(verify_sms_code))
-        // Event routes (new schema)
-        .route("/events", get(get_all_events).post(create_event))
-        .route("/events/:id", get(get_event).put(update_event).delete(delete_event))
-        // Genre routes
-        .route("/genres", get(get_all_genres).post(create_genre))
-        .route("/genres/:id", get(get_genre).put(update_genre).delete(delete_genre))
-        // Club routes
-        .route("/clubs", get(get_all_clubs).post(create_club))
-        .route("/clubs/:id", get(get_club).put(update_club).delete(delete_club))
-        // Ticket routes
-        .route("/tickets", get(get_all_tickets).post(create_ticket))
-        .route("/tickets/:id", get(get_ticket).put(update_ticket).delete(delete_ticket))
-        .route("/tickets/code/:code", get(get_ticket_by_code))
-        .route("/tickets/user/:user_id", get(get_user_tickets_with_events))
-        // Table routes
-        .route("/tables", get(get_all_tables).post(create_table))
-        .route("/tables/:id", get(get_table).put(update_table).delete(delete_table))
-        .route("/tables/event/:event_id", get(get_tables_by_event))
-        .route("/tables/event/:event_id/available", get(get_available_tables_by_event))
-        // Table reservation routes
-        .route("/reservations", get(get_all_reservations))
-        .route("/reservations/:id", get(get_reservation).put(update_reservation).delete(delete_reservation))
-        .route("/reservations/code/:code", get(get_reservation_by_code))
-        .route("/reservations/user/:user_id", get(get_user_reservations_with_details).post(create_reservation))
-        .route("/reservations/table/:table_id", get(get_reservations_by_table))
-        .route("/reservations/:reservation_id/payments", post(add_payment_to_reservation))
-        .route("/reservations/:reservation_id/tickets", post(link_ticket_to_reservation).get(get_tickets_for_reservation))
-        .route("/reservations/create-payment-intent", post(create_payment_intent))
-        .route("/reservations/create-with-payment", post(create_reservation_with_payment))
-        // Payment routes
-        .route("/payments", get(get_all_payments).post(post_payment))
-        .route("/payments/authorize", post(post_authorized_payment))
-        .route("/payments/:id", get(get_payment).delete(delete_payment))
-        .route("/payments/:id/capture", post(capture_payment))
-        .route("/payments/:id/cancel", post(cancel_payment))
-        .with_state(app_state)
-        .layer(from_fn(crate::middleware::request_id::trace_request))
-        .layer(set_request_id)
-        .layer(propagate_request_id)
-        .layer(cors)
-}
-
-pub async fn create_pool() -> PgPool {
-    let database_url = env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://postgres:password@localhost:5432/events".to_string());
-    
-    PgPool::connect(&database_url)
-        .await
-        .expect("Failed to connect to Postgres")
-}
+mod models;
+mod services;
+mod utils;
 
 #[tokio::main]
 async fn main() {
-    dotenv().ok();
+    let manifest_env_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env");
+    if let Ok(contents) = fs::read_to_string(&manifest_env_path) {
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
 
-    // Initialize logging first - MUST keep guard alive for entire program
-    let _log_guard = crate::logging::init_logging();
-    info!("Logging system initialized");
-
-    // Load Stripe API key
-    let stripe_api_key = env::var("STRIPE_SECRET_KEY")
-        .or_else(|_| env::var("STRIPE_API_KEY"))
-        .expect("STRIPE_SECRET_KEY or STRIPE_API_KEY must be set in .env");
-
-    let stripe_client = stripe::Client::new(stripe_api_key);
-    info!("Stripe API Key loaded");
-
-    // Load JWT secret
-    let jwt_secret = env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "your-secret-key-change-this-in-production".to_string());
-    info!("JWT Secret loaded");
-
-    // Create database pool
-    let db_pool = create_pool().await;
-    info!("Connected to PostgreSQL database");
-
-    // Initialize idempotency service
-    let idempotency_config = IdempotencyConfig::default();
-    let idempotency_service = IdempotencyService::new(db_pool.clone(), idempotency_config);
-    info!("Idempotency service initialized");
-
-    // Create application state with db_pool, stripe_client, jwt_secret, and idempotency_service
-    let app_state = Arc::new(AppState {
-        db_pool: db_pool.clone(),
-        stripe_client,
-        jwt_secret,
-        idempotency_service,
-    });
-
-    // Spawn periodic cleanup job for expired idempotency records
-    let cleanup_pool = db_pool.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // Every hour
-
-        loop {
-            interval.tick().await;
-
-            match sqlx::query("SELECT cleanup_expired_idempotency_keys()")
-                .execute(&cleanup_pool)
-                .await
-            {
-                Ok(result) => {
-                    let rows = result.rows_affected();
-                    if rows > 0 {
-                        info!(deleted_records = rows, "Idempotency cleanup completed");
-                    }
+            if let Some((key, value)) = trimmed.split_once('=') {
+                unsafe {
+                    std::env::set_var(key.trim(), value.trim());
                 }
-                Err(e) => error!(error = %e, "Idempotency cleanup failed"),
             }
         }
-    });
-    info!("Idempotency cleanup job started (runs hourly)");
+    }
+    dotenv().ok();
 
-    // Create router with AppState
-    let app = create_router(app_state);
+    let _log_guard = crate::infrastructure::logging::init_logging();
+    info!("Logging system initialized");
 
-    // Start server - bind to 0.0.0.0 to accept connections from network
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+    let config = Arc::new(crate::bootstrap::config::AppConfig::from_env());
+    let app_state = crate::bootstrap::build_state(Arc::clone(&config)).await;
+    crate::bootstrap::start_background_jobs(Arc::clone(&app_state));
+
+    let app = crate::api::build_router(Arc::clone(&app_state));
+
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port))
         .await
         .unwrap();
 
-    info!("Server starting on http://0.0.0.0:3000");
-    info!("  Local: http://127.0.0.1:3000");
-    info!("  Network: http://172.20.10.5:3000");
+    info!(port = config.port, "Server starting");
+    info!(local = %format!("http://127.0.0.1:{}", config.port), "Local address");
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }

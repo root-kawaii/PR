@@ -3,22 +3,33 @@
 // ====================================
 import { View, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
+import { useTheme } from '@/context/ThemeContext';
 
 type SectionHeaderProps = {
-  icon?: string;
+  icon?: IconSymbolName;
   title: string;
   iconColor?: string;
 };
 
-export const SectionHeader = ({ icon, title, iconColor }: SectionHeaderProps) => (
-  <View style={styles.sectionHeader}>
-    {icon && <IconSymbol name={icon} size={20} color={iconColor || '#ef4444'} />}
-    <ThemedText type="subtitle" style={styles.sectionTitle}>
-      {title}
-    </ThemedText>
-  </View>
-);
+export const SectionHeader = ({ icon, title, iconColor }: SectionHeaderProps) => {
+  const { theme } = useTheme();
+
+  return (
+    <View style={styles.sectionHeader}>
+      {icon && (
+        <IconSymbol
+          name={icon}
+          size={20}
+          color={iconColor || theme.primary}
+        />
+      )}
+      <ThemedText type="subtitle" style={styles.sectionTitle}>
+        {title}
+      </ThemedText>
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   sectionHeader: {

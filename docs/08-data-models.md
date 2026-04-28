@@ -8,22 +8,26 @@ Complete reference for all data structures used throughout the Pierre Two applic
 
 **Location**: [pierre_two/types/index.ts](../pierre_two/types/index.ts)
 
-### Event
+### EventResponse
 
-Represents a nightclub event or show.
+Represents an event as returned by the API (dashboard and mobile).
 
 ```typescript
-export interface Event {
-  id: string;              // Unique identifier (UUID)
-  title: string;           // Event name
-  description: string;     // Full event description
-  date: string;            // Event date/time (ISO 8601)
-  location: string;        // Venue address
-  imageUrl: string;        // Event promotional image
-  genre: string;           // Music genre (e.g., "Techno", "House")
-  price: number;           // Entry price or starting price
-  club: Club;              // Associated venue
-  tables: Table[];         // Available tables for reservation
+export interface EventResponse {
+  id: string;
+  title: string;
+  venue: string;
+  date: string;            // ISO 8601 or legacy "25 MAR | 23:00"
+  image: string;
+  status?: string;         // "HOT" | "SOLD OUT" | "CANCELLED"
+  time?: string;           // "HH:MM" — derived from date if not stored separately
+  ageLimit?: string;       // e.g. "18+"
+  endTime?: string;        // "HH:MM"
+  price?: string;          // e.g. "15 €"
+  description?: string;
+  tourProvider?: string;   // "marzipano" | "kuula" | "matterport" | "cloudpano"
+  tourId?: string;
+  marzipanoScenes?: unknown;
 }
 ```
 
@@ -31,15 +35,16 @@ export interface Event {
 ```json
 {
   "id": "e1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-  "title": "Neon Nights Festival",
-  "description": "The biggest electronic music festival of the year",
-  "date": "2024-07-20T22:00:00Z",
-  "location": "Downtown Arena, 123 Main St",
-  "imageUrl": "https://example.com/event.jpg",
-  "genre": "Techno",
-  "price": 50.00,
-  "club": { /* Club object */ },
-  "tables": [ /* Array of Table objects */ ]
+  "title": "Neon Night",
+  "venue": "Club XYZ",
+  "date": "2026-04-05T23:00:00",
+  "image": "https://example.com/event.jpg",
+  "status": "HOT",
+  "time": "23:00",
+  "ageLimit": "18+",
+  "endTime": "06:00",
+  "price": "15 €",
+  "description": "The biggest night of the year"
 }
 ```
 
@@ -170,64 +175,64 @@ export interface Reservation {
 
 ## Backend Models (Rust)
 
-### EventEntity
+### Event (DB row)
 
-**Location**: [rust_BE/src/models/event_entity.rs](../rust_BE/src/models/event_entity.rs)
+**Location**: [rust_BE/src/models/event.rs](../rust_BE/src/models/event.rs)
 
-Represents an event in the database.
+Represents an event row fetched from the database.
 
 ```rust
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub struct EventEntity {
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Event {
     pub id: Uuid,
     pub title: String,
-    pub description: String,
-    pub completed: bool,
+    pub venue: String,
+    pub date: String,
+    pub image: String,
+    pub status: Option<String>,
+    pub time: Option<String>,
+    pub age_limit: Option<String>,
+    pub end_time: Option<String>,
+    pub price: Option<String>,
+    pub description: Option<String>,
+    pub club_id: Option<Uuid>,
+    pub tour_provider: Option<String>,
+    pub tour_id: Option<String>,
+    pub marzipano_config: Option<JsonValue>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 ```
 
-**Fields**:
-- `id`: UUID v4 primary key
-- `title`: Event title (max 255 chars)
-- `description`: Full description (text)
-- `completed`: Boolean flag (currently unused)
-- `created_at`: Timestamp with timezone
-- `updated_at`: Timestamp with timezone
-
-**Traits**:
-- `Debug`: For debugging output
-- `Serialize`: JSON serialization via serde
-- `Deserialize`: JSON deserialization via serde
-- `sqlx::FromRow`: Automatic mapping from database row
+Converted to `EventResponse` via `From<Event>`, which:
+- Derives `time` from the ISO date string when the `time` column is empty.
+- Filters empty strings for `status`, `age_limit`, and `end_time` (treats them as null).
 
 ---
 
-### CreateEventRequest
-
-Request payload for creating an event.
+### CreateEventRequest / UpdateEventRequest
 
 ```rust
 #[derive(Debug, Deserialize)]
 pub struct CreateEventRequest {
     pub title: String,
-    pub description: String,
+    pub venue: String,
+    pub date: String,
+    pub image: String,
+    pub status: Option<String>,
+    pub time: Option<String>,
+    pub age_limit: Option<String>,
+    pub end_time: Option<String>,
+    pub price: Option<String>,
+    pub description: Option<String>,
+    pub club_id: Option<Uuid>,          // forced to owner's club by the controller
+    pub tour_provider: Option<String>,
+    pub tour_id: Option<String>,
+    pub marzipano_config: Option<JsonValue>,
 }
-```
 
-**Validation** (Future):
-```rust
-use validator::Validate;
-
-#[derive(Debug, Deserialize, Validate)]
-pub struct CreateEventRequest {
-    #[validate(length(min = 1, max = 255))]
-    pub title: String,
-
-    #[validate(length(min = 1, max = 5000))]
-    pub description: String,
-}
+// UpdateEventRequest has all fields optional; SQL uses COALESCE to preserve
+// existing values for any field not supplied.
 ```
 
 ---

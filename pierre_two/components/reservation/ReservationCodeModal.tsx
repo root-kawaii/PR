@@ -12,8 +12,10 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { useTheme } from "@/context/ThemeContext";
 
 type ReservationCodeModalProps = {
   visible: boolean;
@@ -26,6 +28,7 @@ export const ReservationCodeModal = ({
   onClose,
   onSubmit,
 }: ReservationCodeModalProps) => {
+  const { theme } = useTheme();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -64,32 +67,40 @@ export const ReservationCodeModal = ({
       onRequestClose={handleClose}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.overlay}>
-          <View style={styles.modal}>
+        <View style={[styles.overlay, { backgroundColor: theme.overlay }]}>
+          <View style={[styles.modal, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <View>
-                {/* Header */}
-                <View style={styles.header}>
-                  <ThemedText style={styles.title}>Inserisci Codice</ThemedText>
+                <LinearGradient
+                  colors={[`${theme.primary}18`, "rgba(0,0,0,0)", `${theme.secondary}12`] as [string, string, string]}
+                  style={styles.modalGlow}
+                />
+                <View style={[styles.header, { borderBottomColor: theme.border }]}>
+                  <View style={styles.titleWrap}>
+                    <View style={[styles.kicker, { backgroundColor: `${theme.primary}15`, borderColor: `${theme.primary}33` }]}>
+                      <IconSymbol name="barcode" size={12} color={theme.primary} />
+                      <ThemedText style={[styles.kickerText, { color: theme.primary }]}>Accesso rapido</ThemedText>
+                    </View>
+                    <ThemedText style={[styles.title, { color: theme.text }]}>Inserisci il codice</ThemedText>
+                  </View>
                   <TouchableOpacity
                     onPress={handleClose}
                     style={styles.closeButton}
                   >
-                    <IconSymbol name="xmark" size={24} color="#9ca3af" />
+                    <IconSymbol name="xmark" size={24} color={theme.textTertiary} />
                   </TouchableOpacity>
                 </View>
 
                 {/* Content */}
                 <View style={styles.content}>
-                  <ThemedText style={styles.description}>
-                    Inserisci il codice della prenotazione per visualizzare i
-                    dettagli e contribuire al pagamento.
+                  <ThemedText style={[styles.description, { color: theme.textTertiary }]}>
+                    Inserisci il codice della prenotazione per vedere i dettagli del tavolo e, se necessario, completare la tua quota.
                   </ThemedText>
 
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
                     placeholder="Es: RES-XXXXXXXX"
-                    placeholderTextColor="#6b7280"
+                    placeholderTextColor={theme.textTertiary}
                     value={code}
                     onChangeText={(text) => {
                       setCode(text);
@@ -105,9 +116,9 @@ export const ReservationCodeModal = ({
                       <IconSymbol
                         name="exclamationmark.triangle.fill"
                         size={16}
-                        color="#ef4444"
+                        color={theme.error}
                       />
-                      <ThemedText style={styles.errorText}>{error}</ThemedText>
+                      <ThemedText style={[styles.errorText, { color: theme.error }]}>{error}</ThemedText>
                     </View>
                   ) : null}
                 </View>
@@ -115,11 +126,11 @@ export const ReservationCodeModal = ({
                 {/* Actions */}
                 <View style={styles.actions}>
                   <TouchableOpacity
-                    style={[styles.button, styles.cancelButton]}
+                    style={[styles.button, styles.cancelButton, { backgroundColor: theme.backgroundSurface }]}
                     onPress={handleClose}
                     disabled={loading}
                   >
-                    <ThemedText style={styles.cancelButtonText}>
+                    <ThemedText style={[styles.cancelButtonText, { color: theme.textTertiary }]}>
                       Annulla
                     </ThemedText>
                   </TouchableOpacity>
@@ -128,15 +139,16 @@ export const ReservationCodeModal = ({
                     style={[
                       styles.button,
                       styles.submitButton,
+                      { backgroundColor: theme.primary },
                       loading && styles.buttonDisabled,
                     ]}
                     onPress={handleSubmit}
                     disabled={loading}
                   >
                     {loading ? (
-                      <ActivityIndicator size="small" color="#fff" />
+                      <ActivityIndicator size="small" color={theme.textInverse} />
                     ) : (
-                      <ThemedText style={styles.submitButtonText}>
+                      <ThemedText style={[styles.submitButtonText, { color: theme.textInverse }]}>
                         Cerca
                       </ThemedText>
                     )}
@@ -166,15 +178,33 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     borderWidth: 1,
     borderColor: "#2a2a2a",
+    overflow: "hidden",
+    position: "relative",
+  },
+  modalGlow: {
+    ...StyleSheet.absoluteFillObject,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#2a2a2a",
   },
+  titleWrap: { flex: 1, paddingRight: 12 },
+  kicker: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  kickerText: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
   title: {
     fontSize: 20,
     fontWeight: "700",

@@ -1,47 +1,69 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ScrollView,
   View,
   StyleSheet,
   RefreshControl,
-  Platform,
-  Alert,
   Text,
   Modal,
+  ActivityIndicator,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  TouchableOpacity,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Calendar } from "react-native-calendars";
-import { ThemedView } from "@/components/themed-view";
-import { SearchBar } from "@/components/home/SearchBar";
 import { EventCard } from "@/components/home/EventCard";
 import { EventDetailModal } from "@/components/event/EventDetailModal";
 import { TableReservationModal } from "@/components/reservation/TableReservationModal";
-import { FloatingActionButton } from "@/components/common/FloatingActionButton";
-import { ReservationCodeModal } from "@/components/reservation/ReservationCodeModal";
-import { TableReservationDetailModal } from "@/components/reservation/TableReservationDetailModal";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useEvents } from "@/hooks/useEvents";
 import { useModal } from "@/hooks/useModal";
-import { Event, Table, TableReservation } from "@/types";
-import { useLocalSearchParams } from "expo-router";
-import { API_URL } from "@/config/api";
+import { useTheme } from "@/context/ThemeContext";
+import { Event, Table } from "@/types";
+import { getEventDateKey } from "@/utils/events";
+import { useLocalSearchParams, useFocusEffect } from "expo-router";
+import { trackEvent } from "@/config/analytics";
 
 export default function HomeScreen() {
-  const [searchQuery, setSearchQuery] = useState("");
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
-  const [selectedReservation, setSelectedReservation] =
-    useState<TableReservation | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
-  const { events, refetch: refetchEvents } = useEvents();
+  const {
+    events,
+    loading,
+    refetch: refetchEvents,
+    loadMore,
+    loadingMore,
+    hasMore,
+  } = useEvents();
   const eventModal = useModal();
   const reservationModal = useModal();
-  const codeInputModal = useModal();
-  const reservationDetailModal = useModal();
   const params = useLocalSearchParams();
 
-  // Handle navigation from search page
+  const toDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseDateKey = (dateStr: string) => {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      refetchEvents(true);
+    }, [refetchEvents]),
+  );
+
   useEffect(() => {
     if (params.eventId && events.length > 0) {
       const event = events.find((e) => e.id === params.eventId);
@@ -51,7 +73,22 @@ export default function HomeScreen() {
     }
   }, [params.eventId, events]);
 
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    trackEvent("home_events_loaded", {
+      result_count: events.length,
+      selected_date: toDateKey(selectedDate),
+      has_more: hasMore,
+    });
+  }, [events.length, hasMore, loading, selectedDate]);
+
   const onRefresh = async () => {
+    trackEvent("home_events_refresh_requested", {
+      selected_date: toDateKey(selectedDate),
+    });
     setRefreshing(true);
     await refetchEvents(true);
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -59,6 +96,11 @@ export default function HomeScreen() {
   };
 
   const handleEventPress = (event: Event) => {
+    trackEvent("event_card_selected", {
+      event_id: event.id,
+      event_title: event.title,
+      venue: event.venue,
+    });
     setSelectedEvent(event);
     eventModal.open();
   };
@@ -70,68 +112,33 @@ export default function HomeScreen() {
     setTimeout(() => reservationModal.open(), 300);
   };
 
-  const handleCalendarPress = () => {
-    setShowCalendar(true);
-  };
-
   const handleDateSelect = (day: any) => {
-    setSelectedDate(new Date(day.dateString));
+    trackEvent("home_date_selected", {
+      selected_date: day.dateString,
+    });
+    setSelectedDate(parseDateKey(day.dateString));
     setShowCalendar(false);
   };
 
-  // Extract date portion from event date string
   const extractEventDate = (dateStr: string): string | null => {
     try {
-      // Handle ISO format: '2024-12-27T23:00:00' or '2024-12-27'
-      if (dateStr.includes("T")) {
-        return dateStr.split("T")[0];
-      }
-
-      // Handle date with space separator: '2024-12-27 23:00:00'
-      if (dateStr.includes(" ") && !dateStr.includes("|")) {
-        const datePart = dateStr.split(" ")[0];
-        // Verify it's in YYYY-MM-DD format
-        if (datePart.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          return datePart;
-        }
-      }
-
-      // If already in YYYY-MM-DD format
-      if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return dateStr;
-      }
-
-      // Handle Italian format: '15 GEN | 23:30' or '27 DIC'
-      // This is a legacy format that should not be in the database
-      // Just skip these events for now
-      if (dateStr.match(/^\d{1,2}\s+[A-Z]{3}/)) {
-        console.warn(
-          "Skipping event with legacy Italian date format:",
-          dateStr
-        );
-        return null;
-      }
-
-      console.warn("Unexpected date format:", dateStr);
-      return null;
+      return getEventDateKey(dateStr);
     } catch (e) {
       console.error("Error extracting date:", dateStr, e);
       return null;
     }
   };
 
-  // Group events by date
   const groupEventsByDate = (startDate: Date) => {
-    const dateStr = startDate.toISOString().split("T")[0];
+    const dateStr = toDateKey(startDate);
 
-    // Filter events from selected date onwards
     const filteredEvents = events.filter((event) => {
       const eventDate = extractEventDate(event.date);
       if (!eventDate) return false;
+
       return eventDate >= dateStr;
     });
 
-    // Group by date
     const grouped: { [key: string]: Event[] } = {};
     filteredEvents.forEach((event) => {
       const eventDate = extractEventDate(event.date);
@@ -143,7 +150,6 @@ export default function HomeScreen() {
       grouped[eventDate].push(event);
     });
 
-    // Sort dates and return array of {date, events}
     return Object.keys(grouped)
       .sort()
       .map((date) => ({
@@ -170,8 +176,6 @@ export default function HomeScreen() {
     ];
 
     try {
-      // Parse date string manually to avoid timezone issues
-      // dateStr format: 'YYYY-MM-DD'
       const parts = dateStr.split("-");
       if (parts.length !== 3) {
         throw new Error("Invalid date format");
@@ -193,163 +197,240 @@ export default function HomeScreen() {
       return `${dayName}, ${day} ${monthName}`;
     } catch (e) {
       console.error("Error formatting date header:", dateStr, e);
-      return dateStr; // Fallback to showing the raw date string
+      return dateStr;
     }
   };
 
   const groupedEvents = groupEventsByDate(selectedDate);
 
-  const handleFABPress = () => {
-    codeInputModal.open();
-  };
-
-  const handleReservationCodeSubmit = async (code: string) => {
-    try {
-      const response = await fetch(`${API_URL}/reservations/code/${code}`);
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error("Prenotazione non trovata");
-        }
-        throw new Error("Errore durante il recupero della prenotazione");
-      }
-
-      const data = await response.json();
-      setSelectedReservation(data);
-      codeInputModal.close();
-      reservationDetailModal.open();
-    } catch (error: any) {
-      throw error;
-    }
-  };
-
-  const handlePaymentSubmit = async (numPeople: number) => {
-    if (!selectedReservation) return;
-
-    const minSpendPerPerson = parseFloat(
-      selectedReservation.table?.minSpend?.replace(" €", "") || "0"
-    );
-    const amount = minSpendPerPerson * numPeople;
-
-    Alert.alert(
-      "Pagamento Simulato",
-      `Pagamento di ${amount.toFixed(2)} € per ${numPeople} ${
-        numPeople === 1 ? "persona" : "persone"
-      } simulato con successo.\n\nIn produzione, qui verrebbe integrato il sistema di pagamento.`,
-      [
-        {
-          text: "OK",
-          onPress: () => {
-            reservationDetailModal.close();
-            setSelectedReservation(null);
-          },
-        },
-      ]
-    );
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const nearBottom =
+      layoutMeasurement.height + contentOffset.y >= contentSize.height - 300;
+    if (nearBottom && hasMore && !loadingMore) loadMore();
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <ThemedView style={styles.container}>
-        <SearchBar
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onCalendarPress={handleCalendarPress}
-        />
-
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      edges={["top"]}
+    >
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
         <ScrollView
           style={styles.mainScroll}
+          contentContainerStyle={{
+            paddingBottom: 112 + insets.bottom,
+          }}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={400}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#db2777"
-              colors={["#db2777"]}
+              tintColor={theme.primary}
+              colors={[theme.primary]}
             />
           }
         >
-          {groupedEvents.length > 0 ? (
-            groupedEvents.map((group) => (
-              <View key={group.date} style={styles.dateSection}>
-                {/* Date Header */}
-                <View style={styles.dateHeader}>
-                  <Text style={styles.dateHeaderText}>
-                    {formatDateHeader(group.date)}
+          <View style={styles.contentWrap}>
+            <View style={styles.topIntro}>
+              <View style={styles.topIntroRow}>
+                <View style={styles.topIntroCopy}>
+                  <Text style={[styles.topTitle, { color: theme.text }]}>
+                    Trova il tuo evento
                   </Text>
-                  <Text style={styles.eventCount}>
-                    {group.events.length}{" "}
-                    {group.events.length === 1 ? "evento" : "eventi"}
+                  <Text
+                    style={[styles.topSubtitle, { color: theme.textTertiary }]}
+                  >
+                    Scopri gli eventi e prenota la tua prossima serata.
                   </Text>
                 </View>
-
-                {/* Horizontal Scroll of Events for this Date */}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.eventsRow}
-                  contentContainerStyle={styles.eventsRowContent}
-                >
-                  {group.events.map((event) => (
-                    <View key={event.id} style={styles.eventCardWrapper}>
-                      <EventCard
-                        event={event}
-                        onPress={() => handleEventPress(event)}
-                      />
-                    </View>
-                  ))}
-                </ScrollView>
+                <View style={styles.topActions}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={[
+                      styles.topActionButton,
+                      {
+                        backgroundColor: theme.backgroundElevated,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    onPress={() => setShowCalendar(true)}
+                    onPressIn={() => {
+                      trackEvent("home_calendar_opened", {
+                        selected_date: toDateKey(selectedDate),
+                      });
+                    }}
+                  >
+                    <IconSymbol name="calendar" size={21} color={theme.text} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateEmoji}>🎉</Text>
-              <Text style={styles.emptyStateText}>
-                Nessun evento in programma
-              </Text>
-              <Text style={styles.emptyStateSubtext}>
-                Controlla altre date dal calendario
-              </Text>
             </View>
+
+            {groupedEvents.length > 0 ? (
+              groupedEvents.map((group) => (
+                <View key={group.date} style={styles.dateSection}>
+                  <View
+                    style={[
+                      styles.dateAccent,
+                      { backgroundColor: theme.primary },
+                    ]}
+                  />
+                  <View style={styles.dateHeader}>
+                    <View style={styles.dateHeaderCopy}>
+                      <Text
+                        style={[styles.dateHeaderText, { color: theme.text }]}
+                      >
+                        {formatDateHeader(group.date)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.dateHeaderSubtext,
+                          { color: theme.textTertiary },
+                        ]}
+                      >
+                        {group.events.length}{" "}
+                        {group.events.length === 1
+                          ? "evento disponibile"
+                          : "eventi disponibili"}
+                      </Text>
+                    </View>
+                    <View style={styles.dateHeaderRight}>
+                      <View
+                        style={[
+                          styles.dateCountBadge,
+                          {
+                            backgroundColor: theme.backgroundElevated,
+                            borderColor: theme.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.eventCount, { color: theme.primary }]}
+                        >
+                          {group.events.length}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.eventsRow}
+                    contentContainerStyle={styles.eventsRowContent}
+                  >
+                    {group.events.map((event) => (
+                      <View key={event.id} style={styles.eventCardWrapper}>
+                        <EventCard
+                          event={event}
+                          onPress={() => handleEventPress(event)}
+                        />
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateEmoji}>🎉</Text>
+                <Text style={[styles.emptyStateText, { color: theme.text }]}>
+                  Nessun evento in programma
+                </Text>
+                <Text
+                  style={[
+                    styles.emptyStateSubtext,
+                    { color: theme.textTertiary },
+                  ]}
+                >
+                  Controlla altre date dal calendario
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {loadingMore && (
+            <ActivityIndicator
+              size="small"
+              color={theme.primary}
+              style={{ marginVertical: 16 }}
+            />
           )}
         </ScrollView>
-      </ThemedView>
+      </View>
 
-      {/* Calendar Modal */}
       <Modal
         visible={showCalendar}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowCalendar(false)}
       >
-        <View style={styles.calendarModalOverlay}>
-          <View style={styles.calendarModal}>
-            <View style={styles.calendarHeader}>
-              <Text style={styles.calendarTitle}>Seleziona una data</Text>
+        <Pressable
+          style={[
+            styles.calendarModalOverlay,
+            { backgroundColor: theme.overlay },
+          ]}
+          onPress={() => setShowCalendar(false)}
+        >
+          <Pressable
+            style={[
+              styles.calendarModal,
+              {
+                backgroundColor: theme.backgroundSurface,
+                borderColor: theme.border,
+              },
+            ]}
+            onPress={() => {}}
+          >
+            <View
+              style={[
+                styles.calendarHeader,
+                { borderBottomColor: theme.border },
+              ]}
+            >
+              <View style={styles.calendarHeaderSpacer} />
+              <Text style={[styles.calendarTitle, { color: theme.text }]}>
+                Seleziona una data
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[
+                  styles.calendarCloseButton,
+                  {
+                    backgroundColor: theme.backgroundElevated,
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={() => setShowCalendar(false)}
+              >
+                <IconSymbol name="xmark" size={18} color={theme.text} />
+              </TouchableOpacity>
             </View>
             <Calendar
               onDayPress={handleDateSelect}
               markedDates={{
-                [selectedDate.toISOString().split("T")[0]]: {
+                [toDateKey(selectedDate)]: {
                   selected: true,
-                  selectedColor: "#ec4899",
+                  selectedColor: theme.primary,
                 },
               }}
               theme={{
-                backgroundColor: "#1f2937",
-                calendarBackground: "#1f2937",
-                textSectionTitleColor: "#9ca3af",
-                selectedDayBackgroundColor: "#ec4899",
-                selectedDayTextColor: "#ffffff",
-                todayTextColor: "#ec4899",
-                dayTextColor: "#ffffff",
-                textDisabledColor: "#4b5563",
-                monthTextColor: "#ffffff",
-                arrowColor: "#ec4899",
+                backgroundColor: theme.backgroundSurface,
+                calendarBackground: theme.backgroundSurface,
+                textSectionTitleColor: theme.textTertiary,
+                selectedDayBackgroundColor: theme.primary,
+                selectedDayTextColor: theme.textInverse,
+                todayTextColor: theme.primary,
+                dayTextColor: theme.text,
+                textDisabledColor: theme.border,
+                monthTextColor: theme.text,
+                arrowColor: theme.primary,
               }}
             />
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <EventDetailModal
@@ -365,21 +446,6 @@ export default function HomeScreen() {
         event={selectedEvent}
         onClose={reservationModal.close}
       />
-
-      <FloatingActionButton onPress={handleFABPress} icon="qrcode" />
-
-      <ReservationCodeModal
-        visible={codeInputModal.isVisible}
-        onClose={codeInputModal.close}
-        onSubmit={handleReservationCodeSubmit}
-      />
-
-      <TableReservationDetailModal
-        visible={reservationDetailModal.isVisible}
-        reservation={selectedReservation}
-        onClose={reservationDetailModal.close}
-        onPaymentSubmit={handlePaymentSubmit}
-      />
     </SafeAreaView>
   );
 }
@@ -387,43 +453,106 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
   },
   mainScroll: {
     flex: 1,
   },
+  contentWrap: {
+    paddingTop: 14,
+    paddingBottom: 48,
+  },
+  topIntro: {
+    paddingHorizontal: 16,
+    marginBottom: 18,
+  },
+  topIntroRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+  },
+  topIntroCopy: {
+    flex: 1,
+  },
+  topTitle: {
+    fontSize: 30,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  topSubtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  topActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  topActionButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   dateSection: {
-    marginBottom: 24,
+    marginHorizontal: 16,
+    marginBottom: 18,
+    paddingTop: 8,
+    paddingBottom: 2,
+  },
+  dateAccent: {
+    height: 3,
+    width: 56,
+    borderRadius: 999,
+    marginLeft: 16,
+    marginBottom: 12,
   },
   dateHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1f2937",
+    marginBottom: 10,
+  },
+  dateHeaderCopy: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  dateHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   dateHeaderText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
+    fontSize: 17,
+    fontWeight: "700",
     textTransform: "uppercase",
   },
+  dateHeaderSubtext: {
+    fontSize: 12,
+    marginTop: 3,
+  },
+  dateCountBadge: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   eventCount: {
-    fontSize: 14,
-    color: "#9ca3af",
+    fontSize: 13,
+    fontWeight: "800",
   },
-  eventsRow: {
-    paddingTop: 12,
-  },
+  eventsRow: {},
   eventsRowContent: {
-    paddingHorizontal: 16,
+    paddingLeft: 16,
+    paddingRight: 28,
     paddingBottom: 8,
   },
   eventCardWrapper: {
-    width: 320,
-    marginRight: 12,
+    marginRight: 14,
   },
   emptyState: {
     flex: 1,
@@ -439,37 +568,47 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#fff",
     marginBottom: 8,
     textAlign: "center",
   },
   emptyStateSubtext: {
     fontSize: 14,
-    color: "#9ca3af",
     textAlign: "center",
   },
   calendarModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
     justifyContent: "center",
     alignItems: "center",
   },
   calendarModal: {
-    backgroundColor: "#1f2937",
-    borderRadius: 16,
+    borderRadius: 18,
     width: "90%",
     maxWidth: 400,
     overflow: "hidden",
+    borderWidth: 1,
   },
   calendarHeader: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  calendarHeaderSpacer: {
+    width: 40,
   },
   calendarTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#fff",
     textAlign: "center",
+    flex: 1,
+  },
+  calendarCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

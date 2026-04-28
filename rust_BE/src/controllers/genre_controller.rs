@@ -1,5 +1,6 @@
-use crate::models::{AppState, CreateGenreRequest, UpdateGenreRequest, GenreResponse};
-use crate::persistences::genre_persistence;
+use crate::application::genre_service as genre_persistence;
+use crate::middleware::auth::ClubOwnerUser;
+use crate::models::{AppState, CreateGenreRequest, GenreResponse, UpdateGenreRequest};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -12,7 +13,7 @@ use uuid::Uuid;
 pub async fn get_all_genres(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<GenreResponse>>, StatusCode> {
-    match genre_persistence::get_all_genres(&state.db_pool).await {
+    match genre_persistence::get_all_genres(&state.read_db_pool).await {
         Ok(genres) => {
             let responses: Vec<GenreResponse> = genres.into_iter().map(|g| g.into()).collect();
             Ok(Json(responses))
@@ -28,15 +29,16 @@ pub async fn get_genre(
 ) -> Result<Json<GenreResponse>, StatusCode> {
     let genre_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    match genre_persistence::get_genre_by_id(&state.db_pool, genre_id).await {
+    match genre_persistence::get_genre_by_id(&state.read_db_pool, genre_id).await {
         Ok(Some(genre)) => Ok(Json(genre.into())),
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
-/// Create a new genre
+/// Create a new genre (requires club_owner JWT)
 pub async fn create_genre(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateGenreRequest>,
 ) -> Result<(StatusCode, Json<GenreResponse>), StatusCode> {
@@ -51,8 +53,9 @@ pub async fn create_genre(
     }
 }
 
-/// Update a genre
+/// Update a genre (requires club_owner JWT)
 pub async fn update_genre(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateGenreRequest>,
@@ -73,8 +76,9 @@ pub async fn update_genre(
     }
 }
 
-/// Delete a genre
+/// Delete a genre (requires club_owner JWT)
 pub async fn delete_genre(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {

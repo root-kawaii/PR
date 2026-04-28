@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
+import { getExpoExtraString } from "@/config/expoExtra";
 
 /**
  * Get the API URL based on the environment
@@ -8,10 +9,16 @@ import Constants from "expo-constants";
  * 2. Platform-specific development URLs
  */
 export const getApiUrl = (): string => {
-  // Use production URL from app.json extra config if available
-  const apiUrl = Constants.expoConfig?.extra?.apiUrl;
+  // Use app config / EAS env first. In standalone builds this can live in
+  // different Constants locations depending on Expo runtime/update source.
+  const apiUrl = getExpoExtraString("apiUrl");
   if (apiUrl) {
     return apiUrl;
+  }
+
+  const appEnv = getExpoExtraString("appEnv");
+  if (appEnv === "staging") {
+    return "https://pierreclubs-backend-staging.fly.dev";
   }
 
   // Fall back to local development
@@ -28,10 +35,9 @@ export const getApiUrl = (): string => {
     return "http://127.0.0.1:3000"; // iOS simulator
   }
 
-  // If explicitly a device OR if we can't determine (safer to assume device)
+  // If explicitly a device OR if we can't determine — use the current prod URL.
   if (isDevice === true || (isDevice !== false && !isSimulator)) {
-    // Physical device - use your computer's local network IP
-    return "http://127.0.0.1:3000";
+    return "https://pierreclubs-backend-prod.fly.dev";
   }
 
   // Default fallback for simulators

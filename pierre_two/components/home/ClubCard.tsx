@@ -3,6 +3,7 @@
 // ====================================
 import { TouchableOpacity, View, Image, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
+import { useTheme } from '@/context/ThemeContext';
 import { Club } from '@/types';
 
 type ClubCardProps = {
@@ -10,20 +11,24 @@ type ClubCardProps = {
   index: number;
 };
 
-export const ClubCard = ({ club, index }: ClubCardProps) => (
-  <TouchableOpacity style={styles.clubCard} activeOpacity={0.9}>
-    <Image source={{ uri: club.image }} style={styles.clubImage} />
-    <View style={[styles.clubOverlay, index === 0 ? styles.pinkGradient : styles.cyanGradient]} />
-    <View style={styles.clubInfo}>
-      <ThemedText style={styles.clubName} numberOfLines={2}>
-        {club.name}
-      </ThemedText>
-      <ThemedText style={styles.clubSubtitle} numberOfLines={1}>
-        {club.subtitle}
-      </ThemedText>
-    </View>
-  </TouchableOpacity>
-);
+export const ClubCard = ({ club, index }: ClubCardProps) => {
+  const { theme } = useTheme();
+
+  return (
+    <TouchableOpacity style={styles.clubCard} activeOpacity={0.9}>
+      <Image source={{ uri: club.image }} style={styles.clubImage} />
+      <View style={[styles.clubOverlay, { backgroundColor: index === 0 ? theme.primary : theme.secondary }]} />
+      <View style={styles.clubInfo}>
+        <ThemedText style={[styles.clubName, { color: theme.textInverse }]} numberOfLines={2}>
+          {club.name}
+        </ThemedText>
+        <ThemedText style={styles.clubSubtitle} numberOfLines={1}>
+          {club.subtitle}
+        </ThemedText>
+      </View>
+    </TouchableOpacity>
+  );
+};
 
 const styles = StyleSheet.create({
   clubCard: {
@@ -46,12 +51,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     opacity: 0.4,
   },
-  pinkGradient: {
-    backgroundColor: '#ec4899',
-  },
-  cyanGradient: {
-    backgroundColor: '#06b6d4',
-  },
   clubInfo: {
     position: 'absolute',
     bottom: 0,
@@ -62,7 +61,6 @@ const styles = StyleSheet.create({
   clubName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#fff',
     marginBottom: 4,
     lineHeight: 20,
   },

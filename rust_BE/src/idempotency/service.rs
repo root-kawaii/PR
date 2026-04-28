@@ -1,10 +1,12 @@
-use super::models::{IdempotencyCheckResult, IdempotencyConfig, IdempotencyRecord, IdempotencyStatus};
+use super::models::{
+    IdempotencyCheckResult, IdempotencyConfig, IdempotencyRecord, IdempotencyStatus,
+};
 use axum::http::StatusCode;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-use tracing::{info, warn, error, debug};
 
 pub struct IdempotencyService {
     pool: PgPool,
@@ -168,10 +170,7 @@ impl IdempotencyService {
     }
 
     /// Wait for an in-progress operation to complete and return the payment_id
-    pub async fn wait_for_completion(
-        &self,
-        idempotency_key: Uuid,
-    ) -> Result<Uuid, StatusCode> {
+    pub async fn wait_for_completion(&self, idempotency_key: Uuid) -> Result<Uuid, StatusCode> {
         for attempt in 0..self.config.max_retries {
             tokio::time::sleep(tokio::time::Duration::from_millis(
                 self.config.retry_delay_ms,

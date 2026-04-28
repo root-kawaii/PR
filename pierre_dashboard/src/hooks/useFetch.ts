@@ -3,7 +3,7 @@ import { API_URL } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 
 export function useFetch<T>(path: string) {
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +18,10 @@ export function useFetch<T>(path: string) {
           'Authorization': `Bearer ${token}`,
         },
       });
+      if (res.status === 401) {
+        logout();
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);

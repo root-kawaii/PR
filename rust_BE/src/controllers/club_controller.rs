@@ -1,5 +1,6 @@
-use crate::models::{AppState, CreateClubRequest, UpdateClubRequest, ClubResponse};
-use crate::persistences::club_persistence;
+use crate::application::club_service as club_persistence;
+use crate::middleware::auth::ClubOwnerUser;
+use crate::models::{AppState, ClubResponse, CreateClubRequest, UpdateClubRequest};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -12,7 +13,7 @@ use uuid::Uuid;
 pub async fn get_all_clubs(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ClubResponse>>, StatusCode> {
-    match club_persistence::get_all_clubs(&state.db_pool).await {
+    match club_persistence::get_all_clubs(&state.read_db_pool).await {
         Ok(clubs) => {
             let responses: Vec<ClubResponse> = clubs.into_iter().map(|c| c.into()).collect();
             Ok(Json(responses))
@@ -28,15 +29,16 @@ pub async fn get_club(
 ) -> Result<Json<ClubResponse>, StatusCode> {
     let club_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    match club_persistence::get_club_by_id(&state.db_pool, club_id).await {
+    match club_persistence::get_club_by_id(&state.read_db_pool, club_id).await {
         Ok(Some(club)) => Ok(Json(club.into())),
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
-/// Create a new club
+/// Create a new club (requires club_owner JWT)
 pub async fn create_club(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateClubRequest>,
 ) -> Result<(StatusCode, Json<ClubResponse>), StatusCode> {
@@ -46,8 +48,9 @@ pub async fn create_club(
     }
 }
 
-/// Update a club
+/// Update a club (requires club_owner JWT)
 pub async fn update_club(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateClubRequest>,
@@ -61,8 +64,9 @@ pub async fn update_club(
     }
 }
 
-/// Delete a club
+/// Delete a club (requires club_owner JWT)
 pub async fn delete_club(
+    _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
