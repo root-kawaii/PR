@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   createSceneFromUrl,
   createViewer,
@@ -40,6 +40,9 @@ export default function MarzipanoCanvas({
   const viewerRef = useRef<MarzipanoViewerHandle | null>(null);
   const sceneCacheRef = useRef<Map<string, SceneEntry>>(new Map());
   const currentSceneIdRef = useRef<string | null>(null);
+  const draggingHotspotIdRef = useRef<string | null>(null);
+  // incremented each time a viewer is created so the scene effect re-fires
+  const [viewerVersion, setViewerVersion] = useState(0);
 
   const onCanvasClickRef = useRef(onCanvasClick);
   const onHotspotDragRef = useRef(onHotspotDrag);
@@ -58,6 +61,8 @@ export default function MarzipanoCanvas({
     if (!ready || !containerRef.current || viewerRef.current) return;
     try {
       viewerRef.current = createViewer(containerRef.current);
+      // bump version so the scene effect re-fires even if scene was already set
+      setViewerVersion((v) => v + 1);
     } catch (err) {
       console.error('Marzipano viewer init failed', err);
     }
@@ -93,7 +98,7 @@ export default function MarzipanoCanvas({
         onReady(params);
       }
     }
-  }, [scene, onReady]);
+  }, [scene, onReady, viewerVersion]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -114,7 +119,13 @@ export default function MarzipanoCanvas({
     scene.hotspots.forEach((spot) => {
       const existing = entry.hotspotHandles.get(spot.id);
       if (existing) {
-        existing.setPosition({ yaw: spot.yaw, pitch: spot.pitch });
+        // skip position override while this hotspot is being dragged —
+        // Marzipano already has the correct live position via setPosition in
+        // onPointerMove; overriding it here with a possibly stale React state
+        // value causes the visible flicker/snap.
+        if (draggingHotspotIdRef.current !== spot.id) {
+          existing.setPosition({ yaw: spot.yaw, pitch: spot.pitch });
+        }
         const el = existing.domElement();
         applyHotspotStyle(el, spot, spot.id === selectedHotspotId);
         return;
@@ -160,6 +171,7 @@ export default function MarzipanoCanvas({
       e.stopPropagation();
       dragging = true;
       moved = false;
+      draggingHotspotIdRef.current = hotspotId;
       el.setPointerCapture(e.pointerId);
     };
     const onPointerMove = (e: PointerEvent) => {
@@ -177,6 +189,7 @@ export default function MarzipanoCanvas({
     const onPointerUp = (e: PointerEvent) => {
       if (!dragging) return;
       dragging = false;
+      draggingHotspotIdRef.current = null;
       el.releasePointerCapture(e.pointerId);
       if (!moved) {
         onHotspotSelectRef.current?.(hotspotId);
@@ -231,33 +244,34 @@ function buildHotspotElement(spot: MarzipanoHotspot, selected: boolean): HTMLEle
 
 function applyHotspotStyle(el: HTMLElement, spot: MarzipanoHotspot, selected: boolean) {
   const colour =
-    spot.type === 'table' ? '#ec4899' : spot.type === 'area' ? '#f59e0b' : '#3b82f6';
-  const ring = selected ? '3px solid white' : '2px solid rgba(255,255,255,0.7)';
+    spot.type === 'table' ? '#ec4899' : spot.type === 'area' ? '#f59e0b' : '#60a5fa';
+  const borderWidth = selected ? '3px' : '2px';
+  const borderColour = selected ? '#ffffff' : 'rgba(255,255,255,0.9)';
+  const size = selected ? '44px' : '40px';
   el.style.cssText = `
-    width: 28px;
-    height: 28px;
+    width: ${size};
+    height: ${size};
     border-radius: 50%;
     background: ${colour};
-    border: ${ring};
+    border: ${borderWidth} solid ${borderColour};
     cursor: grab;
     touch-action: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
     color: white;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.5), 0 3px 8px rgba(0,0,0,0.6);
     user-select: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
   `;
   el.textContent = labelFor(spot);
   el.title = tooltipFor(spot);
 }
 
-function labelFor(spot: MarzipanoHotspot): string {
-  if (spot.type === 'table') return 'T';
-  if (spot.type === 'area') return 'A';
-  return '→';
+function labelFor(_spot: MarzipanoHotspot): string {
+  return '';
 }
 
 function tooltipFor(spot: MarzipanoHotspot): string {
