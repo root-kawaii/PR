@@ -1,7 +1,7 @@
 # 2026-04-23: Dashboard 360° Tour Configurator (club + event scope)
 
 **Branch**: `claude/add-360-view-configurator-3fVkt`
-**Status**: Done (awaiting manual QA and `npm run build` verification)
+**Status**: Done — `cargo check` ✅, `npm run build` ✅, rebased onto `main` 2026-04-28
 
 ---
 
