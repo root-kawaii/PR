@@ -1,9 +1,7 @@
 name: Staging App Deploy (OTA)
 
 on:
-  push:
-    branches:
-      - staging
+  workflow_dispatch:
 
 jobs:
   ota-update:
