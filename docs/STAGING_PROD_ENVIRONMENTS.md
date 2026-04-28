@@ -86,9 +86,7 @@ Verified live GitHub repository configuration on April 22, 2026:
 - Current repo-scoped GitHub Actions secrets:
   - `EXPO_TOKEN`
   - `FLY_API_TOKEN`
-  - `NETLIFY_AUTH_TOKEN`
-  - `NETLIFY_SITE_ID`
-  - future target: `VERCEL_TOKEN`
+  - `VERCEL_TOKEN`
   - `PGDATABASE`
   - `PGHOST`
   - `PGPASSWORD`
@@ -240,13 +238,7 @@ Current Fly config and inspected Fly secrets did not show:
 
 That means the production backend is likely reporting analytics and log environment as `development`.
 
-### 7. Dashboard deployment is not clearly wired in the current checked-in workflow set
-
-The repo has `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` secrets today, which suggests Netlify was previously used.
-
-However, the current checked-in `.github/workflows/deploy.yml` in this workspace does not contain a dashboard deployment job.
-
-### 8. Some deployment docs and helper scripts are stale
+### 7. Some deployment docs and helper scripts are stale
 
 Outdated items found in the repo:
 

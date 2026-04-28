@@ -20,7 +20,7 @@ on:
         type: boolean
         default: true
       deploy_dashboard:
-        description: "Deploy dashboard to Netlify"
+        description: "Deploy dashboard to Vercel"
         required: false
         type: boolean
         default: true
@@ -178,7 +178,7 @@ jobs:
           fi
 
   deploy_dashboard:
-    name: Deploy Dashboard to Netlify
+    name: Deploy Dashboard to Vercel
     runs-on: ubuntu-latest
     if: >-
       startsWith(github.ref, 'refs/tags/v') || github.event.inputs.deploy_dashboard == 'true'
@@ -194,6 +194,9 @@ jobs:
           cache: "npm"
           cache-dependency-path: pierre_dashboard/package-lock.json
 
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
       - name: Install dependencies
         working-directory: ./pierre_dashboard
         run: npm ci
@@ -201,17 +204,19 @@ jobs:
       - name: Build dashboard
         working-directory: ./pierre_dashboard
         env:
-          VITE_API_URL: https://pierre-two-backend.fly.dev
+          VITE_API_URL: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
+          VITE_APP_ENV: ${{ vars.APP_ENV || 'production' }}
+          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
         run: npm run build
 
-      - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v3
-        with:
-          publish-dir: ./pierre_dashboard/dist
-          production-deploy: true
+      - name: Deploy to Vercel
+        working-directory: ./pierre_dashboard
         env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: team_PT50uRjbghMd8DEOFcz76KH4
+          VERCEL_PROJECT_ID: prj_GAqsmPZJy1vUVRmbZROfU7Sieo2K
+        run: vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
 
   build_app:
     name: Build Production App With EAS
