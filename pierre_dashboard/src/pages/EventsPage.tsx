@@ -9,6 +9,8 @@ import { trackEvent } from "../config/analytics";
 import EventImageUpload from "../components/EventImageUpload";
 import { formatPrice, priceToApiString } from "../utils/currency";
 import { getSafeImageUrl } from "../utils/image";
+import { EmptyState, PageHeader, SectionCard } from "../components/ui";
+import { ui } from "../components/ui-classes";
 
 const MONTH_MAP: Record<string, number> = {
   GEN: 0,
@@ -238,47 +240,49 @@ export default function EventsPage() {
   };
 
   if (loading) {
-    return <div className="text-gray-500">Caricamento...</div>;
+    return <div className={ui.helperText}>Caricamento eventi...</div>;
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Events</h1>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
-        >
-          <Plus size={18} />
-          Create Event
-        </button>
-      </div>
+      <PageHeader
+        title="Eventi"
+        description="Crea, modifica e monitora le serate in programma mantenendo locandine, prezzi e dettagli coerenti."
+        action={
+          <button onClick={openCreate} className={ui.primaryButton}>
+            <Plus size={18} />
+            Nuovo evento
+          </button>
+        }
+      />
 
       {/* Date filter */}
-      <div className="flex items-center gap-3 mb-6">
-        <label className="text-sm font-medium text-gray-700">From</label>
+      <SectionCard className="mb-6 p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className={ui.label}>Da data</label>
         <input
           type="date"
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900 text-sm"
+          className={`${ui.input} w-auto`}
         />
-        <span className="text-sm text-gray-500">
-          {filteredEvents.length} events
+        <span className={`${ui.helperText} ${ui.tabularNums}`}>
+          {filteredEvents.length} eventi
         </span>
       </div>
+      </SectionCard>
 
       {/* Create / Edit modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className={ui.modalOverlay}>
+          <div className={ui.modalPanel}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">
-                {editingEvent ? "Edit Event" : "Create Event"}
+                {editingEvent ? "Modifica evento" : "Nuovo evento"}
               </h2>
               <button
                 onClick={closeForm}
-                className="text-gray-400 hover:text-gray-600"
+                className={ui.iconButton}
               >
                 <X size={20} />
               </button>
@@ -287,13 +291,13 @@ export default function EventsPage() {
               {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Title *
+                  Titolo *
                 </label>
                 <input
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                  className={ui.input}
                 />
               </div>
 
@@ -312,25 +316,25 @@ export default function EventsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Date *
+                    Data *
                   </label>
                   <input
                     type="date"
                     value={form.date}
                     onChange={(e) => setForm({ ...form, date: e.target.value })}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                    className={ui.input}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Start time
+                    Ora inizio
                   </label>
                   <input
                     type="time"
                     value={form.time}
                     onChange={(e) => setForm({ ...form, time: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                    className={ui.input}
                   />
                 </div>
               </div>
@@ -339,7 +343,7 @@ export default function EventsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    End time
+                    Ora fine
                   </label>
                   <input
                     type="time"
@@ -347,12 +351,12 @@ export default function EventsPage() {
                     onChange={(e) =>
                       setForm({ ...form, end_time: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                    className={ui.input}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Age limit
+                    Eta minima
                   </label>
                   <input
                     type="text"
@@ -361,7 +365,7 @@ export default function EventsPage() {
                       setForm({ ...form, age_limit: e.target.value })
                     }
                     placeholder="18+"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                    className={ui.input}
                   />
                 </div>
               </div>
@@ -370,24 +374,24 @@ export default function EventsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Status
+                    Stato
                   </label>
                   <select
                     value={form.status}
                     onChange={(e) =>
                       setForm({ ...form, status: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                    className={ui.select}
                   >
-                    <option value="">None</option>
+                    <option value="">Nessuno</option>
                     <option value="HOT">HOT</option>
                     <option value="SOLD OUT">SOLD OUT</option>
-                    <option value="CANCELLED">CANCELLED</option>
+                    <option value="CANCELLED">ANNULLATO</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Price{" "}
+                    Prezzo{" "}
                     <span className="text-gray-400 font-normal">
                       (€, vuoto = gratis)
                     </span>
@@ -401,7 +405,7 @@ export default function EventsPage() {
                       setForm({ ...form, price: e.target.value })
                     }
                     placeholder="15"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                    className={ui.input}
                   />
                 </div>
               </div>
@@ -438,7 +442,7 @@ export default function EventsPage() {
               {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
+                  Descrizione
                 </label>
                 <textarea
                   value={form.description}
@@ -446,22 +450,22 @@ export default function EventsPage() {
                     setForm({ ...form, description: e.target.value })
                   }
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                  className={ui.textarea}
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50"
+                className={`${ui.primaryButton} w-full`}
               >
                 {submitting
                   ? editingEvent
-                    ? "Saving..."
-                    : "Creating..."
+                    ? "Salvataggio..."
+                    : "Creazione..."
                   : editingEvent
-                    ? "Save Changes"
-                    : "Create Event"}
+                    ? "Salva modifiche"
+                    : "Crea evento"}
               </button>
             </form>
           </div>
@@ -470,18 +474,19 @@ export default function EventsPage() {
 
       {/* Events list */}
       {!filteredEvents.length ? (
-        <p className="text-gray-500">
-          No events from this date onwards.
-        </p>
+        <EmptyState
+          title="Nessun evento disponibile"
+          description="Non ci sono eventi da questa data in avanti. Prova a cambiare filtro o crea una nuova serata."
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredEvents.map((event) => {
             const displayTime = event.time ?? extractEventTime(event.date);
             const eventImageSrc = getSafeImageUrl(event.image);
             return (
-              <div
+              <SectionCard
                 key={event.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow group"
+                className="overflow-hidden transition-shadow group hover:shadow-lg"
               >
                 <Link
                   to={`/dashboard/events/${event.id}/tables`}
@@ -538,21 +543,21 @@ export default function EventsPage() {
                     </div>
                   </div>
                 </Link>
-                <div className="px-4 pb-3 pt-2 flex gap-2 justify-end border-t border-gray-100">
+                <div className="flex justify-end gap-2 border-t border-gray-100 px-4 pb-3 pt-2">
                   <button
                     onClick={(e) => openEdit(e, event)}
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
+                    className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
                   >
-                    <Pencil size={13} /> Edit
+                    <Pencil size={13} /> Modifica
                   </button>
                   <button
                     onClick={(e) => handleDelete(e, event.id)}
-                    className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                    className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 py-1 text-xs text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
                   >
-                    <Trash2 size={13} /> Delete
+                    <Trash2 size={13} /> Elimina
                   </button>
                 </div>
-              </div>
+              </SectionCard>
             );
           })}
         </div>

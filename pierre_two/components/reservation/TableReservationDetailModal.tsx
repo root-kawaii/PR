@@ -130,7 +130,33 @@ export const TableReservationDetailModal = ({
     }
   };
 
-  const paidShares = paymentShares.filter((s) => s.status === "paid");
+  const getShareStatusText = (status: string, isOwner: boolean) => {
+    const normalized = status.toLowerCase();
+
+    if (isOwner && normalized === "paid") {
+      return "Quota iniziale pagata";
+    }
+
+    switch (normalized) {
+      case "checkout_pending":
+        return "Pagamento in corso";
+      case "paid":
+        return "Quota pagata";
+      case "expired":
+        return "Link scaduto";
+      default:
+        return getStatusText(status);
+    }
+  };
+
+  const guestShares = paymentShares.filter((s) => !s.isOwner);
+  const paidGuestShares = guestShares.filter((s) => s.status === "paid");
+  const reservationStatusHint =
+    reservation.status.toLowerCase() === "pending" && amountPaid > 0 && amountPaid < totalAmount
+      ? "La tua quota iniziale e' stata ricevuta. Mancano ancora le quote degli ospiti."
+      : reservation.status.toLowerCase() === "confirmed" && guestShares.length > 0
+        ? "Tutte le quote del tavolo risultano pagate."
+        : null;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -200,6 +226,11 @@ export const TableReservationDetailModal = ({
                     </ThemedText>
                   </View>
                 </View>
+                {reservationStatusHint && (
+                  <ThemedText style={[styles.statusHint, { color: theme.textTertiary }]}>
+                    {reservationStatusHint}
+                  </ThemedText>
+                )}
 
                 <View style={styles.summaryGrid}>
                   <View style={[styles.summaryTile, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
@@ -298,8 +329,13 @@ export const TableReservationDetailModal = ({
             {paymentShares.length > 0 && (
               <View style={styles.section}>
                 <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
-                  Quote ({paidShares.length}/{paymentShares.length} pagate)
+                  Quote tavolo
                 </ThemedText>
+                {guestShares.length > 0 && (
+                  <ThemedText style={[styles.sectionSubtitle, { color: theme.textTertiary }]}>
+                    Quota iniziale registrata. Ospiti: {paidGuestShares.length}/{guestShares.length} quote pagate
+                  </ThemedText>
+                )}
                 <View style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
                   {paymentShares.map((share) => (
                     <View key={share.id} style={[styles.shareRow, { borderBottomColor: theme.border }]}>
@@ -316,8 +352,11 @@ export const TableReservationDetailModal = ({
                       <View style={styles.shareInfo}>
                         <ThemedText style={[styles.shareName, { color: theme.text }]}>
                           {share.isOwner
-                            ? "Tu (Proprietario)"
+                            ? "Tu"
                             : share.guestName || share.phoneNumber || "Ospite"}
+                        </ThemedText>
+                        <ThemedText style={[styles.shareMeta, { color: theme.textTertiary }]}>
+                          {share.isOwner ? "Pagamento iniziale del tavolo" : "Quota ospite"}
                         </ThemedText>
                         <View style={styles.shareStatusRow}>
                           <View style={[
@@ -325,7 +364,7 @@ export const TableReservationDetailModal = ({
                             { backgroundColor: `${getStatusColor(share.status)}33` }
                           ]}>
                             <ThemedText style={[styles.shareStatusText, { color: getStatusColor(share.status) }]}>
-                              {getStatusText(share.status)}
+                              {getShareStatusText(share.status, share.isOwner)}
                             </ThemedText>
                           </View>
                           <ThemedText style={[styles.shareAmount, { color: theme.text }]}>
@@ -490,6 +529,7 @@ const styles = StyleSheet.create({
   eventDate: { fontSize: 14, color: "rgba(255, 255, 255, 0.9)" },
   section: { paddingHorizontal: 16, paddingTop: 16 },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#fff", marginBottom: 12 },
+  sectionSubtitle: { fontSize: 13, marginTop: -6, marginBottom: 12 },
   accordionHeader: {
     borderRadius: 16,
     borderWidth: 1,
@@ -522,6 +562,7 @@ const styles = StyleSheet.create({
   reservationCode: { fontSize: 20, fontWeight: "700", color: "#fff", letterSpacing: 1 },
   statusBadge: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 20 },
   statusText: { fontSize: 12, fontWeight: "700", color: "#fff", textTransform: "uppercase" },
+  statusHint: { fontSize: 13, lineHeight: 18, marginTop: 12 },
   summaryGrid: { flexDirection: "row", gap: 12, marginTop: 16 },
   summaryTile: { flex: 1, borderRadius: 16, borderWidth: 1, padding: 14 },
   summaryTileLabel: { fontSize: 12, fontWeight: "600", marginBottom: 6 },
@@ -580,6 +621,7 @@ const styles = StyleSheet.create({
   },
   shareInfo: { flex: 1 },
   shareName: { fontSize: 15, fontWeight: "600", color: "#fff", marginBottom: 4 },
+  shareMeta: { fontSize: 12, marginBottom: 6 },
   shareStatusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   shareStatusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   shareStatusText: { fontSize: 11, fontWeight: "600" },

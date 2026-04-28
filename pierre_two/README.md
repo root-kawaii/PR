@@ -21,6 +21,18 @@ npx expo start
 
 Use a [development build](https://docs.expo.dev/develop/development-builds/introduction/) for full functionality (SecureStore, push notifications, Stripe). Expo Go works for basic UI development.
 
+For local app plus local backend development:
+
+```bash
+# iOS simulator / web
+npm run start:local-ios
+
+# Android emulator
+npm run start:local-android
+```
+
+Those scripts keep the app pointed at your local backend on port `3000`. Staging EAS builds still use the remote staging backend configured in `eas.json`.
+
 Optional frontend analytics env vars:
 
 - `EXPO_PUBLIC_POSTHOG_KEY`
@@ -48,4 +60,4 @@ Five themes in `constants/theme.ts`. Default: **Champagne Noir** (gold `#C9A84C`
 
 ## Backend
 
-`https://pierre-two-backend.fly.dev` — see `rust_BE/` for source.
+Local development should target your local backend first. By default this repo expects the backend to run on port `3000`, while the backend itself can be configured to use the shared staging database via `rust_BE/.env`.

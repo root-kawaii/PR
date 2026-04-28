@@ -1,4 +1,5 @@
 pub mod config;
+pub mod migrations;
 pub mod state;
 
 use std::sync::Arc;
@@ -35,6 +36,14 @@ pub async fn create_read_pool(config: &AppConfig, write_pool: &PgPool) -> PgPool
 pub async fn build_state(config: Arc<AppConfig>) -> Arc<AppState> {
     let db_pool = create_pool(&config).await;
     info!("Connected to PostgreSQL database");
+
+    if config.auto_run_db_migrations {
+        let applied_count = migrations::run_startup_migrations(&db_pool)
+            .await
+            .expect("Failed to run startup database migrations");
+        info!(applied_count, "Startup database migrations complete");
+    }
+
     let read_db_pool = create_read_pool(&config, &db_pool).await;
 
     let stripe_client = stripe::Client::new(config.stripe.api_key.clone());

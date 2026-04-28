@@ -552,8 +552,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   eventCardWrapper: {
-    width: 336,
-    marginRight: 12,
+    marginRight: 14,
   },
   emptyState: {
     flex: 1,

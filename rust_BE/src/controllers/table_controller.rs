@@ -1108,7 +1108,7 @@ pub async fn get_payment_link_preview(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let slots_total = table.capacity;
+    let slots_total = table.capacity.saturating_sub(1);
     let per_person = (table.total_cost / Decimal::from(table.capacity)).round_dp(2);
     let status = if slots_filled >= slots_total as i64 {
         "full"
@@ -1490,7 +1490,7 @@ pub async fn get_reservation_payment_status(
         .iter()
         .filter(|s| !s.is_owner && (s.status == "paid" || s.status == "checkout_pending"))
         .count() as i32;
-    let slots_total = table.capacity;
+    let slots_total = table.capacity.saturating_sub(1);
 
     let amount_remaining = reservation.total_amount - reservation.amount_paid;
 

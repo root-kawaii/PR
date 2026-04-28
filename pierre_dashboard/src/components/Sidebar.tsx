@@ -9,7 +9,7 @@ interface Props {
 }
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+  `flex min-h-10 items-center gap-3 rounded-xl px-4 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${
     isActive ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
   }`;
 
@@ -26,18 +26,18 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
             <img
               src={clubImageSrc}
               alt={club?.name ?? 'Club'}
-              className="w-16 h-16 rounded-lg object-cover mb-3"
+              className="mb-3 h-16 w-16 rounded-xl object-cover outline -outline-offset-1 outline-white/10"
             />
           )}
-          <h2 className="font-bold text-lg leading-tight">{club?.name || 'My Club'}</h2>
+          <h2 className="text-lg font-bold leading-tight text-balance">{club?.name || 'Il mio locale'}</h2>
           <p className="text-gray-400 text-sm mt-1 truncate">{owner?.email}</p>
         </div>
         {/* Close button — mobile drawer only */}
         {onClose && (
           <button
             onClick={onClose}
-            className="mt-1 p-1.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors shrink-0"
-            aria-label="Close menu"
+            className="mt-1 inline-flex size-10 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 shrink-0"
+            aria-label="Chiudi menu"
           >
             <X size={20} />
           </button>
@@ -53,7 +53,7 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
 
         <NavLink to="/dashboard/events" className={navLinkClass} onClick={onClose}>
           <CalendarDays size={20} />
-          Events
+          Eventi
         </NavLink>
 
         <NavLink to="/dashboard/scan" className={navLinkClass} onClick={onClose}>
@@ -74,7 +74,7 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
           className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
         >
           <LogOut size={20} />
-          Logout
+          Esci
         </button>
       </div>
     </>
