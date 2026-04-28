@@ -39,6 +39,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
+      - name: Debug connection params
+        env:
+          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          PGHOST: ${{ secrets.PGHOST }}
+          PGUSER: ${{ secrets.PGUSER }}
+          PGDATABASE: ${{ secrets.PGDATABASE || 'postgres' }}
+        run: |
+          echo "PGHOST length:     ${#PGHOST}"
+          echo "PGHOST first 4:    ${PGHOST:0:4}"
+          echo "PGHOST contains pooler: $(echo "$PGHOST" | grep -q 'pooler' && echo yes || echo no)"
+          echo "PGUSER length:     ${#PGUSER}"
+          echo "PGUSER has dot:    $(echo "$PGUSER" | grep -q '\.' && echo yes || echo no)"
+          echo "PGUSER first 9:    ${PGUSER:0:9}"
+          echo "PGPASSWORD length: ${#PGPASSWORD}"
+          echo "PGDATABASE:        $PGDATABASE"
+          echo ""
+          echo "Resolving host (IPv4 only)..."
+          getent ahostsv4 "$PGHOST" | head -1 || echo "no IPv4 resolution"
+
       - name: Check for pending migrations
         id: check_migrations
         env:
