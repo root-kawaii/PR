@@ -26,6 +26,9 @@ const ROUTE_ICONS: Record<string, IconSymbolName> = {
   explore: "magnifyingglass",
 };
 
+const withAlpha = (hexColor: string, alpha: string) =>
+  /^#([0-9a-f]{6})$/i.test(hexColor) ? `${hexColor}${alpha}` : hexColor;
+
 function getRouteLabel(routeName: string) {
   switch (routeName) {
     case "index":
@@ -54,7 +57,7 @@ function GlassSurface({
     <View style={style}>
       <BlurView
         intensity={40}
-        tint="default"
+        tint={theme.statusBarStyle === "dark" ? "dark" : "light"}
         style={StyleSheet.absoluteFillObject}
       />
       <View
@@ -62,8 +65,13 @@ function GlassSurface({
           StyleSheet.absoluteFillObject,
           styles.glassTint,
           {
-            backgroundColor: "rgba(255,255,255,0.06)",
-            borderColor: "rgba(255,255,255,0.16)",
+            backgroundColor: withAlpha(
+              theme.statusBarStyle === "dark"
+                ? theme.backgroundElevated
+                : theme.background,
+              theme.statusBarStyle === "dark" ? "CC" : "E8",
+            ),
+            borderColor: withAlpha(theme.border, theme.statusBarStyle === "dark" ? "A6" : "CC"),
           },
         ]}
       />
@@ -143,8 +151,18 @@ function IosSlackTabBar({
                   style={[
                     styles.mainTabButton,
                     isFocused && {
-                      backgroundColor: "rgba(255,255,255,0.11)",
-                      borderColor: "rgba(255,255,255,0.14)",
+                      backgroundColor: withAlpha(
+                        theme.statusBarStyle === "dark"
+                          ? theme.backgroundSurface
+                          : theme.primary,
+                        theme.statusBarStyle === "dark" ? "D9" : "14",
+                      ),
+                      borderColor: withAlpha(
+                        theme.statusBarStyle === "dark"
+                          ? theme.borderLight
+                          : theme.primary,
+                        theme.statusBarStyle === "dark" ? "B3" : "2E",
+                      ),
                     },
                   ]}
                 >
@@ -190,7 +208,12 @@ function IosSlackTabBar({
                 )
               }
               onLongPress={() => handleLongPress(searchRoute.key)}
-              style={styles.searchOrbButton}
+              style={[
+                styles.searchOrbButton,
+                activeRouteName === searchRoute.name && {
+                  backgroundColor: withAlpha(theme.primary, theme.statusBarStyle === "dark" ? "18" : "12"),
+                },
+              ]}
             >
               <IconSymbol
                 name="magnifyingglass"

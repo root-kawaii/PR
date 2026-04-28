@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { ui } from '../components/ui-classes';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -27,47 +28,49 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Club Owner Login</h1>
-        <p className="text-gray-500 mb-6">Sign in to manage your club</p>
+      <div className={`${ui.card} w-full max-w-md rounded-[28px] p-8`}>
+        <h1 className={`${ui.pageTitle} mb-2`}>Accesso gestore</h1>
+        <p className={`${ui.pageDescription} mb-6`}>
+          Entra per gestire eventi, tavoli e check-in del tuo locale.
+        </p>
 
         {error && (
-          <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+          <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className={ui.label}>Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent outline-none text-gray-900"
+              className={ui.input}
               placeholder="you@club.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label className={ui.label}>Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent outline-none text-gray-900"
-              placeholder="Enter your password"
+              className={ui.input}
+              placeholder="Inserisci la tua password"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gray-900 text-white py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`${ui.primaryButton} w-full`}
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? 'Accesso in corso...' : 'Accedi'}
           </button>
         </form>
       </div>

@@ -38,15 +38,17 @@ cd rust_BE
 cp .env.example .env
 ```
 
-Edit `rust_BE/.env` and fill in the shared credentials (ask the team lead for these):
+Edit `rust_BE/.env` and fill in the shared staging credentials (ask the team lead for these):
 
 ```env
-# Shared Supabase database -- no local DB setup needed
-DATABASE_URL=postgresql://<user>:<password>@<host>:5432/postgres
+# Shared staging Supabase database -- no local DB setup needed
+DATABASE_URL=postgresql://postgres.cnvnugirbftyblxnkqbf:<password>@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
 
 # Server config
 HOST=0.0.0.0
 PORT=3000
+APP_BASE_URL=http://127.0.0.1:3000
+OWNER_APP_BASE_URL=http://127.0.0.1:5173
 
 # JWT signing key (use the same one as the team so tokens are compatible)
 JWT_SECRET=<ask-team-lead>
@@ -67,7 +69,7 @@ APP_REVIEW_BYPASS_CODE=
 APP_REVIEW_BYPASS_PHONE_NUMBERS=
 ```
 
-> **The simplest option**: Ask the team lead to send you the `rust_BE/.env` file directly. Copy it into `rust_BE/` and you're done with this step.
+> **The simplest option**: Ask the team lead to send you the `rust_BE/.env` file for local development. It should keep the backend local while pointing `DATABASE_URL` at staging.
 
 ---
 
@@ -146,7 +148,7 @@ See [06-api-reference.md](06-api-reference.md) for the full list of 40+ endpoint
 cd rust_BE && cargo run
 ```
 
-That's it -- the database is already running on Supabase.
+That's it -- the database is already running on the staging Supabase project.
 
 ### Hot reload
 
@@ -169,7 +171,16 @@ RUST_LOG=debug cargo run
 
 To test the mobile app or dashboard against your local backend instead of the deployed one:
 
-**Mobile app** -- edit `pierre_two/.env`:
+**Mobile app** -- edit `pierre_two/.env`, or use the helper scripts:
+
+```bash
+cd pierre_two
+npm run start:local-ios
+# or
+npm run start:local-android
+```
+
+If you need to edit the env file manually:
 ```env
 # iOS Simulator
 EXPO_PUBLIC_API_URL=http://127.0.0.1:3000

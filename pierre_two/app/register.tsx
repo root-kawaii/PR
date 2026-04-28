@@ -19,6 +19,9 @@ import Constants from "expo-constants";
 
 type RegistrationStep = "info" | "phone-verification";
 
+const withAlpha = (hexColor: string, alpha: string) =>
+  /^#([0-9a-f]{6})$/i.test(hexColor) ? `${hexColor}${alpha}` : hexColor;
+
 export default function RegisterScreen() {
   const API_URL = Constants.expoConfig?.extra?.apiUrl;
 
@@ -258,8 +261,8 @@ export default function RegisterScreen() {
   };
 
   const formatDate = (date: Date | undefined) => {
-    if (!date) return "Not Set";
-    return date.toLocaleDateString("en-US", {
+    if (!date) return "Non impostata";
+    return date.toLocaleDateString("it-IT", {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -295,7 +298,16 @@ export default function RegisterScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.content}>
+          <View
+            style={[
+              styles.content,
+              {
+                backgroundColor: theme.cardBackground,
+                borderColor: withAlpha(theme.border, "A6"),
+                shadowColor: theme.background,
+              },
+            ]}
+          >
             <View style={styles.brandContainer}>
               <Text style={[styles.wordmark, { color: theme.primary }]}>PIERRE</Text>
               <View style={[styles.wordmarkLine, { backgroundColor: theme.primary }]} />
@@ -324,7 +336,7 @@ export default function RegisterScreen() {
                     { color: theme.textTertiary },
                   ]}
                 >
-                  Phone Number
+                  Numero di telefono
                 </Text>
                 <Text style={[styles.phoneDisplayValue, { color: theme.text }]}>
                   +39 {phone}
@@ -344,7 +356,7 @@ export default function RegisterScreen() {
                   <Text
                     style={[styles.buttonText, { color: theme.textInverse }]}
                   >
-                    {isLoading ? "Sending..." : "Send Verification Code"}
+                    {isLoading ? "Invio in corso..." : "Invia codice di verifica"}
                   </Text>
                 </TouchableOpacity>
               ) : (
@@ -355,7 +367,7 @@ export default function RegisterScreen() {
                       { color: theme.textTertiary },
                     ]}
                   >
-                    Enter the 6-digit code sent to your phone
+                    Inserisci il codice a 6 cifre inviato al tuo telefono
                   </Text>
 
                   <TextInput
@@ -389,7 +401,7 @@ export default function RegisterScreen() {
                     <Text
                       style={[styles.buttonText, { color: theme.textInverse }]}
                     >
-                      {isVerifying ? "Verifying..." : "Verify & Complete"}
+                      {isVerifying ? "Verifica in corso..." : "Verifica e completa"}
                     </Text>
                   </TouchableOpacity>
 
@@ -399,7 +411,7 @@ export default function RegisterScreen() {
                     disabled={isLoading}
                   >
                     <Text style={[styles.resendText, { color: theme.primary }]}>
-                      Didn&apos;t receive the code? Resend
+                      Non hai ricevuto il codice? Invia di nuovo
                     </Text>
                   </TouchableOpacity>
                 </>
@@ -414,7 +426,7 @@ export default function RegisterScreen() {
                 }}
               >
                 <Text style={[styles.linkText, { color: theme.primary }]}>
-                  ← Back to registration
+                  ← Torna alla registrazione
                 </Text>
               </TouchableOpacity>
             </View>
@@ -431,7 +443,16 @@ export default function RegisterScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.content}>
+        <View
+          style={[
+            styles.content,
+            {
+              backgroundColor: theme.cardBackground,
+              borderColor: withAlpha(theme.border, "A6"),
+              shadowColor: theme.background,
+            },
+          ]}
+        >
           <View style={styles.brandContainer}>
             <Text style={[styles.wordmark, { color: theme.primary }]}>PIERRE</Text>
             <View style={[styles.wordmarkLine, { backgroundColor: theme.primary }]} />
@@ -454,7 +475,7 @@ export default function RegisterScreen() {
                   color: theme.text,
                 },
               ]}
-              placeholder="Full Name"
+              placeholder="Nome e cognome"
               placeholderTextColor={theme.textTertiary}
               value={name}
               onChangeText={setName}
@@ -523,7 +544,7 @@ export default function RegisterScreen() {
                       ]
                 }
               >
-                {dateOfBirth ? formatDate(dateOfBirth) : "Date of Birth"}
+                {dateOfBirth ? formatDate(dateOfBirth) : "Data di nascita"}
               </Text>
             </TouchableOpacity>
 
@@ -596,17 +617,17 @@ export default function RegisterScreen() {
               disabled={isLoading}
             >
               <Text style={[styles.buttonText, { color: theme.textInverse }]}>
-                {isLoading ? "Creating Account..." : "Continue →"}
+                {isLoading ? "Creazione account..." : "Continua →"}
               </Text>
             </TouchableOpacity>
 
             <View style={styles.footer}>
               <Text style={[styles.footerText, { color: theme.textTertiary }]}>
-                Already have an account?{" "}
+                Hai gia un account?{" "}
               </Text>
               <TouchableOpacity onPress={() => router.back()}>
                 <Text style={[styles.linkText, { color: theme.primary }]}>
-                  Log In
+                  Accedi
                 </Text>
               </TouchableOpacity>
             </View>
@@ -625,10 +646,16 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     padding: 24,
-    paddingTop: 60,
+    margin: 24,
+    borderRadius: 28,
+    borderWidth: 1,
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
   },
   brandContainer: {
     alignItems: 'center',
@@ -682,24 +709,28 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "700",
     marginBottom: 6,
+    textAlign: "center",
   },
   subtitle: {
     fontSize: 15,
     marginBottom: 32,
+    lineHeight: 22,
+    textAlign: "center",
   },
   form: {
     gap: 16,
   },
   input: {
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     fontSize: 16,
     borderWidth: 1,
   },
   phoneInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     paddingLeft: 16,
   },
@@ -714,8 +745,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   button: {
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
     alignItems: "center",
     marginTop: 8,
   },
@@ -724,7 +756,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   footer: {
     flexDirection: "row",

@@ -336,10 +336,13 @@ async fn run_reauth(state: &Arc<AppState>, reauth_threshold: chrono::NaiveDate) 
 // 3. Webhook reconciliation
 // ============================================================================
 
-/// Finds payment shares that have a checkout session ID but are still pending
-/// (meaning the webhook may have failed), then checks Stripe for the real status.
+/// Finds payment shares that have a checkout session ID but are still waiting
+/// on checkout completion (meaning the webhook may have failed), then checks
+/// Stripe for the real status.
 async fn run_checkout_reconciliation(state: &Arc<AppState>) {
-    // Shares that have a checkout session but are still pending after 30 min
+    // Shares that have a checkout session but are still waiting after 30 min.
+    // Support both the legacy `pending` status and the live `checkout_pending`
+    // status so the recovery job works across old and new rows.
     let stale_shares: Vec<StaleCheckoutShare> = match sqlx::query_as(
         r#"
         SELECT
@@ -349,7 +352,7 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
             rps.amount,
             rps.stripe_checkout_session_id
         FROM reservation_payment_shares rps
-        WHERE rps.status = 'pending'
+        WHERE rps.status IN ('pending', 'checkout_pending')
           AND rps.stripe_checkout_session_id IS NOT NULL
           AND rps.updated_at < NOW() - INTERVAL '30 minutes'
         "#,
@@ -417,36 +420,66 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
 
         let now = chrono::Utc::now().naive_utc();
 
-        // Create payment record for this guest
-        let payment_id = Uuid::new_v4();
+        // Reuse any existing payment row first. Some staging databases do not
+        // have a unique constraint on stripe_payment_intent_id, so relying on
+        // ON CONFLICT here makes reconciliation fail even though the share is
+        // otherwise recoverable.
+        let new_payment_id = Uuid::new_v4();
         let sender_id = share.user_id.unwrap_or_else(Uuid::nil);
 
-        if let Err(e) = sqlx::query(
-            r#"
-            INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids)
-            VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7, $8)
-            ON CONFLICT (stripe_payment_intent_id) DO NOTHING
-            "#,
-        )
-        .bind(payment_id)
-        .bind(sender_id)
-        .bind(sender_id)
-        .bind(share.amount)
-        .bind(now)
-        .bind(now)
-        .bind(&stripe_pi_id)
-        .bind(&vec![sender_id])
-        .execute(&state.db_pool)
-        .await
-        {
-            error!(share_id = %share.share_id, error = %e, "Reconciliation: failed to create payment record");
-            send_alert(state, &format!("Reconciliation: failed to create payment for share {}: {e}", share.share_id)).await;
-            continue;
-        }
+        let existing_payment_id = if stripe_pi_id.is_empty() {
+            None
+        } else {
+            match sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM payments WHERE stripe_payment_intent_id = $1 ORDER BY update_date DESC NULLS LAST, insert_date DESC LIMIT 1"
+            )
+            .bind(&stripe_pi_id)
+            .fetch_optional(&state.db_pool)
+            .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    error!(share_id = %share.share_id, error = %e, "Reconciliation: failed to look up payment record");
+                    send_alert(state, &format!("Reconciliation: failed to look up payment for share {}: {e}", share.share_id)).await;
+                    continue;
+                }
+            }
+        };
 
-        // Mark share as paid
-        if let Err(e) = sqlx::query(
-            "UPDATE reservation_payment_shares SET status = 'paid', payment_id = $1, stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id), updated_at = NOW() WHERE id = $3 AND status = 'pending'"
+        let payment_id: Uuid = if let Some(id) = existing_payment_id {
+            id
+        } else {
+            match sqlx::query_scalar(
+                r#"
+                INSERT INTO payments (id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids)
+                VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7, $8)
+                RETURNING id
+                "#,
+            )
+            .bind(new_payment_id)
+            .bind(sender_id)
+            .bind(sender_id)
+            .bind(share.amount)
+            .bind(now)
+            .bind(now)
+            .bind(if stripe_pi_id.is_empty() { None } else { Some(&stripe_pi_id) })
+            .bind(&vec![sender_id])
+            .fetch_one(&state.db_pool)
+            .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    error!(share_id = %share.share_id, error = %e, "Reconciliation: failed to create payment record");
+                    send_alert(state, &format!("Reconciliation: failed to create payment for share {}: {e}", share.share_id)).await;
+                    continue;
+                }
+            }
+        };
+
+        // Mark share as paid. If another worker already moved it out of the
+        // waiting state, skip the reservation increment to avoid double counts.
+        let updated_share = match sqlx::query(
+            "UPDATE reservation_payment_shares SET status = 'paid', payment_id = $1, stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id), updated_at = NOW() WHERE id = $3 AND status IN ('pending', 'checkout_pending')"
         )
         .bind(payment_id)
         .bind(if stripe_pi_id.is_empty() { None } else { Some(&stripe_pi_id) })
@@ -454,13 +487,22 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
         .execute(&state.db_pool)
         .await
         {
-            error!(share_id = %share.share_id, error = %e, "Reconciliation: failed to update share status");
+            Ok(result) => result.rows_affected() > 0,
+            Err(e) => {
+                error!(share_id = %share.share_id, error = %e, "Reconciliation: failed to update share status");
+                continue;
+            }
+        };
+
+        if !updated_share {
+            info!(share_id = %share.share_id, "Reconciliation: share already updated elsewhere, skipping");
             continue;
         }
 
-        // Update reservation amount_paid
+        // Update reservation amount_paid and num_people together so recovered
+        // checkouts restore the same counters as the live webhook path.
         let _ = sqlx::query(
-            "UPDATE table_reservations SET amount_paid = amount_paid + $1, payment_ids = array_append(COALESCE(payment_ids, '{}'), $2), updated_at = NOW() WHERE id = $3"
+            "UPDATE table_reservations SET amount_paid = amount_paid + $1, num_people = num_people + 1, payment_ids = array_append(COALESCE(payment_ids, '{}'), $2), updated_at = NOW() WHERE id = $3"
         )
         .bind(share.amount)
         .bind(payment_id)
@@ -519,7 +561,7 @@ async fn run_checkout_reconciliation(state: &Arc<AppState>) {
 // 4. Payment share expiry
 // ============================================================================
 
-/// Expires pending payment shares that have been waiting longer than the
+/// Expires guest payment shares that have been waiting longer than the
 /// configured TTL, and alerts the reservation owner.
 async fn run_payment_share_expiry(state: &Arc<AppState>) {
     let ttl_hours = state.payment_share_ttl_hours;
@@ -542,7 +584,7 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
         JOIN events e ON e.id = tr.event_id
         JOIN tables t ON t.id = tr.table_id
         LEFT JOIN users u ON u.id = tr.user_id
-        WHERE rps.status = 'pending'
+        WHERE rps.status IN ('pending', 'checkout_pending')
           AND rps.is_owner = false
           AND rps.created_at < NOW() - ($1 || ' hours')::INTERVAL
         "#,
@@ -572,7 +614,7 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
     for share in &expired {
         // Mark share as expired
         if let Err(e) = sqlx::query(
-            "UPDATE reservation_payment_shares SET status = 'expired', updated_at = NOW() WHERE id = $1 AND status = 'pending'"
+            "UPDATE reservation_payment_shares SET status = 'expired', updated_at = NOW() WHERE id = $1 AND status IN ('pending', 'checkout_pending')"
         )
         .bind(share.share_id)
         .execute(&state.db_pool)

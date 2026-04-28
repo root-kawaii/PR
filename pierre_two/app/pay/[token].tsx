@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,9 @@ interface SharePreview {
   slots_total: number;
 }
 
+const withAlpha = (hexColor: string, alpha: string) =>
+  /^#([0-9a-f]{6})$/i.test(hexColor) ? `${hexColor}${alpha}` : hexColor;
+
 export default function GuestPaymentScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { theme } = useTheme();
@@ -46,9 +49,9 @@ export default function GuestPaymentScreen() {
   useEffect(() => {
     if (!token) return;
     loadPreview();
-  }, [token]);
+  }, [token, loadPreview]);
 
-  const loadPreview = async () => {
+  const loadPreview = useCallback(async () => {
     setStep('loading');
     trackEvent('guest_payment_preview_requested', {
       payment_link_token: token ?? null,
@@ -85,7 +88,7 @@ export default function GuestPaymentScreen() {
       setErrorMsg('Impossibile caricare i dettagli del pagamento.');
       setStep('error');
     }
-  };
+  }, [token]);
 
   const handlePay = async () => {
     if (!guestName.trim()) {
@@ -210,7 +213,11 @@ export default function GuestPaymentScreen() {
           <View
             style={[
               s.heroCard,
-              { backgroundColor: theme.backgroundElevated, borderColor: theme.border },
+              {
+                backgroundColor: theme.backgroundElevated,
+                borderColor: withAlpha(theme.border, 'A6'),
+                shadowColor: theme.background,
+              },
             ]}
           >
             <LinearGradient
@@ -253,7 +260,16 @@ export default function GuestPaymentScreen() {
             )}
           </View>
 
-          <View style={[s.formCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
+          <View
+            style={[
+              s.formCard,
+              {
+                backgroundColor: theme.backgroundElevated,
+                borderColor: withAlpha(theme.border, 'A6'),
+                shadowColor: theme.background,
+              },
+            ]}
+          >
             <View style={s.cardHeader}>
               <Text style={[s.cardTitle, { color: theme.text }]}>Completa il pagamento</Text>
               <Text style={[s.cardSubtitle, { color: theme.textTertiary }]}>
@@ -361,6 +377,10 @@ const s = StyleSheet.create({
     padding: 22,
     borderWidth: 1,
     marginBottom: 16,
+    shadowOpacity: 0.18,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
   },
   heroGlow: {
     ...StyleSheet.absoluteFillObject,
@@ -437,6 +457,10 @@ const s = StyleSheet.create({
     borderRadius: 28,
     padding: 22,
     borderWidth: 1,
+    shadowOpacity: 0.14,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
   },
   cardHeader: { marginBottom: 8 },
   cardTitle: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
@@ -449,6 +473,7 @@ const s = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 15,
+    minHeight: 52,
     fontSize: 16,
     borderWidth: 1,
   },
@@ -472,9 +497,11 @@ const s = StyleSheet.create({
   reassuranceText: { fontSize: 12, lineHeight: 17 },
   button: {
     borderRadius: 20,
+    minHeight: 56,
     paddingVertical: 16,
     paddingHorizontal: 18,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 18,
   },
   buttonDisabled: { opacity: 0.55 },
