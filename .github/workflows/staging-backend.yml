@@ -39,25 +39,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Debug connection params
-        env:
-          PGPASSWORD: ${{ secrets.PGPASSWORD }}
-          PGHOST: ${{ secrets.PGHOST }}
-          PGUSER: ${{ secrets.PGUSER }}
-          PGDATABASE: ${{ secrets.PGDATABASE || 'postgres' }}
-        run: |
-          echo "PGHOST length:     ${#PGHOST}"
-          echo "PGHOST first 4:    ${PGHOST:0:4}"
-          echo "PGHOST contains pooler: $(echo "$PGHOST" | grep -q 'pooler' && echo yes || echo no)"
-          echo "PGUSER length:     ${#PGUSER}"
-          echo "PGUSER has dot:    $(echo "$PGUSER" | grep -q '\.' && echo yes || echo no)"
-          echo "PGUSER first 9:    ${PGUSER:0:9}"
-          echo "PGPASSWORD length: ${#PGPASSWORD}"
-          echo "PGDATABASE:        $PGDATABASE"
-          echo ""
-          echo "Resolving host (IPv4 only)..."
-          getent ahostsv4 "$PGHOST" | head -1 || echo "no IPv4 resolution"
-
       - name: Check for pending migrations
         id: check_migrations
         env:
@@ -72,7 +53,7 @@ jobs:
 
           echo "Connecting to Supabase staging..."
 
-          MIGRATION_FILES=$(ls -1 *.sql 2>/dev/null | sort || echo "")
+          MIGRATION_FILES=$(ls -1 *.sql | sort)
 
           if [ -z "$MIGRATION_FILES" ]; then
             echo "No migration files found"
@@ -80,7 +61,15 @@ jobs:
             exit 0
           fi
 
-          APPLIED_MIGRATIONS=$(psql -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;" 2>/dev/null || echo "")
+          # Ensure tracking table exists before SELECT — must succeed
+          psql -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS schema_migrations (
+            id SERIAL PRIMARY KEY,
+            migration_name VARCHAR(255) UNIQUE NOT NULL,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );"
+
+          # Connection/SQL errors must surface — no stderr suppression
+          APPLIED_MIGRATIONS=$(psql -v ON_ERROR_STOP=1 -t -c "SELECT migration_name FROM schema_migrations ORDER BY migration_name;")
 
           PENDING_MIGRATIONS=""
           for migration in $MIGRATION_FILES; do
@@ -110,17 +99,11 @@ jobs:
         run: |
           cd DB/migrations
 
-          psql -c "CREATE TABLE IF NOT EXISTS schema_migrations (
-            id SERIAL PRIMARY KEY,
-            migration_name VARCHAR(255) UNIQUE NOT NULL,
-            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          );"
-
           for migration in ${{ steps.check_migrations.outputs.pending_list }}; do
             echo "▶️  Running migration: $migration"
 
-            if psql -f "$migration"; then
-              psql -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
+            if psql -v ON_ERROR_STOP=1 -f "$migration"; then
+              psql -v ON_ERROR_STOP=1 -c "INSERT INTO schema_migrations (migration_name) VALUES ('$migration');"
               echo "Migration $migration completed"
             else
               echo "Migration $migration failed"
