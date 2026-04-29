@@ -75,9 +75,13 @@ pub fn router() -> Router<Arc<AppState>> {
             "/owner/table-images/:id",
             axum::routing::delete(delete_table_image_handler),
         )
-        .route(
-            "/owner/uploads/panorama",
-            axum::routing::post(upload_panorama_handler),
+        .merge(
+            Router::new()
+                .route(
+                    "/owner/uploads/panorama",
+                    axum::routing::post(upload_panorama_handler),
+                )
+                .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024)),
         )
         .route("/owner/scan/:code", get(scan_code_handler))
         .route("/owner/checkin/:code", axum::routing::post(checkin_handler))
