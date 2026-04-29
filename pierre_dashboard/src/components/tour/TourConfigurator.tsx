@@ -201,6 +201,7 @@ export default function TourConfigurator({
   const [state, dispatch] = useReducer(reducer, initialState);
   const [areas, setAreas] = useState(initialAreas);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
+  const [pendingNewScene, setPendingNewScene] = useState<MarzipanoScene | null>(null);
   const [currentView, setCurrentView] = useState<MarzipanoView | null>(null);
   const [armed, setArmed] = useState(false);
   const [showCreateArea, setShowCreateArea] = useState(false);
@@ -210,12 +211,26 @@ export default function TourConfigurator({
     currentScene?.hotspots.find((h) => h.id === state.selectedHotspotId) ?? null;
 
   const handleAddScene = () => {
-    const id = newSceneId();
-    dispatch({
-      type: 'ADD_SCENE',
-      scene: { id, name: `Scena ${state.scenes.length + 1}`, imageUrl: '', hotspots: [] },
+    setPendingNewScene({
+      id: newSceneId(),
+      name: `Scena ${state.scenes.length + 1}`,
+      imageUrl: '',
+      hotspots: [],
     });
-    setEditingSceneId(id);
+  };
+
+  const handleModalSave = (patch: Partial<MarzipanoScene>) => {
+    if (pendingNewScene) {
+      dispatch({ type: 'ADD_SCENE', scene: { ...pendingNewScene, ...patch } });
+      setPendingNewScene(null);
+    } else if (editingSceneId) {
+      dispatch({ type: 'UPDATE_SCENE', sceneId: editingSceneId, patch });
+    }
+  };
+
+  const handleModalClose = () => {
+    setEditingSceneId(null);
+    setPendingNewScene(null);
   };
 
   const handleCanvasClick = (coords: { yaw: number; pitch: number }) => {
@@ -352,14 +367,12 @@ export default function TourConfigurator({
         </button>
       </div>
 
-      {editingSceneId && (
+      {(editingSceneId || pendingNewScene) && (
         <SceneSettingsModal
-          scene={state.scenes.find((s) => s.id === editingSceneId) ?? null}
+          scene={pendingNewScene ?? state.scenes.find((s) => s.id === editingSceneId) ?? null}
           currentView={currentView}
-          onClose={() => setEditingSceneId(null)}
-          onSave={(patch) =>
-            dispatch({ type: 'UPDATE_SCENE', sceneId: editingSceneId, patch })
-          }
+          onClose={handleModalClose}
+          onSave={handleModalSave}
         />
       )}
 

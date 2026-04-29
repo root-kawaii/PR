@@ -100,6 +100,20 @@ export default function MarzipanoCanvas({
     }
   }, [scene, onReady, viewerVersion]);
 
+  // Subscribe to Marzipano view-change events so TourConfigurator always has
+  // the current yaw/pitch/fov when the user clicks "Usa vista corrente come iniziale".
+  useEffect(() => {
+    const id = scene?.id;
+    if (!id) return;
+    const entry = sceneCacheRef.current.get(id);
+    if (!entry) return;
+    const view = entry.sceneHandle.view();
+    const handler = () => onViewChangeRef.current?.(view.parameters());
+    view.addEventListener('change', handler);
+    return () => view.removeEventListener('change', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scene?.id, viewerVersion]);
+
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !scene) return;
@@ -119,15 +133,16 @@ export default function MarzipanoCanvas({
     scene.hotspots.forEach((spot) => {
       const existing = entry.hotspotHandles.get(spot.id);
       if (existing) {
-        // skip position override while this hotspot is being dragged —
-        // Marzipano already has the correct live position via setPosition in
-        // onPointerMove; overriding it here with a possibly stale React state
-        // value causes the visible flicker/snap.
-        if (draggingHotspotIdRef.current !== spot.id) {
+        // While any drag is active, skip all Marzipano DOM mutations for existing
+        // hotspots. The dragging hotspot is positioned directly by handle.setPosition
+        // in onPointerMove; the others haven't moved. Any setPosition/applyHotspotStyle
+        // call here during rapid drag events causes other hotspots to momentarily
+        // reset to (0,0) before Marzipano recomputes their transform.
+        if (draggingHotspotIdRef.current === null) {
           existing.setPosition({ yaw: spot.yaw, pitch: spot.pitch });
+          const el = existing.domElement();
+          applyHotspotStyle(el, spot, spot.id === selectedHotspotId);
         }
-        const el = existing.domElement();
-        applyHotspotStyle(el, spot, spot.id === selectedHotspotId);
         return;
       }
       const el = buildHotspotElement(spot, spot.id === selectedHotspotId);
@@ -135,7 +150,7 @@ export default function MarzipanoCanvas({
       attachHotspotInteractions(el, spot.id, handle, entry.sceneHandle);
       entry.hotspotHandles.set(spot.id, handle);
     });
-  }, [scene, selectedHotspotId]);
+  }, [scene, selectedHotspotId, viewerVersion]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -166,6 +181,11 @@ export default function MarzipanoCanvas({
   ) {
     let dragging = false;
     let moved = false;
+    // Marzipano anchors the hotspot at the element's top-left corner.
+    // We capture the cursor-to-top-left offset at grab time so that corner
+    // follows the grab point rather than jumping to the cursor.
+    let grabOffsetX = 0;
+    let grabOffsetY = 0;
 
     const onPointerDown = (e: PointerEvent) => {
       e.stopPropagation();
@@ -173,6 +193,9 @@ export default function MarzipanoCanvas({
       moved = false;
       draggingHotspotIdRef.current = hotspotId;
       el.setPointerCapture(e.pointerId);
+      const elRect = el.getBoundingClientRect();
+      grabOffsetX = e.clientX - elRect.left;
+      grabOffsetY = e.clientY - elRect.top;
     };
     const onPointerMove = (e: PointerEvent) => {
       if (!dragging) return;
@@ -180,9 +203,14 @@ export default function MarzipanoCanvas({
       if (!container) return;
       moved = true;
       const rect = container.getBoundingClientRect();
+      // Place the element's top-left corner at (cursor − grabOffset),
+      // keeping the exact grab point under the cursor.
       const coords = sceneHandle
         .view()
-        .screenToCoordinates({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+        .screenToCoordinates({
+          x: e.clientX - grabOffsetX - rect.left,
+          y: e.clientY - grabOffsetY - rect.top,
+        });
       handle.setPosition(coords);
       onHotspotDragRef.current?.(hotspotId, coords);
     };
@@ -245,27 +273,26 @@ function buildHotspotElement(spot: MarzipanoHotspot, selected: boolean): HTMLEle
 function applyHotspotStyle(el: HTMLElement, spot: MarzipanoHotspot, selected: boolean) {
   const colour =
     spot.type === 'table' ? '#ec4899' : spot.type === 'area' ? '#f59e0b' : '#60a5fa';
-  const borderWidth = selected ? '3px' : '2px';
-  const borderColour = selected ? '#ffffff' : 'rgba(255,255,255,0.9)';
   const size = selected ? '44px' : '40px';
-  el.style.cssText = `
-    width: ${size};
-    height: ${size};
-    border-radius: 50%;
-    background: ${colour};
-    border: ${borderWidth} solid ${borderColour};
-    cursor: grab;
-    touch-action: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 700;
-    color: white;
-    box-shadow: 0 0 0 2px rgba(0,0,0,0.5), 0 3px 8px rgba(0,0,0,0.6);
-    user-select: none;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-  `;
+  // Set individual properties — never overwrite el.style.cssText because
+  // Marzipano writes its positioning transform directly on this element and
+  // a cssText assignment wipes it, causing a one-frame jump to (0, 0).
+  el.style.width = size;
+  el.style.height = size;
+  el.style.borderRadius = '50%';
+  el.style.background = colour;
+  el.style.border = `${selected ? '3px' : '2px'} solid ${selected ? '#ffffff' : 'rgba(255,255,255,0.9)'}`;
+  el.style.cursor = 'grab';
+  el.style.touchAction = 'none';
+  el.style.display = 'flex';
+  el.style.alignItems = 'center';
+  el.style.justifyContent = 'center';
+  el.style.fontSize = '13px';
+  el.style.fontWeight = '700';
+  el.style.color = 'white';
+  el.style.boxShadow = '0 0 0 2px rgba(0,0,0,0.5), 0 3px 8px rgba(0,0,0,0.6)';
+  el.style.userSelect = 'none';
+  el.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
   el.textContent = labelFor(spot);
   el.title = tooltipFor(spot);
 }

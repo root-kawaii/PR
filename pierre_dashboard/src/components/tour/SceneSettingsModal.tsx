@@ -42,8 +42,8 @@ export default function SceneSettingsModal({
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
       }
-      const json = (await res.json()) as { url: string };
-      setImageUrl(json.url);
+      const json = (await res.json()) as { publicUrl: string; objectKey: string };
+      setImageUrl(json.publicUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload fallito');
     } finally {
@@ -53,7 +53,7 @@ export default function SceneSettingsModal({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    onSave({ name: name.trim(), imageUrl: imageUrl.trim() });
+    onSave({ name: name.trim(), imageUrl: (imageUrl ?? '').trim() });
     onClose();
   };
 
@@ -103,10 +103,11 @@ export default function SceneSettingsModal({
               <p className="mt-1 text-xs text-gray-500">Caricamento in corso…</p>
             )}
             <input
-              type="url"
+              type="text"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
               placeholder="https://… (o usa l'upload qui sopra)"
+              required
               className="mt-2 w-full rounded border border-gray-300 px-2 py-1.5 text-xs"
             />
             {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
