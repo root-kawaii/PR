@@ -174,7 +174,7 @@ export type MarzipanoView = {
 
 export type MarzipanoHotspot = {
   id: string;
-  type: 'table' | 'scene-link'; // Table selection or scene navigation
+  type: 'table' | 'scene-link' | 'area'; // Table / scene navigation / area pin
   yaw: number; // Horizontal position in radians
   pitch: number; // Vertical position in radians
   // For table hotspots
@@ -184,6 +184,9 @@ export type MarzipanoHotspot = {
   // For scene-link hotspots
   targetSceneId?: string;
   label?: string; // Display text (e.g., "→ VIP Room")
+  // For area hotspots — tapping filters/shows the tables in that area
+  areaId?: string;
+  areaName?: string;
 };
 
 export type MarzipanoPosition = {

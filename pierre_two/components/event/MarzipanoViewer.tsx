@@ -17,6 +17,7 @@ type MarzipanoViewerProps = {
   scenes: MarzipanoScene[];
   tables: Table[];
   onTableClick: (tableId: string) => void;
+  onAreaClick?: (areaId: string, areaName?: string) => void;
   onSceneChange?: (sceneId: string, sceneName: string) => void;
   onError?: (error: string) => void;
   style?: ViewStyle;
@@ -31,25 +32,24 @@ export type MarzipanoViewerRef = {
 export const MarzipanoViewer = forwardRef<
   MarzipanoViewerRef,
   MarzipanoViewerProps
->(({ scenes, tables, onTableClick, onSceneChange, onError, style }, ref) => {
+>(({ scenes, tables, onTableClick, onAreaClick, onSceneChange, onError, style }, ref) => {
   const webViewRef = useRef<WebView>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Store callbacks in refs to avoid re-renders
   const onTableClickRef = useRef(onTableClick);
+  const onAreaClickRef = useRef(onAreaClick);
   const onSceneChangeRef = useRef(onSceneChange);
   const onErrorRef = useRef(onError);
 
-  // Update refs when props change
   useEffect(() => {
     onTableClickRef.current = onTableClick;
+    onAreaClickRef.current = onAreaClick;
     onSceneChangeRef.current = onSceneChange;
     onErrorRef.current = onError;
   });
 
-  // Track initialization
   const initializedRef = useRef(false);
 
   const buildViewerConfig = useCallback(() => {
@@ -71,6 +71,8 @@ export const MarzipanoViewer = forwardRef<
           pitch: h.pitch,
           targetSceneId: h.targetSceneId,
           label: h.label,
+          areaId: h.areaId,
+          areaName: h.areaName,
         })),
         ...tables
           .filter((table) => table.marzipanoPosition?.sceneId === scene.id)
@@ -97,7 +99,7 @@ export const MarzipanoViewer = forwardRef<
     };
   }, [scenes, tables]);
 
-  // Expose methods to parent via ref
+
   useImperativeHandle(
     ref,
     () => ({
@@ -131,13 +133,11 @@ export const MarzipanoViewer = forwardRef<
     []
   );
 
-  // Initialize viewer when ready (only once!)
   useEffect(() => {
     if (!viewerReady || initializedRef.current || !webViewRef.current) {
       return;
     }
 
-    // Log to verify this only runs once
     console.log("🚀 React: Sending init to WebView (should only see this ONCE)");
 
     initializedRef.current = true;
@@ -145,11 +145,9 @@ export const MarzipanoViewer = forwardRef<
     try {
       const config = buildViewerConfig();
 
-      // Test serialization first
       const configStr = JSON.stringify(config);
       console.log("🚀 Initializing with config size:", configStr.length);
 
-      // Inject as a safe string with proper escaping
       const jsCode = `
         try {
           console.log('🔵 JavaScript injection starting...');
@@ -190,7 +188,6 @@ export const MarzipanoViewer = forwardRef<
     }
   }, [buildViewerConfig, viewerReady]);
 
-  // Stable message handler using refs
   const handleMessage = useCallback((event: WebViewMessageEvent) => {
     try {
       const message = JSON.parse(event.nativeEvent.data);
@@ -213,11 +210,17 @@ export const MarzipanoViewer = forwardRef<
           onTableClickRef.current(message.tableId);
           break;
 
+        case "AREA_CLICK":
+          console.log(
+            `🎯 Area hotspot clicked: ${message.areaName} (${message.areaId})`
+          );
+          onAreaClickRef.current?.(message.areaId, message.areaName);
+          break;
+
         case "UNAVAILABLE_TABLE_CLICK":
           console.log(
             `🎯 Unavailable table clicked: ${message.tableName} (${message.tableId})`
           );
-          // Show alert or modal with info about unavailable table
           alert(`${message.tableName} is currently unavailable.\n\nWould you like to:\n• View other available tables\n• Join the waitlist\n• Contact us for more information`);
           break;
 
@@ -245,9 +248,8 @@ export const MarzipanoViewer = forwardRef<
     } catch (err) {
       console.error("Error parsing Marzipano message:", err);
     }
-  }, []); // Empty deps - uses refs
+  }, []);
 
-  // Load HTML content from asset — works reliably in both dev and production
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   useEffect(() => {
     (async () => {

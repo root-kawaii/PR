@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -20,6 +21,7 @@ pub struct Club {
     pub stripe_payouts_enabled: Option<bool>,
     pub platform_commission_percent: Option<Decimal>,
     pub platform_commission_fixed_fee: Option<Decimal>,
+    pub marzipano_config: Option<JsonValue>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -78,6 +80,9 @@ pub struct ClubResponse {
     pub platform_commission_percent: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform_commission_fixed_fee: Option<Decimal>,
+    #[serde(rename = "marzipanoScenes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marzipano_scenes: Option<JsonValue>,
 }
 
 impl From<Club> for ClubResponse {
@@ -94,6 +99,7 @@ impl From<Club> for ClubResponse {
             stripe_payouts_enabled: club.stripe_payouts_enabled,
             platform_commission_percent: club.platform_commission_percent,
             platform_commission_fixed_fee: club.platform_commission_fixed_fee,
+            marzipano_scenes: club.marzipano_config,
         }
     }
 }

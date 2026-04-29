@@ -193,6 +193,12 @@ export default function EventTablesPage() {
               <ListOrdered size={16} />
               Prenotazioni
             </Link>
+            <Link
+              to={`/dashboard/events/${eventId}/tour`}
+              className="flex items-center gap-2 border border-pink-300 text-pink-700 px-4 py-2 rounded-lg hover:bg-pink-50 transition-colors text-sm"
+            >
+              Tour 360°
+            </Link>
             <button
               onClick={() => setShowForm(true)}
               className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
