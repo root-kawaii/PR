@@ -4,10 +4,12 @@ use crate::application::{
 };
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::club_owner::{
-    AddImageRequest, ClubImageRow, ClubOwnerAuthResponse, ClubOwnerLoginRequest,
-    ClubOwnerRegisterRequest, ClubOwnerResponse, CreateManualReservationRequest, OwnerStats,
-    OwnerUpdateClubRequest, ScanResult, StripeConnectStatusResponse, StripeOnboardingLinkResponse,
-    TableImageRow, UpdateReservationStatusRequest,
+    AddImageRequest, CheckinDecisionRequest, ClubImageRow, ClubOwnerAuthResponse,
+    ClubOwnerLoginRequest, ClubOwnerRegisterRequest, ClubOwnerResponse,
+    CreateManualReservationRequest, DuplicateTablesRequest, EventReservationStatsResponse,
+    OwnerStats, OwnerUpdateClubRequest, OwnerUpdateReservationRequest, ScanResult,
+    StripeConnectStatusResponse, StripeOnboardingLinkResponse, TableImageRow,
+    UpdateReservationStatusRequest,
 };
 use crate::models::table::TableReservationResponse;
 use crate::models::{
@@ -1005,6 +1007,8 @@ pub async fn create_manual_reservation_handler(
         payload.contact_email,
         payload.num_people,
         payload.manual_notes,
+        payload.male_guest_count.unwrap_or(0),
+        payload.female_guest_count.unwrap_or(0),
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1112,30 +1116,30 @@ fn build_reservation_status_notification(
 ) -> (String, String) {
     match status {
         "confirmed" => (
-            "Prenotazione confermata".to_string(),
+            "Prenotazione tavolo".to_string(),
             format!(
-                "Il tuo tavolo {} per {} e' stato confermato.",
+                "Il tuo tavolo {} per {} ora e' prenotato.",
                 table_name, event_title
             ),
         ),
         "cancelled" => (
-            "Prenotazione annullata".to_string(),
+            "Prenotazione rifiutata".to_string(),
             format!(
-                "La tua prenotazione per {} ({}) e' stata annullata dal locale.",
+                "La tua prenotazione per {} ({}) e' stata rifiutata dal locale.",
                 event_title, table_name
             ),
         ),
         "completed" => (
-            "Prenotazione aggiornata".to_string(),
+            "Accesso effettuato".to_string(),
             format!(
-                "La tua prenotazione per {} ({}) e' stata segnata come completata.",
+                "La tua prenotazione per {} ({}) e' stata segnata come accesso effettuato.",
                 event_title, table_name
             ),
         ),
         "pending" => (
             "Prenotazione aggiornata".to_string(),
             format!(
-                "La tua prenotazione per {} ({}) e' tornata in attesa di conferma.",
+                "La tua prenotazione per {} ({}) e' in attesa del numero minimo di partecipanti.",
                 event_title, table_name
             ),
         ),
@@ -1216,24 +1220,217 @@ pub async fn scan_code_handler(
     }
 }
 
+pub async fn update_reservation_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(reservation_id): Path<String>,
+    Json(payload): Json<OwnerUpdateReservationRequest>,
+) -> Result<Json<TableReservationResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let reservation_uuid = Uuid::parse_str(&reservation_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let previous_reservation =
+        table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let event = event_persistence::get_event_by_id(&state.db_pool, previous_reservation.event_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let table_id = payload
+        .table_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    if let Some(target_table_id) = table_id {
+        let target_table = table_persistence::get_table_by_id(&state.db_pool, target_table_id)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        if target_table.event_id != previous_reservation.event_id {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    let reservation = table_persistence::update_reservation(
+        &state.db_pool,
+        reservation_uuid,
+        payload.status,
+        table_id,
+        payload.num_people,
+        payload.contact_name,
+        payload.contact_email,
+        payload.contact_phone,
+        payload.special_requests,
+        payload.manual_notes,
+        payload.male_guest_count,
+        payload.female_guest_count,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if previous_reservation.status != reservation.status {
+        let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let (title, body) =
+            build_reservation_status_notification(&reservation.status, &event.title, &table.name);
+
+        if let Err(error) = outbox_service::enqueue_push_notification_for_user(
+            &state.db_pool,
+            reservation.user_id,
+            &title,
+            &body,
+            Some("reservation"),
+            Some(reservation.id),
+        )
+        .await
+        {
+            warn!(error = %error, reservation_id = %reservation.id, "Failed to enqueue reservation update push notification");
+        }
+    }
+
+    Ok(Json(TableReservationResponse::from(reservation)))
+}
+
+pub async fn delete_reservation_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(reservation_id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let reservation_uuid = Uuid::parse_str(&reservation_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let reservation = table_persistence::get_reservation_by_id(&state.db_pool, reservation_uuid)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let event = event_persistence::get_event_by_id(&state.db_pool, reservation.event_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    match table_persistence::delete_reservation(&state.db_pool, reservation_uuid).await {
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+pub async fn duplicate_event_tables_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<String>,
+    Json(payload): Json<DuplicateTablesRequest>,
+) -> Result<Json<TablesResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let target_event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let source_event_uuid =
+        Uuid::parse_str(&payload.source_event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let target_event = event_persistence::get_event_by_id(&state.db_pool, target_event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let source_event = event_persistence::get_event_by_id(&state.db_pool, source_event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if target_event.club_id != Some(club.id) || source_event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let duplicated = table_persistence::duplicate_tables_between_events(
+        &state.db_pool,
+        source_event_uuid,
+        target_event_uuid,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(TablesResponse {
+        tables: duplicated.into_iter().map(TableResponse::from).collect(),
+    }))
+}
+
+pub async fn get_event_reservation_stats_handler(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(event_id): Path<String>,
+) -> Result<Json<EventReservationStatsResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let event = event_persistence::get_event_by_id(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if event.club_id != Some(club.id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let stats = table_persistence::get_event_reservation_stats(&state.db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(stats))
+}
+
 /// Check in a ticket or reservation by code — marks it as used/completed
 pub async fn checkin_handler(
     State(state): State<Arc<AppState>>,
     ClubOwnerUser(claims): ClubOwnerUser,
     Path(code): Path<String>,
+    maybe_payload: Option<Json<CheckinDecisionRequest>>,
 ) -> Result<Json<ScanResult>, StatusCode> {
     let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let decision = maybe_payload
+        .and_then(|Json(payload)| payload.decision)
+        .unwrap_or_else(|| "confirm".to_string());
 
-    let result = club_owner_persistence::checkin_by_code(&state.db_pool, &code)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result = match decision.as_str() {
+        "confirm" => club_owner_persistence::checkin_by_code(&state.db_pool, &code)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+        "reject" => club_owner_persistence::reject_reservation_by_code(&state.db_pool, &code)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
 
     match result {
         Some(scan) => {
+            let event_name = if decision == "reject" {
+                "owner_checkin_rejected"
+            } else {
+                "owner_checkin_completed"
+            };
             let _ = outbox_service::enqueue_analytics_event(
                 &state.db_pool,
                 &state.config,
-                "owner_checkin_completed",
+                event_name,
                 Some(&claims.sub),
                 Some("checkin"),
                 None,
@@ -1242,6 +1439,7 @@ pub async fn checkin_handler(
                     "code": code,
                     "scan_type": scan.scan_type,
                     "event_title": scan.event_title,
+                    "decision": decision,
                     "outcome": "success",
                 }),
             )
@@ -1249,16 +1447,22 @@ pub async fn checkin_handler(
             Ok(Json(scan))
         }
         None => {
+            let event_name = if decision == "reject" {
+                "owner_checkin_rejection_failed"
+            } else {
+                "owner_checkin_failed"
+            };
             let _ = outbox_service::enqueue_analytics_event(
                 &state.db_pool,
                 &state.config,
-                "owner_checkin_failed",
+                event_name,
                 Some(&claims.sub),
                 Some("checkin"),
                 None,
                 serde_json::json!({
                     "owner_id": claims.sub,
                     "code": code,
+                    "decision": decision,
                     "outcome": "not_found",
                 }),
             )

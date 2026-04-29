@@ -1,4 +1,3 @@
-import { ThemedText } from '@/components/themed-text';
 import {
   StyleSheet,
   View,
@@ -85,6 +84,8 @@ export default function ReservationsScreen() {
     switch (status.toLowerCase()) {
       case 'confirmed':
         return theme.success;
+      case 'completed':
+        return theme.info;
       case 'pending':
         return theme.warning;
       case 'cancelled':
@@ -129,7 +130,7 @@ export default function ReservationsScreen() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={["top"]}>
         <View style={[styles.container, { backgroundColor: theme.background }]}>
-          <Text style={[styles.header, { color: theme.text }]}>Table Reservations</Text>
+          <Text style={[styles.header, { color: theme.text }]}>Prenotazioni Aree</Text>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.primary} />
           </View>
@@ -142,7 +143,7 @@ export default function ReservationsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={["top"]}>
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.headerContainer}>
-          <Text style={[styles.header, { color: theme.text }]}>Table Reservations</Text>
+          <Text style={[styles.header, { color: theme.text }]}>Prenotazioni Aree</Text>
           <View style={[styles.reservationCount, { backgroundColor: theme.backgroundElevated }]}>
             <IconSymbol name="table.furniture" size={16} color={theme.text} />
             <Text style={[styles.reservationCountText, { color: theme.text }]}>{reservations.length}</Text>
@@ -164,7 +165,7 @@ export default function ReservationsScreen() {
               { color: theme.textTertiary },
               filter === 'upcoming' && { color: theme.textInverse }
             ]}>
-              Upcoming
+              Prossime
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -180,7 +181,7 @@ export default function ReservationsScreen() {
               { color: theme.textTertiary },
               filter === 'past' && { color: theme.textInverse }
             ]}>
-              Past
+              Passate
             </Text>
           </TouchableOpacity>
         </View>

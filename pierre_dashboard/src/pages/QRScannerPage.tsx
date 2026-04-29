@@ -17,6 +17,7 @@ export default function QRScannerPage() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkinDone, setCheckinDone] = useState(false);
+  const [lastDecision, setLastDecision] = useState<'confirm' | 'reject' | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [showCameraModal, setShowCameraModal] = useState(false);
@@ -34,6 +35,7 @@ export default function QRScannerPage() {
     setScanStatus('loading');
     setResult(null);
     setCheckinDone(false);
+    setLastDecision(null);
     try {
       const res = await fetch(`${API_URL}/owner/scan/${encodeURIComponent(trimmed)}`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -62,29 +64,43 @@ export default function QRScannerPage() {
     }
   };
 
-  const handleCheckin = async () => {
+  const handleCheckin = async (decision: 'confirm' | 'reject' = 'confirm') => {
     if (!result) return;
     setCheckinLoading(true);
-    trackEvent('owner_checkin_submitted', {
+    const eventName =
+      decision === 'reject' ? 'owner_reservation_rejection_submitted' : 'owner_checkin_submitted';
+    trackEvent(eventName, {
       code: result.code,
       scan_type: result.scanType,
+      decision,
     });
     try {
       const res = await fetch(`${API_URL}/owner/checkin/${encodeURIComponent(result.code)}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ decision }),
       });
       if (!res.ok) throw new Error('Errore check-in');
-      trackEvent('owner_checkin_completed', {
+      const completionEventName =
+        decision === 'reject' ? 'owner_reservation_rejected' : 'owner_checkin_completed';
+      trackEvent(completionEventName, {
         code: result.code,
         scan_type: result.scanType,
+        decision,
       });
       setCheckinDone(true);
+      setLastDecision(decision);
       setScanStatus('used');
     } catch (err) {
-      trackEvent('owner_checkin_failed', {
+      const failureEventName =
+        decision === 'reject' ? 'owner_reservation_rejection_failed' : 'owner_checkin_failed';
+      trackEvent(failureEventName, {
         code: result.code,
         scan_type: result.scanType,
+        decision,
         error_message: err instanceof Error ? err.message : 'Errore',
       });
       alert(err instanceof Error ? err.message : 'Errore');
@@ -98,6 +114,7 @@ export default function QRScannerPage() {
     setScanStatus('idle');
     setResult(null);
     setCheckinDone(false);
+    setLastDecision(null);
   };
 
   const startCamera = async () => {
@@ -246,18 +263,41 @@ export default function QRScannerPage() {
               </div>
               <ScanResultDetails result={result} />
               {!checkinDone ? (
-                <button
-                  onClick={handleCheckin}
-                  disabled={checkinLoading}
-                  className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-                >
-                  <UserCheck size={18} />
-                  {checkinLoading ? 'Registrazione...' : 'Segna come entrato'}
-                </button>
+                result.scanType === 'reservation' ? (
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      onClick={() => handleCheckin('confirm')}
+                      disabled={checkinLoading}
+                      className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+                    >
+                      <UserCheck size={18} />
+                      {checkinLoading ? 'Aggiornamento...' : 'Conferma ingresso'}
+                    </button>
+                    <button
+                      onClick={() => handleCheckin('reject')}
+                      disabled={checkinLoading}
+                      className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                    >
+                      <XCircle size={18} />
+                      {checkinLoading ? 'Aggiornamento...' : 'Rifiuta prenotazione'}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleCheckin('confirm')}
+                    disabled={checkinLoading}
+                    className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+                  >
+                    <UserCheck size={18} />
+                    {checkinLoading ? 'Registrazione...' : 'Segna come entrato'}
+                  </button>
+                )
               ) : (
-                <div className="mt-4 flex items-center gap-2 text-green-700 font-medium">
-                  <CheckCircle size={18} />
-                  Check-in completato
+                <div className={`mt-4 flex items-center gap-2 font-medium ${
+                  lastDecision === 'reject' ? 'text-red-700' : 'text-green-700'
+                }`}>
+                  {lastDecision === 'reject' ? <XCircle size={18} /> : <CheckCircle size={18} />}
+                  {lastDecision === 'reject' ? 'Prenotazione rifiutata' : 'Check-in completato'}
                 </div>
               )}
             </div>
@@ -268,7 +308,11 @@ export default function QRScannerPage() {
               <div className="flex items-center gap-2 mb-4">
                 <AlertCircle size={28} className="text-amber-600" />
                 <span className="text-xl font-bold text-amber-700">
-                  {checkinDone ? 'Check-in appena registrato' : 'Codice gia utilizzato'}
+                  {checkinDone
+                    ? lastDecision === 'reject'
+                      ? 'Prenotazione appena rifiutata'
+                      : 'Check-in appena registrato'
+                    : 'Codice gia utilizzato'}
                 </span>
               </div>
               <ScanResultDetails result={result} />

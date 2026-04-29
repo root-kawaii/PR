@@ -123,6 +123,8 @@ pub struct TableReservation {
     pub ticket_ids: Option<Vec<Uuid>>,
     pub is_manual: bool,
     pub manual_notes: Option<String>,
+    pub male_guest_count: i32,
+    pub female_guest_count: i32,
     pub payment_link_token: Option<String>,
 }
 
@@ -155,11 +157,15 @@ pub struct CreateReservationWithPaymentRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateTableReservationRequest {
     pub status: Option<String>,
+    pub table_id: Option<String>,
     pub num_people: Option<i32>,
     pub contact_name: Option<String>,
     pub contact_email: Option<String>,
     pub contact_phone: Option<String>,
     pub special_requests: Option<String>,
+    pub manual_notes: Option<String>,
+    pub male_guest_count: Option<i32>,
+    pub female_guest_count: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -181,6 +187,8 @@ pub struct TableReservationResponse {
     pub reservation_code: String,
     pub is_manual: bool,
     pub manual_notes: Option<String>,
+    pub male_guest_count: i32,
+    pub female_guest_count: i32,
     pub created_at: String,
 }
 
@@ -205,6 +213,8 @@ impl From<TableReservation> for TableReservationResponse {
             reservation_code: reservation.reservation_code,
             is_manual: reservation.is_manual,
             manual_notes: reservation.manual_notes,
+            male_guest_count: reservation.male_guest_count,
+            female_guest_count: reservation.female_guest_count,
             created_at: reservation.created_at.to_rfc3339(),
         }
     }
@@ -225,6 +235,9 @@ pub struct TableReservationWithDetailsResponse {
     pub contact_email: String,
     pub contact_phone: String,
     pub special_requests: Option<String>,
+    pub manual_notes: Option<String>,
+    pub male_guest_count: i32,
+    pub female_guest_count: i32,
     pub created_at: String,
     pub table: TableSummary,
     pub event: EventSummary,
@@ -236,6 +249,7 @@ pub struct TableSummary {
     pub id: String,
     pub name: String,
     pub zone: Option<String>,
+    pub area_name: Option<String>,
     pub capacity: i32,
     pub min_spend: String,
     pub location_description: Option<String>,

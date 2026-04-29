@@ -1,4 +1,5 @@
 use crate::models::{ReservationGuest, ReservationPaymentShare, Table, TableReservation};
+use crate::models::club_owner::EventReservationStatsResponse;
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
 use sqlx::PgPool;
@@ -147,6 +148,44 @@ pub async fn create_table(
     .await?;
 
     get_table_by_id(pool, table_id).await
+}
+
+pub async fn duplicate_tables_between_events(
+    pool: &PgPool,
+    source_event_id: Uuid,
+    target_event_id: Uuid,
+) -> Result<Vec<Table>, sqlx::Error> {
+    let source_tables = get_tables_by_event_id(pool, source_event_id).await?;
+    let mut duplicated = Vec::with_capacity(source_tables.len());
+
+    for source_table in source_tables {
+        let new_table = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            INSERT INTO tables (
+                event_id, name, zone, capacity, min_spend, total_cost, available,
+                location_description, features, marzipano_position, area_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10)
+            RETURNING id
+            "#,
+        )
+        .bind(target_event_id)
+        .bind(source_table.name)
+        .bind(source_table.zone)
+        .bind(source_table.capacity)
+        .bind(source_table.min_spend)
+        .bind(source_table.total_cost)
+        .bind(source_table.location_description)
+        .bind(source_table.features)
+        .bind(source_table.marzipano_position)
+        .bind(source_table.area_id)
+        .fetch_one(pool)
+        .await?;
+
+        duplicated.push(get_table_by_id(pool, new_table).await?);
+    }
+
+    Ok(duplicated)
 }
 
 /// Update a table
@@ -499,53 +538,110 @@ pub async fn update_reservation(
     pool: &PgPool,
     reservation_id: Uuid,
     status: Option<String>,
+    table_id: Option<Uuid>,
     num_people: Option<i32>,
     contact_name: Option<String>,
     contact_email: Option<String>,
     contact_phone: Option<String>,
     special_requests: Option<String>,
+    manual_notes: Option<String>,
+    male_guest_count: Option<i32>,
+    female_guest_count: Option<i32>,
 ) -> Result<TableReservation, sqlx::Error> {
-    // If num_people is updated, we need to recalculate total_amount
     let current_reservation = get_reservation_by_id(pool, reservation_id).await?;
 
+    let final_table_id = table_id.unwrap_or(current_reservation.table_id);
     let final_num_people = num_people.unwrap_or(current_reservation.num_people);
+    let table_changed = final_table_id != current_reservation.table_id;
+    let people_changed = final_num_people != current_reservation.num_people;
 
-    // Get the table to recalculate if num_people changed
-    let new_total_amount =
-        if num_people.is_some() && num_people.unwrap() != current_reservation.num_people {
-            let table = get_table_by_id(pool, current_reservation.table_id).await?;
-            table.min_spend * Decimal::from(final_num_people)
-        } else {
-            current_reservation.total_amount
-        };
+    let new_total_amount = if table_changed || people_changed {
+        let table = get_table_by_id(pool, final_table_id).await?;
+        table.min_spend * Decimal::from(final_num_people)
+    } else {
+        current_reservation.total_amount
+    };
 
     let reservation = sqlx::query_as::<_, TableReservation>(
         r#"
         UPDATE table_reservations
         SET status = COALESCE($1, status),
-            num_people = COALESCE($2, num_people),
-            total_amount = $3,
-            contact_name = COALESCE($4, contact_name),
-            contact_email = COALESCE($5, contact_email),
-            contact_phone = COALESCE($6, contact_phone),
-            special_requests = COALESCE($7, special_requests),
+            table_id = COALESCE($2, table_id),
+            num_people = COALESCE($3, num_people),
+            total_amount = $4,
+            contact_name = COALESCE($5, contact_name),
+            contact_email = COALESCE($6, contact_email),
+            contact_phone = COALESCE($7, contact_phone),
+            special_requests = COALESCE($8, special_requests),
+            manual_notes = COALESCE($9, manual_notes),
+            male_guest_count = COALESCE($10, male_guest_count),
+            female_guest_count = COALESCE($11, female_guest_count),
             updated_at = NOW()
-        WHERE id = $8
+        WHERE id = $12
         RETURNING *
         "#,
     )
     .bind(status)
+    .bind(table_id)
     .bind(num_people)
     .bind(new_total_amount)
     .bind(contact_name)
     .bind(contact_email)
     .bind(contact_phone)
     .bind(special_requests)
+    .bind(manual_notes)
+    .bind(male_guest_count)
+    .bind(female_guest_count)
     .bind(reservation_id)
     .fetch_one(pool)
     .await?;
 
     Ok(reservation)
+}
+
+pub async fn get_event_reservation_stats(
+    pool: &PgPool,
+    event_id: Uuid,
+) -> Result<EventReservationStatsResponse, sqlx::Error> {
+    sqlx::query_as::<_, EventReservationStatsResponse>(
+        r#"
+        SELECT
+            tr.event_id::text AS event_id,
+            COUNT(*)::bigint AS total_reservations,
+            COUNT(*) FILTER (WHERE tr.status = 'pending')::bigint AS pending_reservations,
+            COUNT(*) FILTER (WHERE tr.status = 'confirmed')::bigint AS confirmed_reservations,
+            COUNT(*) FILTER (WHERE tr.status = 'completed')::bigint AS completed_reservations,
+            COUNT(*) FILTER (WHERE tr.status = 'cancelled')::bigint AS cancelled_reservations,
+            COALESCE(SUM(tr.num_people), 0)::bigint AS total_people,
+            COALESCE(SUM(tr.male_guest_count), 0)::bigint AS male_guests,
+            COALESCE(SUM(tr.female_guest_count), 0)::bigint AS female_guests,
+            COALESCE(SUM(tr.total_amount), 0) AS total_amount,
+            COALESCE(SUM(tr.amount_paid), 0) AS amount_paid,
+            COALESCE(SUM(tr.total_amount - tr.amount_paid), 0) AS amount_remaining
+        FROM table_reservations tr
+        WHERE tr.event_id = $1
+        GROUP BY tr.event_id
+        "#,
+    )
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await
+    .map(|maybe_stats| {
+        maybe_stats.unwrap_or(EventReservationStatsResponse {
+            event_id: event_id.to_string(),
+            total_reservations: 0,
+            pending_reservations: 0,
+            confirmed_reservations: 0,
+            completed_reservations: 0,
+            cancelled_reservations: 0,
+            total_people: 0,
+            male_guests: 0,
+            female_guests: 0,
+            total_amount: Decimal::ZERO,
+            amount_paid: Decimal::ZERO,
+            amount_remaining: Decimal::ZERO,
+        })
+    })
 }
 
 /// Delete a reservation

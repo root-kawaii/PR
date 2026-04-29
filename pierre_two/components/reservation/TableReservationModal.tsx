@@ -61,7 +61,7 @@ export const TableReservationModal = ({
   const ownerShare = table?.capacity
     ? Math.round((tableTotalCost / table.capacity) * 100) / 100
     : 0;
-  const tableAreaLabel = table?.areaName?.trim() || table?.zone?.trim() || null;
+  const tableAreaLabel = table?.areaName?.trim() || table?.zone?.trim() || table?.name?.trim() || null;
 
   useEffect(() => {
     if (!visible || !table || !event) {
@@ -275,7 +275,7 @@ export const TableReservationModal = ({
             table_id: table.id,
           });
           await Share.share({
-            message: `Unisciti al mio tavolo "${table.name}" all'evento "${event.title}"! Paga la tua quota qui: ${shareLink}`,
+            message: `Unisciti alla mia area "${tableAreaLabel ?? table.name}" all'evento "${event.title}"! Paga la tua quota qui: ${shareLink}`,
             url: shareLink,
           });
         } catch (_) {
@@ -348,7 +348,7 @@ export const TableReservationModal = ({
               <IconSymbol name="chevron.left" size={28} color="#fff" />
             </TouchableOpacity>
             <View style={styles.headerTitleWrap}>
-              <ThemedText style={styles.headerEyebrow}>Prenotazione Tavolo</ThemedText>
+              <ThemedText style={styles.headerEyebrow}>Prenotazione Area</ThemedText>
               <ThemedText style={styles.headerTitle}>Paga la Tua Quota</ThemedText>
             </View>
             <View style={styles.backButtonPlaceholder} />
@@ -367,7 +367,7 @@ export const TableReservationModal = ({
               <View style={styles.locationRow}>
                 <IconSymbol name="location.fill" size={16} color="#fff" />
                 <ThemedText style={styles.tableName}>
-                  {table.name}{tableAreaLabel ? ` - ${tableAreaLabel}` : ""}
+                  {tableAreaLabel ?? table.name}
                 </ThemedText>
               </View>
 
@@ -379,7 +379,7 @@ export const TableReservationModal = ({
 
               {(table.features?.length || table.locationDescription) ? (
                 <View style={styles.characteristicsSection}>
-                  <ThemedText style={styles.sectionTitle}>Caratteristiche Tavolo:</ThemedText>
+                  <ThemedText style={styles.sectionTitle}>Caratteristiche Area:</ThemedText>
                   {table.features?.map((feature, index) => (
                     <View key={index} style={styles.featureRow}>
                       <ThemedText style={styles.bulletPoint}>•</ThemedText>

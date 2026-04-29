@@ -30,16 +30,14 @@ export const TableReservationModal = ({
 }: TableReservationModalProps) => {
   const { theme } = useTheme();
   const [tables, setTables] = useState<Table[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [hasFetchedTables, setHasFetchedTables] = useState(false);
   const marzipanoViewerRef = useRef<MarzipanoViewerRef>(null);
   const [currentSceneName, setCurrentSceneName] = useState<string>("");
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
-  const [filteredTableIds, setFilteredTableIds] = useState<string[]>([]);
 
-  // Fetch tables when modal opens
+  // Fetch area-backed table inventory when modal opens.
   useEffect(() => {
     if (visible && event) {
       setHasFetchedTables(false);
@@ -61,7 +59,6 @@ export const TableReservationModal = ({
   const fetchTables = async () => {
     if (!event) return;
 
-    setIsLoading(true);
     try {
       const url = `${API_URL}/tables/event/${event.id}`;
       const response = await fetch(url);
@@ -72,18 +69,16 @@ export const TableReservationModal = ({
 
       const data = await response.json();
       console.log(`Fetched ${data.tables?.length || 0} tables for event`);
-      // API returns {tables: [...]} so we need to extract the array
       setTables(data.tables || data);
     } catch (error) {
       console.error("Error fetching tables:", error);
       setTables([]);
     } finally {
-      setIsLoading(false);
       setHasFetchedTables(true);
     }
   };
 
-  // Handle table click from Marzipano viewer (hotspot)
+  // Hotspots still point to a physical table, but the user-facing selection is area-first.
   const handleTableClick = (tableId: string) => {
     const table = tables.find((t) => t.id === tableId);
     if (table && table.available) {
@@ -95,7 +90,7 @@ export const TableReservationModal = ({
     }
   };
 
-  // Handle table selection from filter menu
+  // The filter menu groups tables by area and returns a representative table for booking.
   const handleTableSelectFromMenu = (table: Table) => {
     console.log(`📍 Navigating to table: ${table.name}`);
 
@@ -117,7 +112,6 @@ export const TableReservationModal = ({
 
   // Handle filter changes from menu - update hotspot visibility
   const handleFilterChange = useCallback((tableIds: string[]) => {
-    setFilteredTableIds(tableIds);
     marzipanoViewerRef.current?.updateHotspotVisibility(tableIds);
   }, []);
 
@@ -148,14 +142,14 @@ export const TableReservationModal = ({
           <View style={[styles.loadingTourContainer, { backgroundColor: theme.background }]}>
             <ActivityIndicator size="large" color={theme.primary} />
             <ThemedText style={[styles.loadingTourText, { color: theme.text }]}>
-              Caricamento tavoli del tour 360...
+              Caricamento aree del tour 360...
             </ThemedText>
           </View>
         ) : (
           <View style={[styles.noTourContainer, { backgroundColor: theme.background }]}>
             <ThemedText style={styles.noTourIcon}>🏛️</ThemedText>
             <ThemedText style={[styles.noTourText, { color: theme.text }]}>
-              360° venue tour not available
+              Tour 360° non disponibile
             </ThemedText>
           </View>
         )}
@@ -186,7 +180,7 @@ export const TableReservationModal = ({
           </View>
         </TouchableOpacity>
 
-        {/* Table Filter Menu Overlay */}
+        {/* Area Filter Menu Overlay */}
         <TableFilterMenu
           visible={menuVisible}
           onClose={() => setMenuVisible(false)}
