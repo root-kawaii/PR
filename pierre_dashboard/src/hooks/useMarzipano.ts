@@ -30,6 +30,8 @@ export interface MarzipanoViewHandle {
   screenToCoordinates: (screen: { x: number; y: number }) => { yaw: number; pitch: number };
   parameters: () => { yaw: number; pitch: number; fov: number };
   setParameters: (p: { yaw: number; pitch: number; fov: number }) => void;
+  addEventListener: (event: 'change', handler: () => void) => void;
+  removeEventListener: (event: 'change', handler: () => void) => void;
 }
 
 export interface MarzipanoSceneHandle {
