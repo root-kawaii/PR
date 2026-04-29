@@ -146,26 +146,9 @@ jobs:
       - name: Setup Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Authenticate Docker with Fly.io registry
-        run: flyctl auth docker
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-      - name: Build and push image to Fly.io registry
-        uses: docker/build-push-action@v6
-        with:
-          context: ./rust_BE
-          push: true
-          tags: registry.fly.io/pierreclubs-backend-prod:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       - name: Deploy to Fly.io
         working-directory: ./rust_BE
-        run: flyctl deploy --config fly.production.toml --image registry.fly.io/pierreclubs-backend-prod:${{ github.sha }} --ha=false
+        run: flyctl deploy --config fly.production.toml --remote-only --ha=false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
