@@ -1,12 +1,9 @@
-name: Production Deploy
+name: Staging Backend Deploy
 
 on:
-  # Auto-deploy when a version tag is pushed (e.g. git tag v1.0.0 && git push --tags)
   push:
-    tags:
-      - "v*"
-
-  # Manual trigger with full control
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       run_migrations:
@@ -19,24 +16,18 @@ on:
         required: false
         type: boolean
         default: true
-      build_app:
-        description: "Trigger EAS production build"
-        required: false
-        type: boolean
-        default: false
 
 jobs:
   migrations:
-    name: Run Production Database Migrations
+    name: Run Staging Database Migrations
     runs-on: ubuntu-latest
     environment:
-      name: Production
-    # Run on tag push (always) or manual trigger (if toggled on)
+      name: Staging
     if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
+      github.event_name == 'push' ||
       github.event.inputs.run_migrations == 'true'
     concurrency:
-      group: production-migrations
+      group: staging-migrations
       cancel-in-progress: false
 
     steps:
@@ -60,7 +51,7 @@ jobs:
         run: |
           cd DB/migrations
 
-          echo "Connecting to Supabase..."
+          echo "Connecting to Supabase staging..."
 
           MIGRATION_FILES=$(ls -1 *.sql | sort)
 
@@ -123,21 +114,19 @@ jobs:
           echo "All migrations completed successfully"
 
   deploy_backend:
-    name: Deploy Production Backend to Fly.io
+    name: Deploy Staging Backend to Fly.io
     runs-on: ubuntu-latest
     needs: migrations
     environment:
-      name: Production
-      url: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
-    # Run on tag push (always) or manual trigger (if toggled on)
-    # Proceeds even if migrations were skipped (no pending)
+      name: Staging
+      url: ${{ vars.API_URL || 'https://pierreclubs-backend-staging.fly.dev' }}
     if: >-
       always() &&
       (needs.migrations.result == 'success' || needs.migrations.result == 'skipped') &&
-      (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.deploy_backend == 'true')
+      (github.event_name == 'push' || github.event.inputs.deploy_backend == 'true')
     concurrency:
-      group: production-backend
-      cancel-in-progress: false
+      group: staging-backend
+      cancel-in-progress: true
 
     steps:
       - name: Checkout code
@@ -148,13 +137,13 @@ jobs:
 
       - name: Deploy to Fly.io
         working-directory: ./rust_BE
-        run: flyctl deploy --config fly.production.toml --remote-only --ha=false
+        run: flyctl deploy --config fly.staging.toml --remote-only --ha=false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Verify deployment
         env:
-          API_URL: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
+          API_URL: ${{ vars.API_URL || 'https://pierreclubs-backend-staging.fly.dev' }}
         run: |
           echo "Waiting for deployment to be ready..."
           sleep 10
@@ -168,69 +157,20 @@ jobs:
             exit 1
           fi
 
-  build_app:
-    name: Build Production App With EAS
-    runs-on: ubuntu-latest
-    needs: deploy_backend
-    environment:
-      name: Production
-    # Only runs on manual trigger with build_app toggled on — never on tag push
-    if: >-
-      always() &&
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.build_app == 'true' &&
-      (needs.deploy_backend.result == 'success' || needs.deploy_backend.result == 'skipped')
-    concurrency:
-      group: production-mobile-build
-      cancel-in-progress: false
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: "24"
-          cache: "npm"
-          cache-dependency-path: pierre_two/package-lock.json
-
-      - name: Install dependencies
-        working-directory: ./pierre_two
-        run: npm ci
-
-      - name: Setup Expo
-        uses: expo/expo-github-action@v8
-        with:
-          expo-version: latest
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Trigger EAS production build
-        working-directory: ./pierre_two
-        env:
-          APP_ENV: ${{ vars.APP_ENV || 'production' }}
-          EXPO_PUBLIC_API_URL: ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}
-          EXPO_PUBLIC_SUPPORT_URL: ${{ vars.SUPPORT_URL || 'https://pierre.app/support' }}
-          EXPO_PUBLIC_PRIVACY_URL: ${{ vars.PRIVACY_URL || 'https://pierre.app/privacy' }}
-          EXPO_PUBLIC_TERMS_URL: ${{ vars.TERMS_URL || 'https://pierre.app/terms' }}
-        run: |
-          echo "Starting EAS production build for Android..."
-          eas build --platform android --profile "${{ vars.EAS_BUILD_PROFILE || 'production' }}" --non-interactive --no-wait
-
   summary:
-    name: Production Deployment Summary
+    name: Staging Deployment Summary
     runs-on: ubuntu-latest
-    needs: [migrations, deploy_backend, build_app]
+    needs: [migrations, deploy_backend]
     if: always()
 
     steps:
       - name: Generate summary
         run: |
-          echo "# Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "# Staging Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "**Triggered by tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "**Triggered by push to main:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           else
             echo "**Triggered manually**" >> $GITHUB_STEP_SUMMARY
           fi
@@ -239,18 +179,12 @@ jobs:
           echo "## Jobs Status" >> $GITHUB_STEP_SUMMARY
           echo "- Migrations: ${{ needs.migrations.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Backend Deploy: ${{ needs.deploy_backend.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- App Build: ${{ needs.build_app.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ needs.migrations.result }}" = "success" ]; then
-            echo "Database migrations completed" >> $GITHUB_STEP_SUMMARY
+            echo "Database migrations applied to staging" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ "${{ needs.deploy_backend.result }}" = "success" ]; then
-            echo "Backend deployed to ${{ vars.API_URL || 'https://pierreclubs-backend-prod.fly.dev' }}" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "${{ needs.build_app.result }}" = "success" ]; then
-            echo "EAS production build triggered" >> $GITHUB_STEP_SUMMARY
-            echo "Check build status at: https://expo.dev" >> $GITHUB_STEP_SUMMARY
+            echo "Backend deployed to ${{ vars.API_URL || 'https://pierreclubs-backend-staging.fly.dev' }}" >> $GITHUB_STEP_SUMMARY
           fi
