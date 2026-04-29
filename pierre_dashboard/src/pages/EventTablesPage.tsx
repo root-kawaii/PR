@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Plus, ArrowLeft, X, Search, ListOrdered, Image, Trash2 } from 'lucide-react';
+import { Plus, ArrowLeft, X, Search, ListOrdered, Image, Trash2, Copy } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
-import type { TableResponse, TableImage } from '../types';
+import type { EventResponse, TableResponse, TableImage } from '../types';
 import { trackEvent } from '../config/analytics';
 
 interface TablesData {
@@ -16,16 +16,20 @@ type FilterAvailability = 'all' | 'available' | 'reserved';
 export default function EventTablesPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { data, loading, refetch } = useFetch<TablesData>(`/owner/events/${eventId}/tables`);
+  const { data: events } = useFetch<EventResponse[]>('/owner/events');
   const { token } = useAuth();
 
   // Create form
   const [showForm, setShowForm] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [name, setName] = useState('');
   const [zone, setZone] = useState('');
   const [capacity, setCapacity] = useState('');
   const [minSpend, setMinSpend] = useState('');
   const [locationDescription, setLocationDescription] = useState('');
+  const [sourceEventId, setSourceEventId] = useState('');
 
   // Filters
   const [search, setSearch] = useState('');
@@ -123,6 +127,35 @@ export default function EventTablesPage() {
     }
   };
 
+  const handleDuplicateTables = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!sourceEventId) return;
+
+    setDuplicating(true);
+    try {
+      const res = await fetch(`${API_URL}/owner/events/${eventId}/tables/duplicate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ source_event_id: sourceEventId }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Errore durante la copia dei tavoli');
+      }
+
+      setShowDuplicateModal(false);
+      setSourceEventId('');
+      refetch();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Errore');
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   const handleDeleteImage = async (imageId: string) => {
     if (!confirm('Rimuovere questa immagine?')) return;
     try {
@@ -158,13 +191,25 @@ export default function EventTablesPage() {
     });
   }, [eventId, loading, tables.length]);
 
-  const zones = ['all', ...Array.from(new Set(tables.map(t => t.zone).filter(Boolean) as string[]))];
+  const areas = [
+    'all',
+    ...Array.from(
+      new Set(
+        tables
+          .map((table) => table.areaName || table.zone)
+          .filter(Boolean) as string[],
+      ),
+    ),
+  ];
+  const sourceEvents = (events ?? []).filter(event => event.id !== eventId);
 
   const filtered = tables.filter((t) => {
     const matchesSearch = search === '' ||
       t.name.toLowerCase().includes(search.toLowerCase()) ||
-      (t.zone ?? '').toLowerCase().includes(search.toLowerCase());
-    const matchesZone = filterZone === 'all' || t.zone === filterZone;
+      (t.zone ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (t.areaName ?? '').toLowerCase().includes(search.toLowerCase());
+    const areaLabel = t.areaName || t.zone || '';
+    const matchesZone = filterZone === 'all' || areaLabel === filterZone;
     const matchesAvailability =
       filterAvailability === 'all' ||
       (filterAvailability === 'available' && t.available) ||
@@ -194,6 +239,13 @@ export default function EventTablesPage() {
               Prenotazioni
             </Link>
             <button
+              onClick={() => setShowDuplicateModal(true)}
+              className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <Copy size={16} />
+              Copia tavoli
+            </button>
+            <button
               onClick={() => setShowForm(true)}
               className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
             >
@@ -215,14 +267,14 @@ export default function EventTablesPage() {
             className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900 text-sm"
           />
         </div>
-        {zones.length > 1 && (
+        {areas.length > 1 && (
           <select
             value={filterZone}
             onChange={e => setFilterZone(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:ring-2 focus:ring-gray-900 outline-none"
           >
-            {zones.map(z => (
-              <option key={z} value={z}>{z === 'all' ? 'Tutte le zone' : z}</option>
+            {areas.map(z => (
+              <option key={z} value={z}>{z === 'all' ? 'Tutte le aree' : z}</option>
             ))}
           </select>
         )}
@@ -278,6 +330,44 @@ export default function EventTablesPage() {
               <button type="submit" disabled={submitting}
                 className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50">
                 {submitting ? 'Creazione...' : 'Aggiungi Tavolo'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showDuplicateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Copia Tavoli Da Un'Altra Serata</h2>
+              <button onClick={() => setShowDuplicateModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleDuplicateTables} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Evento sorgente</label>
+                <select
+                  value={sourceEventId}
+                  onChange={e => setSourceEventId(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
+                >
+                  <option value="">Seleziona evento</option>
+                  {sourceEvents.map((event) => (
+                    <option key={event.id} value={event.id}>
+                      {event.title} · {new Date(event.date).toLocaleDateString('it-IT')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={duplicating || sourceEvents.length === 0}
+                className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50"
+              >
+                {duplicating ? 'Copia in corso...' : 'Duplica tavoli su questa serata'}
               </button>
             </form>
           </div>
@@ -357,7 +447,7 @@ export default function EventTablesPage() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Nome</th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Zona</th>
+                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Area</th>
                 <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Capienza</th>
                 <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Min Spend</th>
                 <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Stato</th>
@@ -368,7 +458,7 @@ export default function EventTablesPage() {
               {filtered.map((table) => (
                 <tr key={table.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium text-gray-900">{table.name}</td>
-                  <td className="px-6 py-4 text-gray-500">{table.zone || '-'}</td>
+                  <td className="px-6 py-4 text-gray-500">{table.areaName || table.zone || '-'}</td>
                   <td className="px-6 py-4 text-gray-500">{table.capacity}</td>
                   <td className="px-6 py-4 text-gray-500">{table.minSpend}</td>
                   <td className="px-6 py-4">

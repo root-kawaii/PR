@@ -80,6 +80,8 @@ export interface TableReservation {
   table: { id: string; name: string; zone?: string };
   event: { id: string; title: string; date: string };
   createdAt: string;
+  maleGuestCount: number;
+  femaleGuestCount: number;
 }
 
 export interface ScanResult {
@@ -99,6 +101,21 @@ export interface EventStatRow {
   date: string;
   reservedTables: number;
   totalTables: number;
+}
+
+export interface EventReservationStats {
+  eventId: string;
+  totalReservations: number;
+  pendingReservations: number;
+  confirmedReservations: number;
+  completedReservations: number;
+  cancelledReservations: number;
+  totalPeople: number;
+  maleGuests: number;
+  femaleGuests: number;
+  totalAmount: string | number;
+  amountPaid: string | number;
+  amountRemaining: string | number;
 }
 
 export interface OwnerStats {
@@ -135,6 +152,8 @@ export interface TableResponse {
   eventId: string;
   name: string;
   zone?: string;
+  areaId?: string;
+  areaName?: string;
   capacity: number;
   minSpend: string;
   totalCost: string;

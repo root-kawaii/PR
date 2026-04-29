@@ -9,6 +9,7 @@ import {
   RefreshControl,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTickets } from '@/hooks/useTickets';
@@ -24,7 +25,6 @@ import { useAuth } from '@/context/AuthContext';
 import { TableReservationDetailModal } from '@/components/reservation/TableReservationDetailModal';
 import { ReservationCodeModal } from '@/components/reservation/ReservationCodeModal';
 import * as Clipboard from 'expo-clipboard';
-import { Alert } from 'react-native';
 import { trackEvent } from '@/config/analytics';
 
 type BookingFilter = 'upcoming' | 'past';
@@ -98,6 +98,7 @@ export default function BookingsScreen() {
   const getReservationStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'confirmed': return theme.success;
+      case 'completed': return theme.info;
       case 'pending': return theme.warning;
       case 'cancelled': return theme.error;
       default: return theme.textTertiary;
@@ -117,11 +118,11 @@ export default function BookingsScreen() {
           ? 'In attesa quote'
           : 'In attesa';
       case 'confirmed':
-        return 'Confermata';
+        return 'Prenotata';
       case 'cancelled':
-        return 'Cancellata';
+        return 'Rifiutata';
       case 'completed':
-        return 'Completata';
+        return 'Accesso effettuato';
       default:
         return reservation.status;
     }
@@ -136,7 +137,7 @@ export default function BookingsScreen() {
     }
 
     if (totalAmount > 0 && paidAmount >= totalAmount) {
-      return 'Tutte le quote del tavolo risultano pagate.';
+      return "Tutte le quote dell'area risultano pagate.";
     }
 
     return 'Pagamento ancora da completare.';

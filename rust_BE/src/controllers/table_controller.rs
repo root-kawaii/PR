@@ -368,11 +368,15 @@ pub async fn get_reservation_by_code(
                 contact_email: reservation.contact_email,
                 contact_phone: reservation.contact_phone,
                 special_requests: reservation.special_requests,
+                manual_notes: reservation.manual_notes,
+                male_guest_count: reservation.male_guest_count,
+                female_guest_count: reservation.female_guest_count,
                 created_at: reservation.created_at.to_rfc3339(),
                 table: TableSummary {
                     id: table.id.to_string(),
                     name: table.name,
                     zone: table.zone,
+                    area_name: table.area_name,
                     capacity: table.capacity,
                     min_spend: format!("{:.2} €", table.min_spend),
                     location_description: table.location_description,
@@ -471,11 +475,19 @@ pub async fn update_reservation(
         &state.db_pool,
         reservation_id,
         req.status,
+        req.table_id
+            .as_deref()
+            .map(Uuid::parse_str)
+            .transpose()
+            .map_err(|_| StatusCode::BAD_REQUEST)?,
         req.num_people,
         req.contact_name,
         req.contact_email,
         req.contact_phone,
         req.special_requests,
+        req.manual_notes,
+        req.male_guest_count,
+        req.female_guest_count,
     )
     .await
     {

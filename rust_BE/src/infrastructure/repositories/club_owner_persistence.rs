@@ -230,7 +230,8 @@ pub async fn get_event_reservations(
                tr.contact_phone, tr.special_requests, tr.reservation_code,
                tr.created_at, tr.updated_at,
                tr.guest_user_ids, tr.payment_ids, tr.ticket_ids,
-               tr.is_manual, tr.manual_notes, tr.payment_link_token
+               tr.is_manual, tr.manual_notes, tr.male_guest_count, tr.female_guest_count,
+               tr.payment_link_token
         FROM table_reservations tr
         WHERE tr.event_id = $1
         ORDER BY tr.created_at DESC
@@ -255,6 +256,8 @@ pub async fn create_manual_reservation(
     contact_email: Option<String>,
     num_people: i32,
     manual_notes: Option<String>,
+    male_guest_count: i32,
+    female_guest_count: i32,
 ) -> Result<TableReservation> {
     let total_amount: Decimal = sqlx::query_scalar("SELECT total_cost FROM tables WHERE id = $1")
         .bind(table_id)
@@ -278,13 +281,15 @@ pub async fn create_manual_reservation(
             id, table_id, user_id, event_id, status, num_people,
             total_amount, amount_paid, contact_name, contact_email, contact_phone,
             special_requests, reservation_code, is_manual, manual_notes,
+            male_guest_count, female_guest_count,
             created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, 'confirmed', $5, $6, 0, $7, $8, $9, NULL, $10, true, $11, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, 'confirmed', $5, $6, 0, $7, $8, $9, NULL, $10, true, $11, $12, $13, NOW(), NOW())
         RETURNING id, table_id, user_id, event_id, status, num_people,
                   total_amount, amount_paid, contact_name, contact_email, contact_phone,
                   special_requests, reservation_code, created_at, updated_at,
                   guest_user_ids, payment_ids, ticket_ids, is_manual, manual_notes,
+                  male_guest_count, female_guest_count,
                   payment_link_token
         "#,
     )
@@ -299,6 +304,8 @@ pub async fn create_manual_reservation(
     .bind(contact_phone)
     .bind(reservation_code)
     .bind(manual_notes)
+    .bind(male_guest_count)
+    .bind(female_guest_count)
     .fetch_one(pool)
     .await?;
     Ok(row)
@@ -322,6 +329,7 @@ pub async fn update_reservation_status(
                   total_amount, amount_paid, contact_name, contact_email, contact_phone,
                   special_requests, reservation_code, created_at, updated_at,
                   guest_user_ids, payment_ids, ticket_ids, is_manual, manual_notes,
+                  male_guest_count, female_guest_count,
                   payment_link_token
         "#,
     )
@@ -386,7 +394,7 @@ pub async fn scan_code(pool: &PgPool, code: &str) -> Result<Option<ScanResult>> 
         let status: String = row.get("status");
         return Ok(Some(ScanResult {
             valid: true,
-            already_used: status == "completed",
+            already_used: matches!(status.as_str(), "completed" | "cancelled"),
             scan_type: "reservation".to_string(),
             guest_name: row.try_get("contact_name").ok(),
             num_people: row.try_get("num_people").ok(),
@@ -482,6 +490,55 @@ pub async fn checkin_by_code(pool: &PgPool, code: &str) -> Result<Option<ScanRes
     }))
 }
 
+pub async fn reject_reservation_by_code(pool: &PgPool, code: &str) -> Result<Option<ScanResult>> {
+    let res_updated = sqlx::query(
+        r#"
+        UPDATE table_reservations
+        SET status = 'cancelled', updated_at = NOW()
+        WHERE reservation_code = $1
+          AND status NOT IN ('completed', 'cancelled')
+        "#,
+    )
+    .bind(code)
+    .execute(pool)
+    .await?;
+
+    if res_updated.rows_affected() > 0 {
+        let row = sqlx::query(
+            r#"
+            SELECT tr.contact_name, tr.num_people, e.title as event_title, tbl.name as table_name
+            FROM table_reservations tr
+            JOIN events e ON e.id = tr.event_id
+            JOIN tables tbl ON tbl.id = tr.table_id
+            WHERE tr.reservation_code = $1
+            "#,
+        )
+        .bind(code)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(r) = row {
+            use sqlx::Row;
+            return Ok(Some(ScanResult {
+                valid: true,
+                already_used: true,
+                scan_type: "reservation".to_string(),
+                guest_name: r.try_get("contact_name").ok(),
+                num_people: r.try_get("num_people").ok(),
+                event_title: r.try_get("event_title").ok(),
+                table_name: r.try_get("table_name").ok(),
+                code: code.to_string(),
+            }));
+        }
+    }
+
+    let existing = scan_code(pool, code).await?;
+    Ok(existing.map(|mut r| {
+        r.already_used = true;
+        r
+    }))
+}
+
 // ============================================================================
 // Owner stats
 // ============================================================================
@@ -518,13 +575,19 @@ pub async fn get_owner_stats(pool: &PgPool, club_id: Uuid) -> Result<OwnerStats>
             e.id::text as event_id,
             e.title,
             e.date,
-            COUNT(tr.id) FILTER (WHERE tr.status IN ('confirmed', 'pending', 'completed')) as reserved_tables,
-            COUNT(t.id) as total_tables
+            (
+                SELECT COUNT(*)
+                FROM table_reservations tr
+                WHERE tr.event_id = e.id
+                  AND tr.status IN ('confirmed', 'pending', 'completed')
+            ) as reserved_tables,
+            (
+                SELECT COUNT(*)
+                FROM tables t
+                WHERE t.event_id = e.id
+            ) as total_tables
         FROM events e
-        LEFT JOIN tables t ON t.event_id = e.id
-        LEFT JOIN table_reservations tr ON tr.event_id = e.id
         WHERE e.club_id = $1
-        GROUP BY e.id, e.title, e.date
         ORDER BY e.created_at DESC
         "#,
     )

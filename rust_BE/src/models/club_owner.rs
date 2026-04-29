@@ -137,6 +137,8 @@ pub struct CreateManualReservationRequest {
     pub contact_email: Option<String>,
     pub num_people: i32,
     pub manual_notes: Option<String>,
+    pub male_guest_count: Option<i32>,
+    pub female_guest_count: Option<i32>,
 }
 
 // ── Reservation status update ────────────────────────────────────────────────
@@ -144,6 +146,32 @@ pub struct CreateManualReservationRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateReservationStatusRequest {
     pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerUpdateReservationRequest {
+    pub status: Option<String>,
+    pub table_id: Option<String>,
+    pub num_people: Option<i32>,
+    pub contact_name: Option<String>,
+    pub contact_email: Option<String>,
+    pub contact_phone: Option<String>,
+    pub special_requests: Option<String>,
+    pub manual_notes: Option<String>,
+    pub male_guest_count: Option<i32>,
+    pub female_guest_count: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DuplicateTablesRequest {
+    pub source_event_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckinDecisionRequest {
+    pub decision: Option<String>,
 }
 
 // ── QR scan result ───────────────────────────────────────────────────────────
@@ -179,4 +207,21 @@ pub struct OwnerStats {
     pub active_reservations: i64,
     pub total_revenue: Decimal,
     pub events: Vec<EventStatRow>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct EventReservationStatsResponse {
+    pub event_id: String,
+    pub total_reservations: i64,
+    pub pending_reservations: i64,
+    pub confirmed_reservations: i64,
+    pub completed_reservations: i64,
+    pub cancelled_reservations: i64,
+    pub total_people: i64,
+    pub male_guests: i64,
+    pub female_guests: i64,
+    pub total_amount: Decimal,
+    pub amount_paid: Decimal,
+    pub amount_remaining: Decimal,
 }

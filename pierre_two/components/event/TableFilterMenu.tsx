@@ -30,8 +30,15 @@ interface TableFilterMenuProps {
 
 interface TableSection {
   title: string;
+  data: AreaOption[];
+}
+
+interface AreaOption {
+  title: string;
   availableCount: number;
-  data: Table[];
+  representativeTable: Table;
+  tableIds: string[];
+  pricePerPerson: number;
 }
 
 // Parse price string like "50.00 €" to number
@@ -104,39 +111,6 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
     }
   }, [visible, slideAnim, backdropAnim]);
 
-  // Filter and sort tables
-  const filteredTables = useMemo(() => {
-    return tables
-      .filter((table) => {
-        // Only show available tables
-        if (!table.available) return false;
-
-        // Search filter (name)
-        if (searchText) {
-          const searchLower = searchText.toLowerCase();
-          const matchesTableName = table.name.toLowerCase().includes(searchLower);
-          const matchesAreaName = getAreaLabel(table).toLowerCase().includes(searchLower);
-
-          if (!matchesTableName && !matchesAreaName) {
-            return false;
-          }
-        }
-
-        // Price per person filter
-        const pricePerPerson = getPricePerPerson(table);
-        if (pricePerPerson > maxPriceFilter) {
-          return false;
-        }
-
-        return true;
-      })
-      .sort((a, b) => {
-        const priceA = getPricePerPerson(a);
-        const priceB = getPricePerPerson(b);
-        return sortAscending ? priceA - priceB : priceB - priceA;
-      });
-  }, [tables, searchText, maxPriceFilter, sortAscending]);
-
   const getAreaLabel = (table: Table): string => {
     const areaName = table.areaName?.trim();
     if (areaName) return areaName;
@@ -147,21 +121,29 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
     return "A";
   };
 
-  // Store callback in ref to avoid infinite loops
-  const onFilterChangeRef = useRef(onFilterChange);
-  onFilterChangeRef.current = onFilterChange;
+  const filteredAreas = useMemo(() => {
+    const visibleTables = tables
+      .filter((table) => {
+        if (!table.available) return false;
 
-  // Notify parent of filtered table IDs when filter changes
-  useEffect(() => {
-    const filteredIds = filteredTables.map((t) => t.id);
-    onFilterChangeRef.current?.(filteredIds);
-  }, [filteredTables]);
+        if (searchText) {
+          const searchLower = searchText.toLowerCase();
+          if (!getAreaLabel(table).toLowerCase().includes(searchLower)) {
+            return false;
+          }
+        }
 
-  // Group tables by area
-  const sections = useMemo((): TableSection[] => {
+        const pricePerPerson = getPricePerPerson(table);
+        return pricePerPerson <= maxPriceFilter;
+      })
+      .sort((a, b) => {
+        const priceA = getPricePerPerson(a);
+        const priceB = getPricePerPerson(b);
+        return sortAscending ? priceA - priceB : priceB - priceA;
+      });
+
     const grouped = new Map<string, Table[]>();
-
-    filteredTables.forEach((table) => {
+    visibleTables.forEach((table) => {
       const areaLabel = getAreaLabel(table);
       if (!grouped.has(areaLabel)) {
         grouped.set(areaLabel, []);
@@ -169,25 +151,35 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
       grouped.get(areaLabel)!.push(table);
     });
 
-    return Array.from(grouped.entries())
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([areaLabel, areaTables]) => ({
-        title: areaLabel,
-        availableCount: areaTables.length,
-        data: areaTables,
-      }));
-  }, [filteredTables]);
+    return Array.from(grouped.entries()).map(([areaLabel, areaTables]) => ({
+      title: areaLabel,
+      availableCount: areaTables.length,
+      representativeTable: areaTables[0],
+      tableIds: areaTables.map((table) => table.id),
+      pricePerPerson: getPricePerPerson(areaTables[0]),
+    }));
+  }, [tables, searchText, maxPriceFilter, sortAscending]);
 
-  const handleTablePress = (table: Table) => {
-    onTableSelect(table);
+  // Store callback in ref to avoid infinite loops
+  const onFilterChangeRef = useRef(onFilterChange);
+  onFilterChangeRef.current = onFilterChange;
+
+  // Notify parent of filtered table IDs when filter changes
+  useEffect(() => {
+    const filteredIds = filteredAreas.flatMap((area) => area.tableIds);
+    onFilterChangeRef.current?.(filteredIds);
+  }, [filteredAreas]);
+
+  const sections = useMemo((): TableSection[] => {
+    return [{ title: "Aree disponibili", data: filteredAreas }];
+  }, [filteredAreas]);
+
+  const handleAreaPress = (area: AreaOption) => {
+    onTableSelect(area.representativeTable);
     onClose();
   };
 
-  const renderSectionHeader = ({
-    section,
-  }: {
-    section: TableSection;
-  }) => (
+  const renderSectionHeader = ({ section }: { section: TableSection }) => (
     <View
       style={[
         styles.sectionHeader,
@@ -200,15 +192,11 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
       <ThemedText style={[styles.sectionTitle, { color: theme.secondary }]}>
         {section.title}
       </ThemedText>
-      <ThemedText style={[styles.sectionCount, { color: theme.textTertiary }]}>
-        ({section.availableCount} disponibili)
-      </ThemedText>
     </View>
   );
 
-  const renderTableRow = ({ item }: { item: Table }) => {
-    const pricePerPerson = getPricePerPerson(item);
-    const isSelected = item.id === selectedTableId;
+  const renderAreaRow = ({ item }: { item: AreaOption }) => {
+    const isSelected = item.tableIds.includes(selectedTableId ?? "");
 
     return (
       <TouchableOpacity
@@ -217,23 +205,26 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
           { borderBottomColor: theme.border },
           isSelected && { backgroundColor: `${theme.secondary}18` },
         ]}
-        onPress={() => handleTablePress(item)}
+        onPress={() => handleAreaPress(item)}
         activeOpacity={0.7}
       >
         <View style={styles.tableNameContainer}>
           <ThemedText style={[styles.tableName, { color: theme.text }]}>
-            {item.name}
+            {item.title}
+          </ThemedText>
+          <ThemedText style={[styles.sectionCount, { color: theme.textTertiary }]}>
+            {item.availableCount} tavoli disponibili in quest'area
           </ThemedText>
         </View>
         <View style={styles.tableCapacity}>
           <IconSymbol name="person.2.fill" size={15} color={theme.info} />
           <ThemedText style={[styles.capacityText, { color: theme.textSecondary }]}>
-            {item.capacity}
+            {item.representativeTable.capacity}
           </ThemedText>
         </View>
         <View style={styles.tablePrice}>
           <ThemedText style={[styles.priceText, { color: theme.text }]}>
-            {pricePerPerson.toFixed(0)}€
+            {item.pricePerPerson.toFixed(0)}€
           </ThemedText>
           <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>
             /persona
@@ -308,7 +299,7 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
           />
           <TextInput
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Cerca tavolo..."
+            placeholder="Cerca area..."
             placeholderTextColor={theme.textTertiary}
             value={searchText}
             onChangeText={setSearchText}
@@ -371,18 +362,18 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
           </ThemedText>
         </TouchableOpacity>
 
-        {/* Table List */}
+        {/* Area List */}
         <SectionList
           sections={sections}
-          keyExtractor={(item) => item.id}
-          renderItem={renderTableRow}
+          keyExtractor={(item) => item.title}
+          renderItem={renderAreaRow}
           renderSectionHeader={renderSectionHeader}
           stickySectionHeadersEnabled
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <ThemedText style={[styles.emptyText, { color: theme.textTertiary }]}>
-                Nessun tavolo trovato
+                Nessuna area trovata
               </ThemedText>
             </View>
           }
