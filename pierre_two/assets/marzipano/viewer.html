@@ -283,6 +283,25 @@
       transform: translateY(0);
     }
 
+    /* Area Hotspot */
+    .hotspot.area {
+      background: rgba(245, 158, 11, 0.9);
+      color: #fff;
+      border: 2px solid rgba(255, 255, 255, 0.8);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .hotspot.area:active {
+      transform: scale(0.93);
+    }
+
     /* Scene Link Hotspot */
     .hotspot.scene-link {
       background: rgba(255, 255, 255, 0.95);
@@ -585,7 +604,7 @@
 
     // Create a single hotspot
     function createHotspot(hotspot) {
-      const { id, type, yaw, pitch, tableId, tableName, available, targetSceneId, label } = hotspot;
+      const { id, type, yaw, pitch, tableId, tableName, available, targetSceneId, label, areaId, areaName } = hotspot;
 
       // Create hotspot element
       const element = document.createElement('div');
@@ -659,6 +678,14 @@
             };
           }
         }
+      } else if (type === 'area') {
+        element.classList.add('area');
+        element.innerHTML = '◆';
+        element.title = areaName || 'Area';
+        element.onclick = (e) => {
+          e.stopPropagation();
+          handleAreaClick(areaId, areaName);
+        };
       } else if (type === 'scene-link') {
         element.classList.add('scene-link');
         element.innerHTML = `<div>${label || '→'}</div>`;
@@ -795,6 +822,15 @@
         notifyReactNative({ type: 'ERROR', message: 'Scene switch failed: ' + error.message });
         isSwitching = false;
       }
+    }
+
+    // Handle area hotspot click
+    function handleAreaClick(areaId, areaName) {
+      notifyReactNative({
+        type: 'AREA_CLICK',
+        areaId: areaId,
+        areaName: areaName || ''
+      });
     }
 
     // Handle table hotspot click
