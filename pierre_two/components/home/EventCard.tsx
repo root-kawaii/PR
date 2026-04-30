@@ -11,12 +11,9 @@ type EventCardProps = {
 };
 
 const formatEventTime = (event: Event) => {
-  // Prefer the time field if available
   if (event.time) {
     return event.time;
   }
-
-  // Fallback to parsing the date field
   try {
     const date = new Date(event.date);
     const hours = date.getHours().toString().padStart(2, '0');
@@ -24,6 +21,17 @@ const formatEventTime = (event: Event) => {
     return `${hours}:${minutes}`;
   } catch (e) {
     return '';
+  }
+};
+
+const formatEventDate = (dateStr: string) => {
+  const days = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+  const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+  try {
+    const date = new Date(dateStr);
+    return `${days[date.getDay()]} ${date.getDate()} ${months[date.getMonth()]}`;
+  } catch (e) {
+    return dateStr;
   }
 };
 
@@ -95,12 +103,6 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
             <ThemedText style={[styles.timeBadgeText, { color: theme.text }]}>{formatEventTime(event)}</ThemedText>
           </View>
         </View>
-        {event.status && (
-          <View style={[styles.statusBadge, { backgroundColor: theme.error }]}>
-            <ThemedText style={styles.statusText}>{event.status}</ThemedText>
-          </View>
-        )}
-
         <View
           style={[
             styles.infoPanel,
@@ -110,17 +112,13 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
             },
           ]}
         >
-          <View style={styles.kickerRow}>
-            <ThemedText style={[styles.kickerText, { color: theme.primary }]}>
-              Evento in evidenza
-            </ThemedText>
-            <ThemedText style={[styles.kickerDivider, { color: theme.textTertiary }]}>
-              •
-            </ThemedText>
-            <ThemedText style={[styles.kickerText, { color: theme.textTertiary }]}>
-              {event.status || 'Disponibile'}
-            </ThemedText>
-          </View>
+          {event.status && (
+            <View style={styles.kickerRow}>
+              <ThemedText style={[styles.kickerText, { color: theme.error }]}>
+                {event.status}
+              </ThemedText>
+            </View>
+          )}
           <View style={styles.titleRow}>
             <ThemedText style={[styles.eventTitle, { color: theme.text }]} numberOfLines={2}>
               {event.title}
@@ -139,26 +137,8 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
           <View style={styles.metaRow}>
             <IconSymbol name="calendar" size={13} color={theme.textTertiary} />
             <ThemedText style={[styles.metaText, { color: theme.textTertiary }]} numberOfLines={1}>
-              {event.date}
+              {formatEventDate(event.date)}
             </ThemedText>
-          </View>
-
-          {event.genres && event.genres.length > 0 && (
-            <View style={styles.genreRow}>
-              {event.genres.map(g => (
-                <View key={g.id} style={[styles.genreBadge, { backgroundColor: g.color }]}>
-                  <ThemedText style={styles.genreBadgeText}>{g.name}</ThemedText>
-                </View>
-              ))}
-            </View>
-          )}
-
-          <View style={styles.footerRow}>
-            <View style={[styles.ctaPill, { backgroundColor: theme.primary }]}>
-              <ThemedText style={[styles.ctaText, { color: theme.textInverse }]}>
-                Apri evento
-              </ThemedText>
-            </View>
           </View>
         </View>
       </View>
@@ -212,15 +192,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statusBadge: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    zIndex: 2,
-  },
   timeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -235,16 +206,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  eventInfo: {
-    position: 'absolute',
-  },
   infoPanel: {
     position: 'absolute',
     left: 16,
@@ -255,19 +216,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   kickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   kickerText: {
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.7,
-  },
-  kickerDivider: {
-    fontSize: 10,
   },
   titleRow: {
     marginBottom: 10,
@@ -287,39 +242,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '500',
-  },
-  genreRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
-  },
-  genreBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  genreBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  ctaPill: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-  },
-  ctaText: {
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
   },
 });
