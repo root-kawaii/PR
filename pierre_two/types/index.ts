@@ -65,13 +65,16 @@ export type TableReservation = {
   contactEmail: string;
   contactPhone: string;
   specialRequests?: string;
+  manualNotes?: string;
+  maleGuestCount?: number;
+  femaleGuestCount?: number;
   createdAt: string;
-  participants?: Array<{
+  participants?: {
     userId: string;
     userName: string;
     numPeople: number;
     amountPaid: string;
-  }>;
+  }[];
   paymentShares?: PaymentShare[];
   shareLink?: string;
   slotsFilled?: number;
@@ -80,6 +83,7 @@ export type TableReservation = {
     id: string;
     name: string;
     zone?: string;
+    areaName?: string;
     capacity: number;
     minSpend: string;
     totalCost?: string;
