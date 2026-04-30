@@ -162,8 +162,6 @@ export interface TableResponse {
   locationDescription?: string;
   features?: string[];
   marzipanoPosition?: MarzipanoPosition | null;
-  areaId?: string;
-  areaName?: string;
 }
 
 export interface Area {
