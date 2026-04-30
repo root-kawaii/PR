@@ -10,8 +10,9 @@ use crate::controllers::club_owner_controller::{
     delete_table_image_handler, duplicate_event_tables_handler, get_event_reservation_stats_handler,
     get_event_reservations_handler, get_my_club, get_my_club_events, get_my_club_images,
     get_my_club_stripe_status, get_my_club_tables, get_owner_stats_handler,
-    get_table_images_handler, scan_code_handler, update_club_event, update_my_club,
-    update_reservation_handler, update_reservation_status_handler,
+    get_table_images_handler, scan_code_handler, update_club_event,
+    update_club_marzipano_config_handler, update_event_marzipano_config_handler, update_my_club,
+    update_reservation_handler, update_reservation_status_handler, upload_panorama_handler,
 };
 use crate::controllers::event_image_controller::upload_event_image;
 
@@ -32,6 +33,10 @@ pub fn router() -> Router<Arc<AppState>> {
             axum::routing::delete(delete_my_club_image),
         )
         .route(
+            "/owner/club/marzipano-config",
+            axum::routing::put(update_club_marzipano_config_handler),
+        )
+        .route(
             "/owner/events",
             get(get_my_club_events).post(create_club_event),
         )
@@ -50,6 +55,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/owner/events/:event_id/tables/duplicate",
             axum::routing::post(duplicate_event_tables_handler),
+        )
+        .route(
+            "/owner/events/:event_id/marzipano-config",
+            axum::routing::put(update_event_marzipano_config_handler),
         )
         .route(
             "/owner/events/:event_id/reservations",
@@ -78,6 +87,14 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/owner/table-images/:id",
             axum::routing::delete(delete_table_image_handler),
+        )
+        .merge(
+            Router::new()
+                .route(
+                    "/owner/uploads/panorama",
+                    axum::routing::post(upload_panorama_handler),
+                )
+                .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024)),
         )
         .route("/owner/scan/:code", get(scan_code_handler))
         .route("/owner/checkin/:code", axum::routing::post(checkin_handler))

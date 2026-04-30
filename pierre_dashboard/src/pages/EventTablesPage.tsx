@@ -238,6 +238,12 @@ export default function EventTablesPage() {
               <ListOrdered size={16} />
               Prenotazioni
             </Link>
+            <Link
+              to={`/dashboard/events/${eventId}/tour`}
+              className="flex items-center gap-2 border border-pink-300 text-pink-700 px-4 py-2 rounded-lg hover:bg-pink-50 transition-colors text-sm"
+            >
+              Tour 360°
+            </Link>
             <button
               onClick={() => setShowDuplicateModal(true)}
               className="flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm"

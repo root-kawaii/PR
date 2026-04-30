@@ -256,6 +256,29 @@ pub async fn delete_table(pool: &PgPool, table_id: Uuid) -> Result<bool, sqlx::E
     Ok(result.rows_affected() > 0)
 }
 
+/// Overwrite a table's `marzipano_position` (or clear it when `None`).
+/// Returns true if the table exists.
+pub async fn update_marzipano_position(
+    pool: &PgPool,
+    table_id: Uuid,
+    position: Option<JsonValue>,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE tables
+        SET marzipano_position = $1,
+            updated_at = NOW()
+        WHERE id = $2
+        "#,
+    )
+    .bind(position)
+    .bind(table_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 // ============================================================================
 // Table Reservations CRUD
 // ============================================================================
