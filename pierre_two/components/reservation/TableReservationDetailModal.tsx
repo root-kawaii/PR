@@ -58,6 +58,11 @@ export const TableReservationDetailModal = ({
 
   const totalAmount = parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, ""));
   const amountPaid = parseFloat(reservation.amountPaid.replace(/[^0-9.]/g, ""));
+  const tableAreaLabel =
+    reservation.table?.areaName?.trim() ||
+    reservation.table?.zone?.trim() ||
+    reservation.table?.name?.trim() ||
+    "area riservata";
 
   const fetchPaymentStatus = async () => {
     try {
@@ -93,10 +98,10 @@ export const TableReservationDetailModal = ({
         reservation_id: reservation.id,
       });
       await Share.share({
-        message: `Unisciti al mio tavolo "${reservation.table?.name || ""}"! Paga la tua quota qui: ${shareLink}`,
+        message: `Unisciti alla mia area "${tableAreaLabel}"! Paga la tua quota qui: ${shareLink}`,
         url: shareLink,
       });
-    } catch (_) {}
+    } catch {}
   };
 
   const getStatusColor = (status: string) => {
@@ -119,12 +124,12 @@ export const TableReservationDetailModal = ({
 
   const getStatusText = (status: string) => {
     switch (status.toLowerCase()) {
-      case "confirmed": return "Confermata";
+      case "confirmed": return "Prenotata";
       case "pending": return "In attesa";
       case "checkout_pending": return "In pagamento";
       case "paid": return "Pagato";
-      case "completed": return "Completata";
-      case "cancelled": return "Cancellata";
+      case "completed": return "Accesso effettuato";
+      case "cancelled": return "Rifiutata";
       case "expired": return "Scaduto";
       default: return status;
     }
@@ -155,7 +160,7 @@ export const TableReservationDetailModal = ({
     reservation.status.toLowerCase() === "pending" && amountPaid > 0 && amountPaid < totalAmount
       ? "La tua quota iniziale e' stata ricevuta. Mancano ancora le quote degli ospiti."
       : reservation.status.toLowerCase() === "confirmed" && guestShares.length > 0
-        ? "Tutte le quote del tavolo risultano pagate."
+        ? "Tutte le quote dell'area risultano pagate."
         : null;
 
   return (
@@ -186,7 +191,7 @@ export const TableReservationDetailModal = ({
                   <View style={[styles.heroPill, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}40` }]}>
                     <IconSymbol name="wineglass.fill" size={12} color={theme.primary} />
                     <ThemedText style={[styles.heroPillText, { color: theme.primary }]}>
-                      Prenotazione tavolo
+                      Prenotazione area
                     </ThemedText>
                   </View>
                   <ThemedText style={[styles.eventTitle, { color: theme.text }]}>
