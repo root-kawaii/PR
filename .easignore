@@ -1,0 +1,45 @@
+# Exclude everything except pierre_two
+pierre_dashboard/
+rust_BE/
+DB/
+docs/
+daily_progress/
+examples/
+scripts/
+
+# Root-level files not needed for the build
+.claude/
+.codex/
+.github/
+.idea/
+.klp-pg/
+.git/
+CLAUDE.md
+CODEX.md
+README.md
+docker-compose.yml
+fix_db.sh
+hash_password.js
+stress_test.sh
+.mcp.json
+
+# Dependencies
+node_modules/
+pierre_two/node_modules/
+
+# Expo cache & builds
+pierre_two/.expo/
+pierre_two/dist/
+pierre_two/dist-test/
+pierre_two/web-build/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Local env
+.env
+.env*.local
+
+# TypeScript incremental
+*.tsbuildinfo

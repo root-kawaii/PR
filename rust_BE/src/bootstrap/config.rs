@@ -56,8 +56,10 @@ pub struct JobsConfig {
 #[derive(Clone, Debug)]
 pub struct StorageConfig {
     pub supabase_url: Option<String>,
-    pub service_role_key: Option<String>,
+    pub supabase_service_role_key: Option<String>,
     pub event_images_bucket: String,
+    pub panoramas_bucket: String,
+    pub max_panorama_bytes: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -188,12 +190,21 @@ impl AppConfig {
             .and_then(|v| v.parse().ok())
             .unwrap_or(3000);
 
-        let supabase_url = env::var("SUPABASE_URL").ok().filter(|s| !s.is_empty());
+        let supabase_url = env::var("SUPABASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.trim_end_matches('/').to_string());
         let supabase_service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY")
             .ok()
             .filter(|s| !s.is_empty());
         let event_images_bucket =
             env::var("SUPABASE_EVENT_IMAGES_BUCKET").unwrap_or_else(|_| "event-images".to_string());
+        let panoramas_bucket =
+            env::var("SUPABASE_PANORAMAS_BUCKET").unwrap_or_else(|_| "panoramas".to_string());
+        let max_panorama_bytes = env::var("MAX_PANORAMA_BYTES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(50 * 1024 * 1024);
 
         Self {
             database: DatabaseConfig {
@@ -235,8 +246,10 @@ impl AppConfig {
             },
             storage: StorageConfig {
                 supabase_url,
-                service_role_key: supabase_service_role_key,
+                supabase_service_role_key,
                 event_images_bucket,
+                panoramas_bucket,
+                max_panorama_bytes,
             },
             app_base_url,
             owner_app_base_url,

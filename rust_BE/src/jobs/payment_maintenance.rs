@@ -577,7 +577,7 @@ async fn run_payment_share_expiry(state: &Arc<AppState>) {
             tr.contact_name         AS owner_contact_name,
             u.phone_number          AS owner_phone,
             u.expo_push_token       AS owner_push_token,
-            e.name                  AS event_name,
+            e.title                 AS event_name,
             t.name                  AS table_name
         FROM reservation_payment_shares rps
         JOIN table_reservations tr ON tr.id = rps.reservation_id
