@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
   },
   topIntro: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     marginBottom: 18,
   },
   topIntroRow: {
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   dateSection: {
-    marginHorizontal: 16,
+    marginHorizontal: 14,
     marginBottom: 18,
     paddingTop: 8,
     paddingBottom: 2,
@@ -505,14 +505,14 @@ const styles = StyleSheet.create({
     height: 3,
     width: 56,
     borderRadius: 999,
-    marginLeft: 16,
+    marginLeft: 14,
     marginBottom: 12,
   },
   dateHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     marginBottom: 10,
   },
   dateHeaderCopy: {
@@ -547,7 +547,7 @@ const styles = StyleSheet.create({
   },
   eventsRow: {},
   eventsRowContent: {
-    paddingLeft: 16,
+    paddingLeft: 14,
     paddingRight: 28,
     paddingBottom: 8,
   },

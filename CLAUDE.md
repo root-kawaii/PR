@@ -195,5 +195,8 @@ Payment mutations accept an `Idempotency-Key` header. The `IdempotencyService` s
 
 ## Workflow
 
+### Pull requests e issue linking
+Whenever creating a PR that resolves a GitHub issue, always include `Closes #<issue-number>` (or `Fixes #` / `Resolves #`) in the PR body so the issue is auto-closed on merge.
+
 ### Before committing
 Always propose updating (or creating) the daily progress log in `docs/daily-progress/` before creating a git commit. File name format: `YYYY-MM-DD-<short-slug>.md`. Follow the structure of existing files in that folder: Overview → Changes grouped by layer (Backend / Dashboard / Mobile / Database) → Files Modified table.
