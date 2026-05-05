@@ -1,259 +1,345 @@
-# PROGETTO PIERRE v0.x – Contract File
+# Pierre v0 — Contract
 
-**Status**: In planning  
-**Last Updated**: 2026-04-30  
+**Status**: Active development
+**Last Updated**: 2026-05-06
 
 ---
 
 ## Team
 
-| Membro | Ruolo | Focus |
-|--------|-------|-------|
-| **Vale** | Dev | `pierre_dashboard` (web), flexible |
-| **Regge** | Dev | `pierre_two` (mobile), `rust_BE`, flexible |
-| **Matte** | Business | Prodotto, vendor relations |
-| **Ale** | Business | Prodotto, vendor relations |
+| Member    | Role     | Focus                                      |
+| --------- | -------- | ------------------------------------------ |
+| **Vale**  | Dev      | `pierre_dashboard` (web), flexible         |
+| **Regge** | Dev      | `pierre_two` (mobile), `rust_BE`, flexible |
+| **Matte** | Business | Product, vendor relations                  |
+| **Ale**   | Business | Product, vendor relations                  |
 
 ---
 
 ## Overview
 
-Questo documento traccia i requisiti per le prossime versioni di Pierre, coordinando il lavoro tra i package:
+This document tracks v0 requirements for Pierre across packages:
+
 - `pierre_two` (React Native mobile)
 - `pierre_dashboard` (React + Vite web)
 - `rust_BE` (Axum backend)
-- `DB` (PostgreSQL)
+- `DB` (PostgreSQL on Supabase)
+
+Each requirement below is mapped 1:1 to a GitHub issue. Items already done in previous sprints are kept as a "Done" appendix for traceability.
 
 ---
 
-## Requisiti Implementativi
+## Issue index
 
-### 0.1 – Gestire le aree e tavoli per locale
-**Descrizione**: Configurazione flessibile di aree e tavoli, con possibilità di override per serata.
+| ID | Title                                                          | Priority | Packages              |
+| -- | -------------------------------------------------------------- | -------- | --------------------- |
+| A  | feat(dashboard): club-level areas & tables management          | high     | dashboard, backend, db |
+| F  | feat(app): area-based reservation flow with auto table assign  | high     | mobile, backend        |
+| G  | fix(app): area "minimum per person" and capacity counter sync   | high     | mobile, backend        |
+| H  | fix(app): reservation blocks first available table in area     | high     | mobile, backend        |
+| I  | fix(app): "Show QR" CTA broken/missing on ticket & reservation | high     | mobile                 |
+| C  | feat(stats): expected incomes & extended event statistics       | medium   | dashboard, backend     |
+| E  | feat(reservations): formal state machine for reservation status | medium   | backend, db, dashboard |
+| B  | refactor: soft-deprecate table-level photos & "prenotazioni"   | low      | dashboard, backend     |
+| D  | feat(reservations): audit log for reservation changes          | low      | dashboard, backend, db |
+| J  | feat(app): improve scene navigation in Marzipano 360° viewer   | low      | mobile                 |
 
-**Owner**: 
-- [ ] Vale
-- [ ] Regge
-
-**Package coinvolti**:
-- `rust_BE`: Endpoint CRUD per aree/tavoli, override per serata
-- `DB`: Schema per aree, tavoli, override_event
-- `pierre_dashboard`: UI per configurazione
-
-**Dettagli**:
-- [ ] Modello dati per aree e tavoli
-- [ ] Modello dati per override per serata
-- [ ] API endpoints (GET, POST, PUT, DELETE)
-- [ ] Dashboard UI per gestione
+Priority legend: `high` = must ship in v0 / blocker. `medium` = ship in v0 if time. `low` = backlog.
 
 ---
 
-### 0.2 – Togliere azioni sul tavolo
-**Descrizione**: Rimuovere azioni "foto" e "prenotazioni" a livello tavolo. Foto solo a livello locale/evento.
+## Requirements
 
-**Owner**:
-- [ ] Vale
-- [ ] Regge
+### A — feat(dashboard): club-level areas & tables management
 
-**Package coinvolti**:
-- `rust_BE`: Rimuovere endpoint relativi a foto su tavolo
-- `DB`: Deprecare/rimuovere colonne
-- `pierre_dashboard`: Rimuovere UI per foto su tavolo
+**Priority**: high
+**Labels**: `area:dashboard`, `area:backend`, `area:db`, `type:feat`, `priority:high`
+**Owner**: Vale
+**Closes**: 0.1 (phase 1)
 
-**Dettagli**:
-- Attualmente: "foto" e "prenotazioni" su tavolo
-- A tendere: foto solo a livello locale e al massimo sull'evento
-- [ ] Identificare colonne/tabelle da deprecare
-- [ ] Migrare/rimuovere dati legacy
-- [ ] Aggiornare API
-- [ ] Aggiornare dashboard
+**Description**
 
----
+Today tables are managed per-event under `EventTablesPage` (`/dashboard/events/:id/tables`). We move table management to the **club level**: areas and tables are configured once for the club, and every event reuses them. Clicking an event card should now go directly to its reservations page.
 
-### 0.3 – Migliorare dashboard con statistiche
-**Descrizione**: Aggiungere statistiche per locale e serata.
+**Acceptance criteria**
 
-**Owner**:
-- [ ] Vale
-- [ ] Regge
+- [ ] New page reachable from the main dashboard nav (e.g. `/dashboard/club/areas`) listing areas of the current club.
+- [ ] Owner can create/rename/delete an area (name, optional min spend per person, optional capacity).
+- [ ] Owner can create/rename/delete a table inside an area (name, capacity).
+- [ ] `EventsPage` event card click → navigates to `/dashboard/events/:id/reservations` (not `/tables`).
+- [ ] `EventTablesPage` route is removed from `pierre_dashboard` and corresponding nav links updated.
+- [ ] Backend: `GET/POST/PATCH/DELETE /owner/areas`, `GET/POST/PATCH/DELETE /owner/tables` (scoped to authenticated club owner).
+- [ ] DB migration: new `areas` table, `tables` gains `area_id` FK, drop the per-event coupling on `tables` (or backfill area from current data).
+- [ ] All existing reservations remain valid after the migration (`table_id` stays unchanged; tables now belong to areas instead of events).
 
-**Package coinvolti**:
-- `rust_BE`: Endpoint per statistiche
-- `DB`: Query aggregate (M/F, expected incomes, etc.)
-- `pierre_dashboard`: Widgets per visualizzazione
+**Test plan**
 
-**Statistiche richieste**:
-- Divisione maschio/femmina
-- Expected incomes
-- Altri dati statistici (TBD con team)
+- [ ] Manual: create 2 areas with 3 tables each, verify they appear when creating a new event.
+- [ ] Manual: rename an area, verify reservations still resolve.
+- [ ] Manual: delete a table that has no reservation → succeeds; delete a table with reservations → blocked with clear error.
+- [ ] Backend tests: CRUD endpoints covered, auth scope enforced.
+- [ ] Migration dry-run on a Supabase branch with a copy of prod data.
 
-**Dettagli**:
-- [ ] Definire endpoint `/stats/{locale_id}/{event_id}`
-- [ ] Definire schema risposta
-- [ ] Query aggregate sul DB
-- [ ] Dashboard widgets (charts, cards, etc.)
+**Out of scope (phase 2)**
 
-**Implementato (commit ad198c6)**:
-- [x] Colonne `male_guest_count` / `female_guest_count` su `table_reservations` (migration 043)
-- [x] Endpoint `/owner/events/:id/stats` con `maleGuests` / `femaleGuests`
-- [x] Widget M/F e totale persone in `EventReservationsPage`
-- [ ] Expected incomes — non ancora implementato
-- [ ] Altri dati statistici TBD
+- Per-event override of capacity / availability of areas and tables.
 
 ---
 
-### 0.4 – Gestire info a livello di prenotazione
-**Descrizione**: Permettere modifica completa della prenotazione e assegnazione tavolo.
+### B — refactor: soft-deprecate table-level photos & "prenotazioni" action
 
-**Owner**:
-- [ ] Vale
-- [ ] Regge
+**Priority**: low
+**Labels**: `area:dashboard`, `area:backend`, `type:refactor`, `priority:low`
+**Owner**: Regge
+**Closes**: 0.2
 
-**Package coinvolti**:
-- `rust_BE`: Endpoint PATCH per prenotazione
-- `DB`: Schema prenotazione (già exists, aggiornare)
-- `pierre_dashboard`: UI modale per modifica (vedi 0.7)
+**Description**
 
-**Campi modificabili**:
-- Numero persone
-- Numero maschi/femmine
-- Stato
-- Tavolo associato (vedi 0.4.1)
+Photos and the "prenotazioni" action currently exposed at the **table** level are being removed. Photos belong at club / event level only. This is a soft deprecation: hide UI and API surface, keep DB columns intact for now (no data loss).
 
-**Dettagli**:
-- [x] Endpoint `PATCH /owner/reservations/:id` — implementato
-- [x] Tutti i campi modificabili: persone, maschi/femmine, stato, tavolo, contatti, note
-- [x] Validazione conteggi genere (maleCount + femaleCount ≤ numPeople)
-- [x] UI modale in dashboard
-- [ ] Audit log per tracciare modifiche — non ancora implementato
+**Acceptance criteria**
 
----
+- [ ] Dashboard: hide all UI controls for photos on tables and the table-level "prenotazioni" action.
+- [ ] Backend: mark table-photo endpoints as deprecated (return `410 Gone` or remove from router) — keep DB columns.
+- [ ] DB columns are left in place; a follow-up issue (phase 2) will hard-drop them once we are sure nothing reads them.
+- [ ] No mobile-app surface affected (tables aren't selected by users — see F).
 
-#### 0.4.1 – Cambio tavolo facile
-**Descrizione**: Il gestore deve poter facilmente cambiare il tavolo associato a una prenotazione.
+**Test plan**
 
-**UX**: 
-- Modale di modifica prenotazione con dropdown/select tavoli disponibili
-- [x] Logica per filtrare tavoli disponibili (per evento)
-- [x] Aggiornamento tavolo in prenotazione
-- [x] Feedback visuale
-- [x] Cambio tavolo inline direttamente dalla lista prenotazioni (senza aprire il modale)
+- [ ] Manual: confirm dashboard no longer renders any table-photo UI.
+- [ ] Manual: hit deprecated endpoints → expected error.
+- [ ] Grep `pierre_dashboard/src` and `rust_BE/src` for "table_photo" references → none in active code paths.
 
 ---
 
-### 0.5 – Stati della prenotazione
-**Descrizione**: Workflow degli stati di prenotazione.
+### C — feat(stats): expected incomes & extended event statistics
 
-**Owner**:
-- [ ] Vale
-- [ ] Regge
+**Priority**: medium
+**Labels**: `area:dashboard`, `area:backend`, `type:feat`, `priority:medium`
+**Owner**: TBD
+**Closes**: 0.3 (residual)
 
-**Package coinvolti**:
-- `rust_BE`: State machine logic
-- `DB`: Campo `status` enum
-- `pierre_dashboard`: UI per transizione stati (vedi 0.7)
+**Description**
 
-**Stati**:
-1. **"in_attesa"** – numero minimo non raggiunto
-2. **"prenotato"** – numero minimo raggiunto
-3. **"accesso_effettuato"** – QR scannerizzato correttamente
-4. **"accesso_rifiutato"** – QR scannerizzato, ma buttafuori ha rifiutato (con giustificativo opzionale)
-5. **"cancellato"** – rimosso da utente o gestore
+Extend `GET /owner/events/:id/stats` (M/F counts already shipped in commit `ad198c6`) with **expected incomes** and additional statistics to be defined with the business team.
 
-**Dettagli**:
-- [ ] Enum nel DB
-- [ ] Transizioni valide tra stati (state machine formale)
-- [ ] Campo `refusal_reason` opzionale per "accesso_rifiutato"
-- [ ] Timestamp per ogni cambio stato
+**Acceptance criteria**
 
-**Implementato (commit ad198c6)**:
-- [x] Pulsante "Rifiuta prenotazione" nello scanner QR (oltre a "Conferma ingresso")
-- [x] Push notifications al cliente su ogni cambio stato (confermata, rifiutata, check-in, in attesa)
+- [ ] Definition of "expected income" agreed with business and recorded in this issue (formula + which reservation states are counted).
+- [ ] Backend: `/owner/events/:id/stats` returns `expectedIncome` (currency + value).
+- [ ] Dashboard: new widget on `EventReservationsPage` next to the M/F card.
+- [ ] Additional stats list closed (or explicitly deferred) before merge.
 
----
+**Test plan**
 
-## Open Points
+- [ ] Backend test: stats endpoint returns expected value on a known seed.
+- [ ] Manual: widget renders correctly with 0/some/many reservations.
 
-### 0.6 – OPEN POINT: Selezione tavolo in app
-**Questione**: Come l'utente seleziona il tavolo nella `pierre_two` app?
+**Open questions**
 
-**Owner** (discussion + decision):
-- [ ] Matte
-- [ ] Ale
-
-**Business expectation (v0)**: 
-- Utente seleziona solo **zone**
-- Tavolo assegnato dal gestore (dashboard) o sistema automatico
-
-**Possibile conflict**:
-- Alcuni locali potrebbero volere selezione diretta del tavolo
-
-**Implicazioni architetturali**:
-- Se solo zone: prenotazione non ha `table_id` inizialmente, assegnato dopo
-- Se tavolo diretto: prenotazione ha `table_id` da subito
-
-**Action items**:
-- [ ] Chiarire con team business il modello preferito
-- [ ] Verificare se è per locale o globale
-- [ ] Decidere strategy (feature flag? setting per locale?)
-
-**Blockers**: Nessuno finché non chiarito
+- Formula for `expectedIncome` (TBD with Matte/Ale).
+- Other statistics requested by business (TBD).
 
 ---
 
-### ~~0.7 – OPEN POINT: UI per modifica prenotazione~~ — RESOLVED
+### D — feat(reservations): audit log for reservation changes
 
-**Soluzione adottata**: Modale singola con tutti i campi modificabili (nome, telefono, email, numero persone, maschi/femmine, stato, tavolo, note). Implementata in `EventReservationsPage` (commit ad198c6).
+**Priority**: low
+**Labels**: `area:dashboard`, `area:backend`, `area:db`, `type:feat`, `priority:low`
+**Owner**: Regge
+**Closes**: 0.4 (residual — audit log only, modal already shipped)
+
+**Description**
+
+Track every modification to a reservation (who changed what, and when). Used for accountability between owner and staff and to debug discrepancies.
+
+**Acceptance criteria**
+
+- [ ] New table `reservation_audit_log` (`id`, `reservation_id`, `actor_user_id`, `field`, `old_value`, `new_value`, `created_at`).
+- [ ] `PATCH /owner/reservations/:id` writes one row per changed field in the same transaction.
+- [ ] Dashboard: collapsible "history" section in the reservation modal showing the log entries.
+- [ ] Read endpoint `GET /owner/reservations/:id/audit` for the dashboard.
+
+**Test plan**
+
+- [ ] Backend test: PATCH with multiple field changes produces the expected number of log rows.
+- [ ] Manual: edit a reservation in the dashboard → history shows new entries with correct user and timestamps.
 
 ---
 
-## Dipendenze tra requisiti
+### E — feat(reservations): formal state machine for reservation status
+
+**Priority**: medium
+**Labels**: `area:backend`, `area:db`, `area:dashboard`, `type:feat`, `priority:medium`
+**Owner**: Regge
+**Closes**: 0.5 (residual)
+
+**Description**
+
+Today reservation status is partially modeled. We formalize the lifecycle as a state machine, with allowed transitions, refusal reason, and timestamps for each transition. Push notifications and the QR refuse button are already in place (commit `ad198c6`).
+
+States:
+
+1. `in_attesa` — minimum number not reached
+2. `prenotato` — minimum reached
+3. `accesso_effettuato` — QR scanned & accepted at the door
+4. `accesso_rifiutato` — QR scanned but bouncer refused entry (optional `refusal_reason`)
+5. `cancellato` — cancelled by user or owner
+
+**Acceptance criteria**
+
+- [ ] DB enum `reservation_status` with the five states above.
+- [ ] DB column `refusal_reason TEXT NULL`.
+- [ ] DB columns or separate table for transition timestamps (decision recorded in the PR).
+- [ ] Backend: helper that validates allowed transitions; invalid ones return `409` with Italian message.
+- [ ] Dashboard: status dropdown in the reservation modal only offers valid next states.
+- [ ] Documented allowed-transitions table in `docs/`.
+
+**Test plan**
+
+- [ ] Backend tests for every valid and invalid transition.
+- [ ] Manual: from each state, confirm dashboard offers exactly the expected options.
+
+---
+
+### F — feat(app): area-based reservation flow with auto table assignment
+
+**Priority**: high
+**Labels**: `area:mobile`, `area:backend`, `type:feat`, `priority:high`
+**Owner**: Regge
+**Closes**: 0.6
+
+**Description**
+
+Resolution of open point 0.6: in the mobile app the customer **picks an area only** — never a specific table. The backend assigns the first available table in that area at reservation time. The dashboard owner retains manual table reassignment (already shipped in 0.4.1).
+
+**Acceptance criteria**
+
+- [ ] Mobile reservation flow shows a list of areas (with min spend per person + remaining capacity), no table selection.
+- [ ] Reservation creation endpoint accepts `area_id` and assigns the first free table inside that area atomically (no race on concurrent requests).
+- [ ] If no table is free in the area, return a clear error and the app shows it gracefully.
+- [ ] Dashboard owner can still reassign the table manually (existing behavior preserved).
+
+**Test plan**
+
+- [ ] Manual: 2 concurrent reservations on the last free table in an area → only one succeeds.
+- [ ] Manual: full flow on a real iOS / Android device.
+
+---
+
+### G — fix(app): area "minimum per person" and capacity counter sync
+
+**Priority**: high
+**Labels**: `area:mobile`, `area:backend`, `type:bug`, `priority:high`
+**Owner**: Regge
+
+**Description**
+
+In the app menu "aree disponibili", the *min spend per person* and *people available per area* are not aligned with what the dashboard shows. Source of truth must be the same.
+
+**Acceptance criteria**
+
+- [ ] Same value for "min per person" in dashboard and app for the same area.
+- [ ] "People available" counter in the app matches the dashboard's view.
+- [ ] Single source of truth identified and documented (likely the `areas` table from issue A).
+
+**Test plan**
+
+- [ ] Manual: change min spend in dashboard → app reflects change after refresh.
+- [ ] Manual: book a table → app's "people available" decreases consistently with dashboard.
+
+**Depends on**: issue A (areas as a club-level concept).
+
+---
+
+### H — fix(app): reservation blocks first available table in area (counter update)
+
+**Priority**: high
+**Labels**: `area:mobile`, `area:backend`, `type:bug`, `priority:high`
+**Owner**: Regge
+
+**Description**
+
+Reservations created from the app should block the first available table in the selected area, but currently the counter visible in the app under "aree disponibili" does not update. Fix the write path and / or the read aggregation so both stay in sync.
+
+**Acceptance criteria**
+
+- [ ] After successful reservation, the app's "available people in area" counter decreases by the booked amount.
+- [ ] Counter recovers if the reservation is later cancelled.
+- [ ] No double-booking under concurrent requests (covered by F's atomic assignment, but verified here too).
+
+**Test plan**
+
+- [ ] Manual: book → counter decreases. Cancel → counter increases.
+- [ ] Manual: try to overbook → blocked with clear error.
+
+**Depends on**: issues A and F.
+
+---
+
+### I — fix(app): "Show QR" CTA broken on ticket, missing on table reservation
+
+**Priority**: high
+**Labels**: `area:mobile`, `type:bug`, `priority:high`
+**Owner**: Regge
+
+**Description**
+
+Two distinct bugs in the mobile app:
+1. The "Show QR code" CTA on a **ticket** is not clickable — it sits below the bottom navigation bar / is overlapped.
+2. The same CTA is **completely missing** on a **table reservation**.
+
+**Acceptance criteria**
+
+- [ ] Ticket detail screen: CTA is fully visible above the tab bar and clickable.
+- [ ] Table reservation detail screen: a "Show QR code" CTA exists and opens the QR view.
+- [ ] Verified on iOS and Android, on at least one small-screen device.
+
+**Test plan**
+
+- [ ] Manual on iPhone SE-class device: CTA reachable on both ticket and reservation screens.
+- [ ] Manual on Android phone: same.
+
+---
+
+### J — feat(app): improve scene navigation in Marzipano 360° viewer
+
+**Priority**: low
+**Labels**: `area:mobile`, `type:feat`, `priority:low`
+**Owner**: Regge
+
+**Description**
+
+Polish the navigation between scenes in the 360° viewer (the recent crash on scene switch was already fixed on branch `fix/marzipano-viewer-scene-switch-crash`). UX details TBD.
+
+**Acceptance criteria**
+
+- [ ] Scope agreed (transition animation? mini-map? hotspot styling?) and listed in the issue.
+- [ ] Implementation merged.
+
+**Test plan**
+
+- [ ] Manual: switch scenes repeatedly on a real device, no flicker / crash.
+
+---
+
+## Dependencies
 
 ```
-0.1 (aree/tavoli) ──→ 0.4 (modifica prenotazione)
-                       ├─→ 0.4.1 (cambio tavolo)
+A (areas/tables)  ──→ G, H, F
+F (app area flow) ──→ H
+E (state machine) ──→ D (audit log can use the same write path)
 
-0.5 (stati) ────────→ 0.4 (modifica prenotazione)
-
-0.6 (select tavolo app) ──→ 0.4 (tavolo in prenotazione)
-
-0.3 (statistiche) ───→ (no dipendenze, indipendente)
-
-0.2 (rimuovere foto tavolo) ──→ (no dipendenze, cleanup)
+B, C, I, J : independent
 ```
 
 ---
 
-## Planning per Package
+## Done — appendix (kept for traceability)
 
-### `rust_BE` – Priorità
-1. 0.1 – Aree/tavoli endpoints
-2. 0.5 – State machine logic
-3. ~~0.4 – PATCH prenotazione endpoint~~ ✅ fatto
-4. 0.3 – Statistiche endpoints (expected incomes)
-5. 0.2 – Deprecare foto su tavolo
+The following items from the previous version of this contract have already shipped and are not tracked as open issues:
 
-### `DB` – Priorità
-1. 0.1 – Schema aree, tavoli, override
-2. 0.5 – Enum stati, `refusal_reason`, timestamp
-3. ~~0.4 – Campi prenotazione aggiornati~~ ✅ fatto
-4. 0.3 – Indici per query aggregate (expected incomes)
-5. 0.2 – Deprecare colonne foto
-
-### `pierre_dashboard` – Priorità
-1. 0.1 – UI aree/tavoli configuration
-2. ~~0.7 – Modale modifica prenotazione~~ ✅ fatto
-3. 0.3 – Statistiche widgets (expected incomes)
-4. 0.2 – Rimuovere foto UI
-
-### `pierre_two` – Priorità
-1. 0.6 – Adattarsi a selezione zone (BLOCKED finché 0.6 non è chiarito)
-
----
-
-## Prossimi step
-
-- [ ] Riunione con team business per chiarire 0.6
-- [ ] Kickoff implementazione 0.1, 0.5 (no blockers)
-- [ ] Setup migration DB per schema nuovo
-- [ ] Definire expected incomes per 0.3
+- **0.4 (modal + fields modifiable)** — `PATCH /owner/reservations/:id`, modal in dashboard with all fields, gender count validation. Audit log split out as issue **D**.
+- **0.4.1 (easy table change)** — modal dropdown + inline change from reservation list.
+- **0.5 (partial)** — "Refuse" button in QR scanner; push notifications on every state change. Formal state machine + `refusal_reason` + timestamps tracked as issue **E**.
+- **0.7 (UI for reservation modify)** — single modal with all fields, in `EventReservationsPage` (commit `ad198c6`).
