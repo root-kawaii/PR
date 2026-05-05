@@ -2,6 +2,9 @@ use crate::application::{
     club_owner_service as club_owner_persistence, club_service as club_persistence,
     event_service as event_persistence, outbox_service, reservation_service as table_persistence,
 };
+use crate::controllers::event_controller::{
+    event_response_with_club_fallback, event_responses_with_club_fallback,
+};
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::club_owner::{
     AddImageRequest, CheckinDecisionRequest, ClubImageRow, ClubOwnerAuthResponse,
@@ -303,15 +306,12 @@ pub async fn get_my_club_events(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let responses: Vec<EventResponse> = events
-        .into_iter()
-        .map(|e| {
-            let id = e.id;
-            let mut r = EventResponse::from(e);
+    let mut responses = event_responses_with_club_fallback(&state, events).await;
+    for r in responses.iter_mut() {
+        if let Ok(id) = Uuid::parse_str(&r.id) {
             r.genres = genres_map.get(&id).cloned().unwrap_or_default();
-            r
-        })
-        .collect();
+        }
+    }
     Ok(Json(responses))
 }
 
@@ -365,7 +365,7 @@ pub async fn create_club_event(
     )
     .await;
 
-    let mut response = EventResponse::from(event);
+    let mut response = event_response_with_club_fallback(&state, event).await;
     response.genres = genres;
     Ok((StatusCode::CREATED, Json(response)))
 }
@@ -1530,7 +1530,7 @@ pub async fn update_club_event(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let mut response = EventResponse::from(updated);
+    let mut response = event_response_with_club_fallback(&state, updated).await;
     response.genres = genres;
     Ok(Json(response))
 }
