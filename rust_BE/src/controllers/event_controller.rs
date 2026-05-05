@@ -59,15 +59,13 @@ pub async fn get_all_events(
                     .await
                     .unwrap_or_default();
 
-            let responses: Vec<EventResponse> = events
-                .into_iter()
-                .map(|e| {
-                    let id = e.id;
-                    let mut r = EventResponse::from(e);
+            let mut responses =
+                event_responses_with_club_fallback(&state, events).await;
+            for r in responses.iter_mut() {
+                if let Ok(id) = Uuid::parse_str(&r.id) {
                     r.genres = genres_map.get(&id).cloned().unwrap_or_default();
-                    r
-                })
-                .collect();
+                }
+            }
 
             Ok(Json(EventsResponse { events: responses }))
         }
@@ -166,7 +164,7 @@ pub async fn create_event(
             let genres = event_persistence::get_event_genres(&state.db_pool, event.id)
                 .await
                 .unwrap_or_default();
-            let mut response = EventResponse::from(event);
+            let mut response = event_response_with_club_fallback(&state, event).await;
             response.genres = genres;
             Ok((StatusCode::CREATED, Json(response)))
         }
@@ -197,7 +195,7 @@ pub async fn update_event(
             let genres = event_persistence::get_event_genres(&state.db_pool, event_id)
                 .await
                 .unwrap_or_default();
-            let mut response = EventResponse::from(event);
+            let mut response = event_response_with_club_fallback(&state, event).await;
             response.genres = genres;
             Ok(Json(response))
         }
@@ -208,7 +206,10 @@ pub async fn update_event(
 
 /// Build an `EventResponse`, filling `marzipano_scenes` from the club's
 /// tour config when the event itself has none (event override > club default).
-async fn event_response_with_club_fallback(state: &AppState, event: Event) -> EventResponse {
+pub(crate) async fn event_response_with_club_fallback(
+    state: &AppState,
+    event: Event,
+) -> EventResponse {
     if event.marzipano_config.is_some() {
         return EventResponse::from(event);
     }
@@ -221,6 +222,59 @@ async fn event_response_with_club_fallback(state: &AppState, event: Event) -> Ev
         }
     }
     EventResponse::from(event)
+}
+
+/// Build a batch of `EventResponse`s, filling `marzipano_scenes` from each
+/// event's club tour config when the event itself has none. Resolves all
+/// referenced clubs in a single query to avoid N+1.
+///
+/// On batch lookup failure responses are returned without fallback applied —
+/// this enrichment is non-essential, not worth a 500.
+pub(crate) async fn event_responses_with_club_fallback(
+    state: &AppState,
+    events: Vec<Event>,
+) -> Vec<EventResponse> {
+    let club_ids: Vec<Uuid> = events
+        .iter()
+        .filter(|e| e.marzipano_config.is_none())
+        .filter_map(|e| e.club_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let configs = if club_ids.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        match club_persistence::get_marzipano_configs_for_clubs(
+            &state.read_db_pool,
+            &club_ids,
+        )
+        .await
+        {
+            Ok(map) => map,
+            Err(error) => {
+                warn!(error = %error, "Failed to load club marzipano configs for fallback");
+                std::collections::HashMap::new()
+            }
+        }
+    };
+
+    events
+        .into_iter()
+        .map(|event| {
+            let needs_fallback = event.marzipano_config.is_none();
+            let club_id = event.club_id;
+            let mut resp = EventResponse::from(event);
+            if needs_fallback {
+                if let Some(cid) = club_id {
+                    if let Some(cfg) = configs.get(&cid) {
+                        resp.marzipano_scenes = Some(cfg.clone());
+                    }
+                }
+            }
+            resp
+        })
+        .collect()
 }
 
 /// Delete an event (requires club_owner JWT)
