@@ -1,6 +1,7 @@
 use crate::models::{Club, CreateClubRequest, UpdateClubRequest};
 use serde_json::Value as JsonValue;
 use sqlx::{PgPool, Result};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 const CLUB_COLUMNS: &str = "id, name, subtitle, image, address, phone_number, website, owner_id, \
@@ -120,6 +121,27 @@ pub async fn update_club(
         .await?;
 
     Ok(club)
+}
+
+/// Batch-fetch `marzipano_config` for the given club ids.
+/// Returns only entries whose `marzipano_config` is non-null, so the caller can
+/// detect "missing tour" via map lookup. Empty input returns an empty map without
+/// hitting the DB.
+pub async fn get_marzipano_configs_for_clubs(
+    pool: &PgPool,
+    club_ids: &[Uuid],
+) -> Result<HashMap<Uuid, JsonValue>> {
+    if club_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows: Vec<(Uuid, JsonValue)> = sqlx::query_as(
+        "SELECT id, marzipano_config FROM clubs \
+         WHERE id = ANY($1) AND marzipano_config IS NOT NULL",
+    )
+    .bind(club_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().collect())
 }
 
 /// Overwrite the club's `marzipano_config`.
