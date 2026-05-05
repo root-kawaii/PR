@@ -569,24 +569,37 @@
         isSwitching = false;
         console.log('🔄 Scene change notified');
       } else {
-        // Existing fade logic for subsequent switches
+        // Existing fade logic for subsequent switches.
+        // Same constraint as handleSceneLinkClick: do NOT clearHotspots()
+        // before scene.switchTo finishes — Marzipano still ticks the old
+        // hotspot DOM during the transition and crashes if the elements
+        // disappear underneath it. Clear/create inside the completion cb.
         const panoElement = document.getElementById('pano');
         panoElement.style.opacity = '0';
 
         setTimeout(() => {
-          clearHotspots();
-          scene.switchTo({ transitionDuration: 500 });
-          currentHotspotContainer = scene.hotspotContainer();
-          currentSceneId = sceneId;
-          updateSceneIndicator(sceneConfig.name);
-          createHotspots(sceneConfig.hotspots || []);
-          panoElement.style.opacity = '1';
-          notifyReactNative({
-            type: 'SCENE_CHANGE',
-            sceneId: sceneId,
-            sceneName: sceneConfig.name
-          });
-          isSwitching = false;
+          try {
+            scene.switchTo({ transitionDuration: 500 }, function() {
+              clearHotspots();
+              currentHotspotContainer = scene.hotspotContainer();
+              currentSceneId = sceneId;
+              updateSceneIndicator(sceneConfig.name);
+              createHotspots(sceneConfig.hotspots || []);
+
+              setTimeout(() => {
+                panoElement.style.opacity = '1';
+                notifyReactNative({
+                  type: 'SCENE_CHANGE',
+                  sceneId: sceneId,
+                  sceneName: sceneConfig.name
+                });
+                isSwitching = false;
+              }, 100);
+            });
+          } catch (error) {
+            notifyReactNative({ type: 'ERROR', message: '❌ switchToScene timeout error: ' + error.message });
+            isSwitching = false;
+          }
         }, 300);
       }
       } catch (error) {
@@ -788,12 +801,16 @@
         setTimeout(() => {
           try {
             notifyReactNative({ type: 'DEBUG', message: '🔄 Switching scene in timeout...' });
-            notifyReactNative({ type: 'DEBUG', message: '🔄 About to call clearHotspots...' });
-            clearHotspots();
-            notifyReactNative({ type: 'DEBUG', message: '🔄 clearHotspots returned successfully' });
             notifyReactNative({ type: 'DEBUG', message: '🔄 Calling scene.switchTo...' });
+            // Note: don't destroy old hotspots before switchTo. Marzipano keeps
+            // ticking the old hotspot DOM during the transition (positioning
+            // them in 3D), so destroying them mid-transition crashes its
+            // setTimeout-driven internals with `undefined is not an object
+            // (evaluating 'e.style')`. Clear them inside the completion
+            // callback once the transition is done.
             scene.switchTo({ transitionDuration: 500 }, function() {
               notifyReactNative({ type: 'DEBUG', message: '🔄 Scene transition complete, setting up hotspots...' });
+              clearHotspots();
               currentHotspotContainer = scene.hotspotContainer();
               currentSceneId = targetSceneId;
               updateSceneIndicator(sceneConfig.name);
