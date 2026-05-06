@@ -123,7 +123,6 @@ pub async fn create_club_table(
     min_spend: Decimal,
     location_description: Option<String>,
     features: Option<Vec<String>>,
-    marzipano_position: Option<JsonValue>,
 ) -> Result<Table, sqlx::Error> {
     let total_cost = min_spend * Decimal::from(capacity);
 
@@ -131,9 +130,9 @@ pub async fn create_club_table(
         r#"
         INSERT INTO tables (
             event_id, area_id, name, zone, capacity, min_spend, total_cost,
-            location_description, features, marzipano_position
+            location_description, features
         )
-        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id
         "#,
     )
@@ -145,7 +144,6 @@ pub async fn create_club_table(
     .bind(total_cost)
     .bind(location_description)
     .bind(features)
-    .bind(marzipano_position)
     .fetch_one(pool)
     .await?;
 
