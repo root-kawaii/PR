@@ -87,6 +87,89 @@ pub async fn get_available_tables_by_event_id(
     Ok(tables)
 }
 
+/// Get all club-level tables for a club (joined via area_id → club_id).
+/// Returns both club-level tables (event_id IS NULL) and any event-bound
+/// tables that still belong to areas of this club.
+pub async fn get_tables_by_club_id(
+    pool: &PgPool,
+    club_id: Uuid,
+) -> Result<Vec<Table>, sqlx::Error> {
+    let tables = sqlx::query_as::<_, Table>(
+        r#"
+        SELECT
+            t.*,
+            a.name AS area_name
+        FROM tables t
+        JOIN areas a ON a.id = t.area_id
+        WHERE a.club_id = $1
+          AND t.event_id IS NULL
+        ORDER BY a.name ASC, t.name ASC
+        "#,
+    )
+    .bind(club_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(tables)
+}
+
+/// Create a club-level table (no event_id — bound to a club via area_id).
+pub async fn create_club_table(
+    pool: &PgPool,
+    area_id: Uuid,
+    name: String,
+    zone: Option<String>,
+    capacity: i32,
+    min_spend: Decimal,
+    location_description: Option<String>,
+    features: Option<Vec<String>>,
+    marzipano_position: Option<JsonValue>,
+) -> Result<Table, sqlx::Error> {
+    let total_cost = min_spend * Decimal::from(capacity);
+
+    let table_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        INSERT INTO tables (
+            event_id, area_id, name, zone, capacity, min_spend, total_cost,
+            location_description, features, marzipano_position
+        )
+        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id
+        "#,
+    )
+    .bind(area_id)
+    .bind(name)
+    .bind(zone)
+    .bind(capacity)
+    .bind(min_spend)
+    .bind(total_cost)
+    .bind(location_description)
+    .bind(features)
+    .bind(marzipano_position)
+    .fetch_one(pool)
+    .await?;
+
+    get_table_by_id(pool, table_id).await
+}
+
+/// Count active reservations for a table (used to gate deletion).
+pub async fn count_reservations_by_table(
+    pool: &PgPool,
+    table_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM table_reservations
+        WHERE table_id = $1
+          AND status IN ('pending', 'confirmed')
+        "#,
+    )
+    .bind(table_id)
+    .fetch_one(pool)
+    .await
+}
+
 /// Get a single table by ID
 pub async fn get_table_by_id(pool: &PgPool, table_id: Uuid) -> Result<Table, sqlx::Error> {
     let table = sqlx::query_as::<_, Table>(

@@ -1,6 +1,7 @@
 use crate::application::{
-    club_owner_service as club_owner_persistence, club_service as club_persistence,
-    event_service as event_persistence, outbox_service, reservation_service as table_persistence,
+    area_service as area_persistence, club_owner_service as club_owner_persistence,
+    club_service as club_persistence, event_service as event_persistence, outbox_service,
+    reservation_service as table_persistence,
 };
 use crate::controllers::event_controller::{
     event_response_with_club_fallback, event_responses_with_club_fallback,
@@ -394,11 +395,19 @@ pub async fn get_my_club_tables(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let tables = table_persistence::get_tables_by_event_id(&state.db_pool, event_uuid)
+    let event_tables = table_persistence::get_tables_by_event_id(&state.db_pool, event_uuid)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let table_responses: Vec<TableResponse> = tables.into_iter().map(|t| t.into()).collect();
+    let club_tables = table_persistence::get_tables_by_club_id(&state.db_pool, club.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let table_responses: Vec<TableResponse> = event_tables
+        .into_iter()
+        .chain(club_tables.into_iter())
+        .map(|t| t.into())
+        .collect();
     Ok(Json(TablesResponse {
         tables: table_responses,
     }))
@@ -480,7 +489,7 @@ pub async fn update_my_club(
     let update_req = UpdateClubRequest {
         name: payload.name,
         subtitle: payload.subtitle,
-        image: None,
+        image: payload.image,
         address: payload.address,
         phone_number: payload.phone_number,
         website: payload.website,
@@ -839,6 +848,34 @@ pub async fn delete_my_club_image(
     }
 }
 
+/// Verify a table belongs to the given club. A table is club-scoped either via
+/// its event (event-bound tables) or directly via its area (club-level tables).
+async fn verify_table_in_club(
+    state: &Arc<AppState>,
+    table: &crate::models::Table,
+    club_id: Uuid,
+) -> Result<(), StatusCode> {
+    if let Some(event_id) = table.event_id {
+        let event = event_persistence::get_event_by_id(&state.db_pool, event_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        if event.club_id != Some(club_id) {
+            return Err(StatusCode::FORBIDDEN);
+        }
+        Ok(())
+    } else {
+        let area_id = table.area_id.ok_or(StatusCode::FORBIDDEN)?;
+        let area = area_persistence::get_area_by_id(&state.db_pool, area_id)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        if area.club_id != club_id {
+            return Err(StatusCode::FORBIDDEN);
+        }
+        Ok(())
+    }
+}
+
 /// Get images for a specific table (verifies table belongs to owner's club)
 pub async fn get_table_images_handler(
     State(state): State<Arc<AppState>>,
@@ -853,19 +890,12 @@ pub async fn get_table_images_handler(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Verify table belongs to owner's club via event
+    // Verify table belongs to owner's club (via its event or its area).
     let table = table_persistence::get_table_by_id(&state.db_pool, table_uuid)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    let event = event_persistence::get_event_by_id(&state.db_pool, table.event_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    if event.club_id != Some(club.id) {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    verify_table_in_club(&state, &table, club.id).await?;
 
     let images = club_owner_persistence::get_table_images(&state.db_pool, table_uuid)
         .await
@@ -893,14 +923,7 @@ pub async fn add_table_image_handler(
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    let event = event_persistence::get_event_by_id(&state.db_pool, table.event_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    if event.club_id != Some(club.id) {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    verify_table_in_club(&state, &table, club.id).await?;
 
     let image = club_owner_persistence::add_table_image(
         &state.db_pool,
@@ -1255,8 +1278,12 @@ pub async fn update_reservation_handler(
         let target_table = table_persistence::get_table_by_id(&state.db_pool, target_table_id)
             .await
             .map_err(|_| StatusCode::NOT_FOUND)?;
-        if target_table.event_id != previous_reservation.event_id {
-            return Err(StatusCode::BAD_REQUEST);
+        // Event-bound tables must match the reservation's event; club-level
+        // tables (event_id IS NULL) are reusable across events.
+        if let Some(target_event_id) = target_table.event_id {
+            if target_event_id != previous_reservation.event_id {
+                return Err(StatusCode::BAD_REQUEST);
+            }
         }
     }
 

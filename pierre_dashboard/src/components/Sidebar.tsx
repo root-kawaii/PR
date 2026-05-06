@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, LogOut, Settings, QrCode, X } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, LogOut, Settings, QrCode, X, LayoutGrid, Compass } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getSafeImageUrl } from '../utils/image';
 
@@ -56,12 +56,22 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
           Eventi
         </NavLink>
 
+        <NavLink to="/dashboard/club/areas" className={navLinkClass} onClick={onClose}>
+          <LayoutGrid size={20} />
+          Aree e tavoli
+        </NavLink>
+
+        <NavLink to="/dashboard/club/tour" className={navLinkClass} onClick={onClose}>
+          <Compass size={20} />
+          Tour 360° locale
+        </NavLink>
+
         <NavLink to="/dashboard/scan" className={navLinkClass} onClick={onClose}>
           <QrCode size={20} />
           Scanner QR
         </NavLink>
 
-        <NavLink to="/dashboard/club" className={navLinkClass} onClick={onClose}>
+        <NavLink to="/dashboard/club" end className={navLinkClass} onClick={onClose}>
           <Settings size={20} />
           Impostazioni Locale
         </NavLink>

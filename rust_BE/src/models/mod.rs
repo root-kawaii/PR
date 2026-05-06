@@ -30,8 +30,9 @@ pub use ticket::{
 pub mod table;
 pub use table::{
     AddPaymentToReservationRequest, CreateCheckoutRequest, CreateCheckoutResponse,
-    CreatePaymentIntentResponse, CreateSplitPaymentIntentRequest, CreateSplitReservationRequest,
-    CreateSplitReservationResponse, CreateTableRequest, CreateTableReservationRequest,
+    CreateClubTableRequest, CreatePaymentIntentResponse, CreateSplitPaymentIntentRequest,
+    CreateSplitReservationRequest, CreateSplitReservationResponse, CreateTableRequest,
+    CreateTableReservationRequest,
     LinkTicketToReservationRequest, PaymentLinkPreviewResponse, PaymentShareResponse,
     ReservationGuest, ReservationPaymentShare, ReservationPaymentStatusResponse, Table,
     TableReservation, TableReservationResponse, TableReservationWithDetailsResponse,

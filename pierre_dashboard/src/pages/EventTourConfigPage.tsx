@@ -65,11 +65,11 @@ export default function EventTourConfigPage() {
       <div className="mb-3 flex items-center justify-between">
         <div>
           <Link
-            to={`/dashboard/events/${eventId}/tables`}
+            to={`/dashboard/events/${eventId}/reservations`}
             className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
           >
             <ArrowLeft className="h-4 w-4" />
-            Tavoli evento
+            Prenotazioni evento
           </Link>
           <h1 className="mt-1 text-xl font-semibold text-gray-900">
             Tour 360° – {event?.title ?? 'evento'}
