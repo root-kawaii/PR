@@ -362,9 +362,9 @@ export default function EventReservationsPage() {
   return (
     <div>
       <div className="mb-6">
-        <Link to={`/dashboard/events/${eventId}/tables`} className={`${ui.backLink} mb-3`}>
+        <Link to="/dashboard/events" className={`${ui.backLink} mb-3`}>
           <ArrowLeft size={16} />
-          Torna ai Tavoli
+          Torna agli Eventi
         </Link>
         <PageHeader
           className="mb-0"
