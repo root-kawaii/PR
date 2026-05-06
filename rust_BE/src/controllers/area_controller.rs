@@ -4,7 +4,8 @@ use crate::application::{
 };
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{
-    AppState, AreaResponse, AssignAreaRequest, CreateAreaRequest, UpdateAreaRequest,
+    AppState, AreaResponse, AssignAreaRequest, CreateAreaRequest, CreateClubTableRequest,
+    TableResponse, UpdateAreaRequest, UpdateTableRequest,
 };
 use axum::{
     extract::{Path, State},
@@ -190,13 +191,24 @@ pub async fn assign_table_area(
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    // Check event → club ownership
-    let event = event_persistence::get_event_by_id(&state.db_pool, table.event_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-    if event.club_id != Some(club.id) {
-        return Err(StatusCode::FORBIDDEN);
+    // Verify the table belongs to the owner's club. A table is club-scoped
+    // either via its event (event_id) or directly via its area (club-level table).
+    if let Some(event_id) = table.event_id {
+        let event = event_persistence::get_event_by_id(&state.db_pool, event_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        if event.club_id != Some(club.id) {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    } else {
+        let area_id = table.area_id.ok_or(StatusCode::FORBIDDEN)?;
+        let area = area_persistence::get_area_by_id(&state.db_pool, area_id)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        if area.club_id != club.id {
+            return Err(StatusCode::FORBIDDEN);
+        }
     }
 
     let updated = match req.area_id {
@@ -231,4 +243,183 @@ pub async fn assign_table_area(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(crate::models::TableResponse::from(updated)))
+}
+
+// ============================================================================
+// Owner-only — club-level tables
+// ============================================================================
+
+/// GET /owner/tables — list all club-level tables (event_id IS NULL) for the
+/// authenticated owner's club.
+pub async fn list_my_club_tables(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+) -> Result<Json<Vec<TableResponse>>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let tables = table_persistence::get_tables_by_club_id(&state.db_pool, club.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(tables.into_iter().map(TableResponse::from).collect()))
+}
+
+/// POST /owner/tables — create a new club-level table inside one of the
+/// owner's areas. The table is reusable across every event of the club.
+pub async fn create_my_club_table(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Json(req): Json<CreateClubTableRequest>,
+) -> Result<(StatusCode, Json<TableResponse>), StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let area_uuid = Uuid::parse_str(&req.area_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let area = area_persistence::get_area_by_id(&state.db_pool, area_uuid)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    if area.club_id != club.id {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let min_spend = match req.min_spend {
+        Some(value) => Decimal::from_f64_retain(value).ok_or(StatusCode::BAD_REQUEST)?,
+        None => area.price,
+    };
+
+    let table = table_persistence::create_club_table(
+        &state.db_pool,
+        area_uuid,
+        req.name,
+        req.zone,
+        req.capacity,
+        min_spend,
+        req.location_description,
+        req.features,
+        req.marzipano_position,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((StatusCode::CREATED, Json(TableResponse::from(table))))
+}
+
+async fn ensure_table_belongs_to_club(
+    state: &Arc<AppState>,
+    table: &crate::models::Table,
+    club_id: Uuid,
+) -> Result<(), StatusCode> {
+    if let Some(event_id) = table.event_id {
+        let event = event_persistence::get_event_by_id(&state.db_pool, event_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        if event.club_id != Some(club_id) {
+            return Err(StatusCode::FORBIDDEN);
+        }
+        Ok(())
+    } else {
+        let area_id = table.area_id.ok_or(StatusCode::FORBIDDEN)?;
+        let area = area_persistence::get_area_by_id(&state.db_pool, area_id)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        if area.club_id != club_id {
+            return Err(StatusCode::FORBIDDEN);
+        }
+        Ok(())
+    }
+}
+
+/// PATCH /owner/tables/:table_id — update a club-level table.
+pub async fn update_my_club_table(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(table_id): Path<String>,
+    Json(req): Json<UpdateTableRequest>,
+) -> Result<Json<TableResponse>, StatusCode> {
+    let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let table_uuid = Uuid::parse_str(&table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let table = table_persistence::get_table_by_id(&state.db_pool, table_uuid)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    ensure_table_belongs_to_club(&state, &table, club.id).await?;
+
+    let min_spend = req
+        .min_spend
+        .map(|v| Decimal::from_f64_retain(v).ok_or(StatusCode::BAD_REQUEST))
+        .transpose()?;
+
+    let updated = table_persistence::update_table(
+        &state.db_pool,
+        table_uuid,
+        req.name,
+        req.zone,
+        req.capacity,
+        min_spend,
+        req.available,
+        req.location_description,
+        req.features,
+        req.marzipano_position,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(TableResponse::from(updated)))
+}
+
+/// DELETE /owner/tables/:table_id — delete a club-level table.
+/// Refuses if any active reservation references it.
+pub async fn delete_my_club_table(
+    State(state): State<Arc<AppState>>,
+    ClubOwnerUser(claims): ClubOwnerUser,
+    Path(table_id): Path<String>,
+) -> StatusCode {
+    let Ok(owner_id) = Uuid::parse_str(&claims.sub) else {
+        return StatusCode::UNAUTHORIZED;
+    };
+    let Ok(table_uuid) = Uuid::parse_str(&table_id) else {
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Ok(Some(club)) = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id).await
+    else {
+        return StatusCode::NOT_FOUND;
+    };
+
+    let Ok(table) = table_persistence::get_table_by_id(&state.db_pool, table_uuid).await else {
+        return StatusCode::NOT_FOUND;
+    };
+
+    if let Err(status) = ensure_table_belongs_to_club(&state, &table, club.id).await {
+        return status;
+    }
+
+    let active_count =
+        match table_persistence::count_reservations_by_table(&state.db_pool, table_uuid).await {
+            Ok(n) => n,
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR,
+        };
+    if active_count > 0 {
+        return StatusCode::CONFLICT;
+    }
+
+    match table_persistence::delete_table(&state.db_pool, table_uuid).await {
+        Ok(true) => StatusCode::NO_CONTENT,
+        Ok(false) => StatusCode::NOT_FOUND,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
 }

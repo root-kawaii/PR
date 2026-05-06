@@ -4,7 +4,8 @@ use axum::{routing::get, Router};
 
 use crate::bootstrap::state::AppState;
 use crate::controllers::area_controller::{
-    assign_table_area, create_area, delete_area, list_areas_by_club, list_my_areas, update_area,
+    assign_table_area, create_area, create_my_club_table, delete_area, delete_my_club_table,
+    list_areas_by_club, list_my_areas, list_my_club_tables, update_area, update_my_club_table,
 };
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -14,6 +15,14 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/owner/areas/:area_id",
             axum::routing::patch(update_area).delete(delete_area),
+        )
+        .route(
+            "/owner/tables",
+            get(list_my_club_tables).post(create_my_club_table),
+        )
+        .route(
+            "/owner/tables/:table_id",
+            axum::routing::patch(update_my_club_table).delete(delete_my_club_table),
         )
         .route(
             "/owner/tables/:table_id/area",

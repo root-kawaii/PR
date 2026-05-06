@@ -13,7 +13,7 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
 pub struct Table {
     pub id: Uuid,
-    pub event_id: Uuid,
+    pub event_id: Option<Uuid>,
     pub name: String,
     pub zone: Option<String>,
     pub capacity: i32,
@@ -42,6 +42,19 @@ pub struct CreateTableRequest {
     pub marzipano_position: Option<JsonValue>,
 }
 
+/// Body for POST /owner/tables — create a club-level table (not bound to an event).
+#[derive(Debug, Deserialize)]
+pub struct CreateClubTableRequest {
+    pub area_id: String,
+    pub name: String,
+    pub zone: Option<String>,
+    pub capacity: i32,
+    pub min_spend: Option<f64>,
+    pub location_description: Option<String>,
+    pub features: Option<Vec<String>>,
+    pub marzipano_position: Option<JsonValue>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateTableRequest {
     pub name: Option<String>,
@@ -58,7 +71,7 @@ pub struct UpdateTableRequest {
 #[serde(rename_all = "camelCase")]
 pub struct TableResponse {
     pub id: String,
-    pub event_id: String,
+    pub event_id: Option<String>,
     pub name: String,
     pub zone: Option<String>,
     pub capacity: i32,
@@ -76,7 +89,7 @@ impl From<Table> for TableResponse {
     fn from(table: Table) -> Self {
         TableResponse {
             id: table.id.to_string(),
-            event_id: table.event_id.to_string(),
+            event_id: table.event_id.map(|id| id.to_string()),
             name: table.name,
             zone: table.zone,
             capacity: table.capacity,
