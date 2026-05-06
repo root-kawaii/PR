@@ -10,16 +10,28 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  setClub: (club: Club) => void;
+  setOwner: (owner: ClubOwner) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
-  const [owner, setOwner] = useState<ClubOwner | null>(null);
-  const [club, setClub] = useState<Club | null>(null);
+  const [owner, setOwnerState] = useState<ClubOwner | null>(null);
+  const [club, setClubState] = useState<Club | null>(null);
   const [loading, setLoading] = useState(true);
   const previousOwnerIdRef = useRef<string | null>(null);
+
+  const setClub = (next: Club) => {
+    setClubState(next);
+    localStorage.setItem('auth_club', JSON.stringify(next));
+  };
+
+  const setOwner = (next: ClubOwner) => {
+    setOwnerState(next);
+    localStorage.setItem('auth_owner', JSON.stringify(next));
+  };
 
   useEffect(() => {
     const savedToken = localStorage.getItem('auth_token');
@@ -28,8 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (savedToken && savedOwner) {
       setToken(savedToken);
-      setOwner(JSON.parse(savedOwner));
-      if (savedClub) setClub(JSON.parse(savedClub));
+      setOwnerState(JSON.parse(savedOwner));
+      if (savedClub) setClubState(JSON.parse(savedClub));
     }
     setLoading(false);
   }, []);
@@ -70,8 +82,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data: AuthResponse = await res.json();
 
     setToken(data.token);
-    setOwner(data.owner);
-    setClub(data.club);
+    setOwnerState(data.owner);
+    setClubState(data.club);
 
     localStorage.setItem('auth_token', data.token);
     localStorage.setItem('auth_owner', JSON.stringify(data.owner));
@@ -93,8 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     setToken(null);
-    setOwner(null);
-    setClub(null);
+    setOwnerState(null);
+    setClubState(null);
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_owner');
     localStorage.removeItem('auth_club');
@@ -103,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (loading) return null;
 
   return (
-    <AuthContext.Provider value={{ token, owner, club, isAuthenticated: !!token, login, logout }}>
+    <AuthContext.Provider value={{ token, owner, club, isAuthenticated: !!token, login, logout, setClub, setOwner }}>
       {children}
     </AuthContext.Provider>
   );
