@@ -49,7 +49,6 @@ pub struct CreateClubTableRequest {
     pub min_spend: Option<f64>,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-    pub marzipano_position: Option<JsonValue>,
 }
 
 #[derive(Debug, Deserialize)]
