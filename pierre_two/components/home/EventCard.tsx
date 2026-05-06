@@ -1,4 +1,5 @@
-import { TouchableOpacity, View, Image, StyleSheet, useWindowDimensions } from 'react-native';
+import { TouchableOpacity, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/context/ThemeContext';
 import { Event } from '@/types';
@@ -65,7 +66,12 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
           },
         ]}
       >
-        <Image source={{ uri: event.image }} style={styles.eventImage} />
+        <Image
+          source={event.image}
+          style={styles.eventImage}
+          contentFit="cover"
+          transition={200}
+        />
         <LinearGradient
           colors={theme.gradientOverlay as [string, string]}
           style={styles.imageOverlay}

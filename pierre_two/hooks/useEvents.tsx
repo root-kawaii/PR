@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Event } from "@/types";
 import { API_URL } from "@/config/api";
 import { apiFetch } from "@/config/apiFetch";
@@ -34,7 +34,7 @@ export const useEvents = () => {
     };
   };
 
-  const fetchEvents = async (silent = false) => {
+  const fetchEvents = useCallback(async (silent = false) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -55,9 +55,9 @@ export const useEvents = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  };
+  }, []);
 
-  const loadMore = async () => {
+  const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
 
     abortRef.current?.abort();
@@ -76,7 +76,7 @@ export const useEvents = () => {
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [loadingMore, hasMore]);
 
   return { events, loading, loadingMore, error, hasMore, refetch: fetchEvents, loadMore };
 };
