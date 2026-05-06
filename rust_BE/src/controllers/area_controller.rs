@@ -5,7 +5,7 @@ use crate::application::{
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{
     AppState, AreaResponse, AssignAreaRequest, CreateAreaRequest, CreateClubTableRequest,
-    TableResponse, UpdateAreaRequest, UpdateTableRequest,
+    EventAreaAvailabilityResponse, TableResponse, UpdateAreaRequest, UpdateTableRequest,
 };
 use axum::{
     extract::{Path, State},
@@ -30,6 +30,26 @@ pub async fn list_areas_by_club(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(areas.into_iter().map(AreaResponse::from).collect()))
+}
+
+/// GET /events/:event_id/areas — public list of event-scoped areas with
+/// live availability counters for booking flows.
+pub async fn list_areas_by_event(
+    State(state): State<Arc<AppState>>,
+    Path(event_id): Path<String>,
+) -> Result<Json<Vec<EventAreaAvailabilityResponse>>, StatusCode> {
+    let event_uuid = Uuid::parse_str(&event_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    event_persistence::get_event_by_id(&state.read_db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let areas = area_persistence::get_event_area_availability(&state.read_db_pool, event_uuid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(areas))
 }
 
 // ============================================================================
@@ -66,15 +86,10 @@ pub async fn create_area(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let price = Decimal::from_f64_retain(req.price).ok_or(StatusCode::BAD_REQUEST)?;
-    let area = area_persistence::create_area(
-        &state.db_pool,
-        club.id,
-        req.name,
-        price,
-        req.description,
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let area =
+        area_persistence::create_area(&state.db_pool, club.id, req.name, price, req.description)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok((StatusCode::CREATED, Json(AreaResponse::from(area))))
 }
@@ -107,15 +122,10 @@ pub async fn update_area(
         .map(|p| Decimal::from_f64_retain(p).ok_or(StatusCode::BAD_REQUEST))
         .transpose()?;
 
-    let area = area_persistence::update_area(
-        &state.db_pool,
-        area_uuid,
-        req.name,
-        price,
-        req.description,
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let area =
+        area_persistence::update_area(&state.db_pool, area_uuid, req.name, price, req.description)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(AreaResponse::from(area)))
 }

@@ -51,6 +51,20 @@ impl From<Area> for AreaResponse {
     }
 }
 
+#[derive(Debug, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct EventAreaAvailabilityResponse {
+    pub id: String,
+    pub club_id: String,
+    pub name: String,
+    pub min_spend_per_person: String,
+    pub description: Option<String>,
+    pub available_table_count: i64,
+    pub total_table_count: i64,
+    pub available_people: i64,
+    pub total_people_capacity: i64,
+}
+
 /// Body for PATCH /owner/tables/:table_id/area
 #[derive(Debug, Deserialize)]
 pub struct AssignAreaRequest {

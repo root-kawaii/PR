@@ -32,16 +32,19 @@ pub use table::{
     AddPaymentToReservationRequest, CreateCheckoutRequest, CreateCheckoutResponse,
     CreateClubTableRequest, CreatePaymentIntentResponse, CreateSplitPaymentIntentRequest,
     CreateSplitReservationRequest, CreateSplitReservationResponse, CreateTableRequest,
-    CreateTableReservationRequest,
-    LinkTicketToReservationRequest, PaymentLinkPreviewResponse, PaymentShareResponse,
-    ReservationGuest, ReservationPaymentShare, ReservationPaymentStatusResponse, Table,
-    TableReservation, TableReservationResponse, TableReservationWithDetailsResponse,
-    TableReservationsResponse, TableReservationsWithDetailsResponse, TableResponse, TableSummary,
-    TablesResponse, UpdateTableRequest, UpdateTableReservationRequest,
+    CreateTableReservationRequest, LinkTicketToReservationRequest, PaymentLinkPreviewResponse,
+    PaymentShareResponse, ReservationGuest, ReservationPaymentShare,
+    ReservationPaymentStatusResponse, Table, TableReservation, TableReservationResponse,
+    TableReservationWithDetailsResponse, TableReservationsResponse,
+    TableReservationsWithDetailsResponse, TableResponse, TableSummary, TablesResponse,
+    UpdateTableRequest, UpdateTableReservationRequest,
 };
 
 pub mod area;
-pub use area::{Area, AreaResponse, AssignAreaRequest, CreateAreaRequest, UpdateAreaRequest};
+pub use area::{
+    Area, AreaResponse, AssignAreaRequest, CreateAreaRequest, EventAreaAvailabilityResponse,
+    UpdateAreaRequest,
+};
 
 use serde::Deserialize;
 

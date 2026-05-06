@@ -1,4 +1,4 @@
-use crate::models::Area;
+use crate::models::{Area, EventAreaAvailabilityResponse};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -15,6 +15,37 @@ pub async fn get_area_by_id(pool: &PgPool, area_id: Uuid) -> Result<Area, sqlx::
         .bind(area_id)
         .fetch_one(pool)
         .await
+}
+
+pub async fn get_event_area_availability(
+    pool: &PgPool,
+    event_id: Uuid,
+) -> Result<Vec<EventAreaAvailabilityResponse>, sqlx::Error> {
+    sqlx::query_as::<_, EventAreaAvailabilityResponse>(
+        r#"
+        SELECT
+            a.id::text AS id,
+            a.club_id::text AS club_id,
+            a.name,
+            format('%.2f €', a.price) AS min_spend_per_person,
+            a.description,
+            COUNT(t.id) FILTER (WHERE t.available = true)::bigint AS available_table_count,
+            COUNT(t.id)::bigint AS total_table_count,
+            COALESCE(SUM(CASE WHEN t.available = true THEN t.capacity ELSE 0 END), 0)::bigint AS available_people,
+            COALESCE(SUM(t.capacity), 0)::bigint AS total_people_capacity
+        FROM events e
+        JOIN areas a ON a.club_id = e.club_id
+        LEFT JOIN tables t
+          ON t.area_id = a.id
+         AND (t.event_id = e.id OR t.event_id IS NULL)
+        WHERE e.id = $1
+        GROUP BY a.id, a.club_id, a.name, a.price, a.description
+        ORDER BY a.name ASC
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn create_area(

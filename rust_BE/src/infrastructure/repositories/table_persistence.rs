@@ -1,5 +1,5 @@
-use crate::models::{ReservationGuest, ReservationPaymentShare, Table, TableReservation};
 use crate::models::club_owner::EventReservationStatsResponse;
+use crate::models::{ReservationGuest, ReservationPaymentShare, Table, TableReservation};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -64,6 +64,35 @@ pub async fn get_tables_by_event_id(
     Ok(tables)
 }
 
+/// Get all public-bookable tables for a specific event.
+/// This includes both legacy event-bound tables and reusable club-level tables
+/// (`event_id IS NULL`) that belong to the same club via `area_id`.
+pub async fn get_public_tables_by_event_id(
+    pool: &PgPool,
+    event_id: Uuid,
+) -> Result<Vec<Table>, sqlx::Error> {
+    let club_id = get_club_id_for_event(pool, event_id).await?;
+
+    let tables = sqlx::query_as::<_, Table>(
+        r#"
+        SELECT
+            t.*,
+            a.name AS area_name
+        FROM tables t
+        LEFT JOIN areas a ON a.id = t.area_id
+        WHERE t.event_id = $1
+           OR (t.event_id IS NULL AND a.club_id = $2)
+        ORDER BY COALESCE(a.name, t.zone, 'A') ASC, t.name ASC
+        "#,
+    )
+    .bind(event_id)
+    .bind(club_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(tables)
+}
+
 /// Get available tables for an event
 pub async fn get_available_tables_by_event_id(
     pool: &PgPool,
@@ -81,6 +110,37 @@ pub async fn get_available_tables_by_event_id(
         "#,
     )
     .bind(event_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(tables)
+}
+
+/// Get all available public-bookable tables for a specific event.
+/// Mirrors `get_public_tables_by_event_id` but filters on `available = true`.
+pub async fn get_public_available_tables_by_event_id(
+    pool: &PgPool,
+    event_id: Uuid,
+) -> Result<Vec<Table>, sqlx::Error> {
+    let club_id = get_club_id_for_event(pool, event_id).await?;
+
+    let tables = sqlx::query_as::<_, Table>(
+        r#"
+        SELECT
+            t.*,
+            a.name AS area_name
+        FROM tables t
+        LEFT JOIN areas a ON a.id = t.area_id
+        WHERE t.available = true
+          AND (
+                t.event_id = $1
+                OR (t.event_id IS NULL AND a.club_id = $2)
+              )
+        ORDER BY COALESCE(a.name, t.zone, 'A') ASC, t.name ASC
+        "#,
+    )
+    .bind(event_id)
+    .bind(club_id)
     .fetch_all(pool)
     .await?;
 
@@ -199,9 +259,9 @@ pub async fn find_first_available_table_by_area(
         FROM tables t
         LEFT JOIN areas a ON a.id = t.area_id
         WHERE t.area_id = $1
-          AND t.event_id = $2
           AND t.available = true
-        ORDER BY t.name ASC
+          AND (t.event_id = $2 OR t.event_id IS NULL)
+        ORDER BY CASE WHEN t.event_id = $2 THEN 0 ELSE 1 END, t.name ASC
         LIMIT 1
         "#,
     )
