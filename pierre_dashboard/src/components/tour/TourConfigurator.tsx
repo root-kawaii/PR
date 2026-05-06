@@ -4,7 +4,6 @@ import type {
   MarzipanoHotspot,
   MarzipanoScene,
   MarzipanoView,
-  TableResponse,
   TourConfigPayload,
 } from '../../types';
 import CreateAreaModal from './CreateAreaModal';
@@ -15,7 +14,6 @@ import SceneSettingsModal from './SceneSettingsModal';
 
 interface TourConfiguratorProps {
   initialScenes: MarzipanoScene[];
-  tables: TableResponse[];
   areas: Area[];
   scope: 'club' | 'event';
   saving: boolean;
@@ -29,8 +27,6 @@ interface ConfiguratorState {
   scenes: MarzipanoScene[];
   selectedSceneId: string | null;
   selectedHotspotId: string | null;
-  tablePositions: Record<string, { sceneId: string; yaw: number; pitch: number }>;
-  areaPositions: Record<string, { sceneId: string; yaw: number; pitch: number }>;
   dirty: boolean;
 }
 
@@ -50,26 +46,6 @@ type Action =
   | { type: 'MOVE_HOTSPOT'; sceneId: string; hotspotId: string; yaw: number; pitch: number }
   | { type: 'DELETE_HOTSPOT'; sceneId: string; hotspotId: string };
 
-function hotspotToPosition(hotspot: MarzipanoHotspot, sceneId: string) {
-  return { sceneId, yaw: hotspot.yaw, pitch: hotspot.pitch };
-}
-
-function syncPositions(state: ConfiguratorState): ConfiguratorState {
-  const tablePositions: ConfiguratorState['tablePositions'] = {};
-  const areaPositions: ConfiguratorState['areaPositions'] = {};
-  state.scenes.forEach((scene) => {
-    scene.hotspots.forEach((h) => {
-      if (h.type === 'table' && h.tableId) {
-        tablePositions[h.tableId] = hotspotToPosition(h, scene.id);
-      }
-      if (h.type === 'area' && h.areaId) {
-        areaPositions[h.areaId] = hotspotToPosition(h, scene.id);
-      }
-    });
-  });
-  return { ...state, tablePositions, areaPositions };
-}
-
 function reducer(state: ConfiguratorState, action: Action): ConfiguratorState {
   switch (action.type) {
     case 'SELECT_SCENE':
@@ -77,21 +53,21 @@ function reducer(state: ConfiguratorState, action: Action): ConfiguratorState {
     case 'SELECT_HOTSPOT':
       return { ...state, selectedHotspotId: action.hotspotId };
     case 'ADD_SCENE':
-      return syncPositions({
+      return {
         ...state,
         scenes: [...state.scenes, action.scene],
         selectedSceneId: action.scene.id,
         selectedHotspotId: null,
         dirty: true,
-      });
+      };
     case 'UPDATE_SCENE':
-      return syncPositions({
+      return {
         ...state,
         scenes: state.scenes.map((s) =>
           s.id === action.sceneId ? { ...s, ...action.patch } : s,
         ),
         dirty: true,
-      });
+      };
     case 'DELETE_SCENE': {
       const scenes = state.scenes.filter((s) => s.id !== action.sceneId);
       const cleaned = scenes.map((s) => ({
@@ -100,26 +76,26 @@ function reducer(state: ConfiguratorState, action: Action): ConfiguratorState {
           (h) => !(h.type === 'scene-link' && h.targetSceneId === action.sceneId),
         ),
       }));
-      return syncPositions({
+      return {
         ...state,
         scenes: cleaned,
         selectedSceneId:
           state.selectedSceneId === action.sceneId ? cleaned[0]?.id ?? null : state.selectedSceneId,
         selectedHotspotId: null,
         dirty: true,
-      });
+      };
     }
     case 'ADD_HOTSPOT':
-      return syncPositions({
+      return {
         ...state,
         scenes: state.scenes.map((s) =>
           s.id === action.sceneId ? { ...s, hotspots: [...s.hotspots, action.hotspot] } : s,
         ),
         selectedHotspotId: action.hotspot.id,
         dirty: true,
-      });
+      };
     case 'UPDATE_HOTSPOT':
-      return syncPositions({
+      return {
         ...state,
         scenes: state.scenes.map((s) =>
           s.id === action.sceneId
@@ -132,9 +108,9 @@ function reducer(state: ConfiguratorState, action: Action): ConfiguratorState {
             : s,
         ),
         dirty: true,
-      });
+      };
     case 'MOVE_HOTSPOT':
-      return syncPositions({
+      return {
         ...state,
         scenes: state.scenes.map((s) =>
           s.id === action.sceneId
@@ -149,9 +125,9 @@ function reducer(state: ConfiguratorState, action: Action): ConfiguratorState {
             : s,
         ),
         dirty: true,
-      });
+      };
     case 'DELETE_HOTSPOT':
-      return syncPositions({
+      return {
         ...state,
         scenes: state.scenes.map((s) =>
           s.id === action.sceneId
@@ -161,7 +137,7 @@ function reducer(state: ConfiguratorState, action: Action): ConfiguratorState {
         selectedHotspotId:
           state.selectedHotspotId === action.hotspotId ? null : state.selectedHotspotId,
         dirty: true,
-      });
+      };
     default:
       return state;
   }
@@ -176,7 +152,6 @@ function newHotspotId() {
 
 export default function TourConfigurator({
   initialScenes,
-  tables,
   areas: initialAreas,
   scope,
   saving,
@@ -186,15 +161,12 @@ export default function TourConfigurator({
   onAreaCreated,
 }: TourConfiguratorProps) {
   const initialState: ConfiguratorState = useMemo(
-    () =>
-      syncPositions({
-        scenes: initialScenes,
-        selectedSceneId: initialScenes[0]?.id ?? null,
-        selectedHotspotId: null,
-        tablePositions: {},
-        areaPositions: {},
-        dirty: false,
-      }),
+    () => ({
+      scenes: initialScenes,
+      selectedSceneId: initialScenes[0]?.id ?? null,
+      selectedHotspotId: null,
+      dirty: false,
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [initialScenes.map((s) => s.id).join(',')],
   );
@@ -240,7 +212,7 @@ export default function TourConfigurator({
       sceneId: currentScene.id,
       hotspot: {
         id: newHotspotId(),
-        type: 'table',
+        type: 'area',
         yaw: coords.yaw,
         pitch: coords.pitch,
       },
@@ -249,17 +221,7 @@ export default function TourConfigurator({
   };
 
   const handleSave = async () => {
-    const payload: TourConfigPayload = {
-      scenes: state.scenes,
-      tablePositions: Object.entries(state.tablePositions).map(([tableId, p]) => ({
-        tableId,
-        ...p,
-      })),
-      areaPositions: Object.entries(state.areaPositions).map(([areaId, p]) => ({
-        areaId,
-        ...p,
-      })),
-    };
+    const payload: TourConfigPayload = { scenes: state.scenes };
     await onSave(payload);
   };
 
@@ -321,7 +283,6 @@ export default function TourConfigurator({
           hotspot={currentHotspot}
           scenes={state.scenes}
           currentSceneId={state.selectedSceneId}
-          tables={tables}
           areas={areas}
           armed={armed}
           onToggleArm={setArmed}

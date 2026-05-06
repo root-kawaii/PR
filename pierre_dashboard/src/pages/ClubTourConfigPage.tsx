@@ -67,7 +67,6 @@ export default function ClubTourConfigPage() {
         <TourConfigurator
           scope="club"
           initialScenes={(club?.marzipanoScenes as MarzipanoScene[] | null) ?? []}
-          tables={[]}
           areas={areas ?? []}
           saving={saving}
           onSave={handleSave}

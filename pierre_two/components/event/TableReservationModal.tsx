@@ -9,12 +9,11 @@ import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Event, Table } from "@/types";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { API_URL } from "@/config/api";
 import { useTheme } from "@/context/ThemeContext";
 import { TableReservationModal as PaymentModal } from "@/components/reservation/TableReservationModal";
 import { MarzipanoViewer, MarzipanoViewerRef } from "@/components/event/MarzipanoViewer";
-import { TableFilterMenu } from "@/components/event/TableFilterMenu";
 
 type TableReservationModalProps = {
   visible: boolean;
@@ -35,7 +34,6 @@ export const TableReservationModal = ({
   const [currentSceneName, setCurrentSceneName] = useState<string>("");
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [menuVisible, setMenuVisible] = useState(false);
 
   // Fetch area-backed table inventory when modal opens.
   useEffect(() => {
@@ -51,7 +49,6 @@ export const TableReservationModal = ({
       setShowPaymentModal(false);
       setSelectedTable(null);
       setCurrentSceneName("");
-      setMenuVisible(false);
       setHasFetchedTables(false);
     }
   }, [visible, event]);
@@ -78,30 +75,16 @@ export const TableReservationModal = ({
     }
   };
 
-  // Hotspots still point to a physical table, but the user-facing selection is area-first.
-  const handleTableClick = (tableId: string) => {
-    const table = tables.find((t) => t.id === tableId);
-    if (table && table.available) {
-      console.log(`✅ Opening payment modal for table: ${table.name}`);
+  // Area hotspot tapped: auto-select first available table in that area
+  const handleAreaClick = (areaId: string, areaName?: string) => {
+    const table = tables.find((t) => t.areaId === areaId && t.available);
+    if (table) {
+      console.log(`✅ Opening payment modal for area: ${areaName ?? areaId} → table: ${table.name}`);
       setSelectedTable(table);
       setShowPaymentModal(true);
-    } else if (table && !table.available) {
-      console.log(`⚠️ Table ${table.name} is not available`);
+    } else {
+      console.log(`⚠️ No available tables in area: ${areaName ?? areaId}`);
     }
-  };
-
-  // The filter menu groups tables by area and returns a representative table for booking.
-  const handleTableSelectFromMenu = (table: Table) => {
-    console.log(`📍 Navigating to table: ${table.name}`);
-
-    // If table has marzipano position, switch to that scene
-    if (table.marzipanoPosition?.sceneId) {
-      marzipanoViewerRef.current?.switchScene(table.marzipanoPosition.sceneId);
-    }
-
-    // Open payment modal for the selected table
-    setSelectedTable(table);
-    setShowPaymentModal(true);
   };
 
   // Handle scene change from Marzipano viewer
@@ -109,11 +92,6 @@ export const TableReservationModal = ({
     console.log(`🔄 Scene changed to: ${sceneName}`);
     setCurrentSceneName(sceneName);
   };
-
-  // Handle filter changes from menu - update hotspot visibility
-  const handleFilterChange = useCallback((tableIds: string[]) => {
-    marzipanoViewerRef.current?.updateHotspotVisibility(tableIds);
-  }, []);
 
   if (!event) return null;
 
@@ -134,7 +112,7 @@ export const TableReservationModal = ({
             ref={marzipanoViewerRef}
             scenes={event.marzipanoScenes!}
             tables={tables}
-            onTableClick={handleTableClick}
+            onAreaClick={handleAreaClick}
             onSceneChange={handleSceneChange}
             style={styles.fullscreenViewer}
           />
@@ -168,27 +146,6 @@ export const TableReservationModal = ({
           <IconSymbol name="chevron.left" size={24} color={theme.text} />
         </TouchableOpacity>
 
-        {/* Floating Menu (Hamburger) Button */}
-        <TouchableOpacity
-          onPress={() => setMenuVisible(true)}
-          style={[styles.menuButton, { backgroundColor: theme.overlay }]}
-        >
-          <View style={styles.hamburgerIcon}>
-            <View style={[styles.hamburgerLine, { backgroundColor: theme.text }]} />
-            <View style={[styles.hamburgerLine, { backgroundColor: theme.text }]} />
-            <View style={[styles.hamburgerLine, { backgroundColor: theme.text }]} />
-          </View>
-        </TouchableOpacity>
-
-        {/* Area Filter Menu Overlay */}
-        <TableFilterMenu
-          visible={menuVisible}
-          onClose={() => setMenuVisible(false)}
-          tables={tables}
-          onTableSelect={handleTableSelectFromMenu}
-          selectedTableId={selectedTable?.id}
-          onFilterChange={handleFilterChange}
-        />
       </ThemedView>
 
       {/* Payment Modal */}
@@ -272,33 +229,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
-  },
-  menuButton: {
-    position: "absolute",
-    top: 60,
-    left: 76,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 100,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  hamburgerIcon: {
-    width: 20,
-    height: 14,
-    justifyContent: "space-between",
-  },
-  hamburgerLine: {
-    width: 20,
-    height: 2,
-    backgroundColor: "#fff",
-    borderRadius: 1,
   },
 });

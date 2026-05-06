@@ -71,7 +71,6 @@ pub async fn create_area(
         req.name,
         price,
         req.description,
-        req.marzipano_position,
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -113,7 +112,6 @@ pub async fn update_area(
         req.name,
         price,
         req.description,
-        req.marzipano_position,
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

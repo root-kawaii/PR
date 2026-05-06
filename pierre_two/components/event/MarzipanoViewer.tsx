@@ -16,8 +16,7 @@ import * as FileSystem from "expo-file-system/legacy";
 type MarzipanoViewerProps = {
   scenes: MarzipanoScene[];
   tables: Table[];
-  onTableClick: (tableId: string) => void;
-  onAreaClick?: (areaId: string, areaName?: string) => void;
+  onAreaClick: (areaId: string, areaName?: string) => void;
   onSceneChange?: (sceneId: string, sceneName: string) => void;
   onError?: (error: string) => void;
   style?: ViewStyle;
@@ -26,25 +25,22 @@ type MarzipanoViewerProps = {
 export type MarzipanoViewerRef = {
   updateAvailability: (availabilityMap: Record<string, boolean>) => void;
   switchScene: (sceneId: string) => void;
-  updateHotspotVisibility: (visibleTableIds: string[] | null) => void;
 };
 
 export const MarzipanoViewer = forwardRef<
   MarzipanoViewerRef,
   MarzipanoViewerProps
->(({ scenes, tables, onTableClick, onAreaClick, onSceneChange, onError, style }, ref) => {
+>(({ scenes, tables, onAreaClick, onSceneChange, onError, style }, ref) => {
   const webViewRef = useRef<WebView>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const onTableClickRef = useRef(onTableClick);
   const onAreaClickRef = useRef(onAreaClick);
   const onSceneChangeRef = useRef(onSceneChange);
   const onErrorRef = useRef(onError);
 
   useEffect(() => {
-    onTableClickRef.current = onTableClick;
     onAreaClickRef.current = onAreaClick;
     onSceneChangeRef.current = onSceneChange;
     onErrorRef.current = onError;
@@ -53,84 +49,24 @@ export const MarzipanoViewer = forwardRef<
   const initializedRef = useRef(false);
 
   const buildViewerConfig = useCallback(() => {
-    const availabilityMap: Record<string, boolean> = {};
-    tables.forEach((table) => {
-      availabilityMap[table.id] = table.available;
-    });
+    const scenesWithHotspots = scenes.map((scene) => ({
+      id: scene.id,
+      name: scene.name,
+      imageUrl: scene.imageUrl,
+      initialView: scene.initialView,
+      hotspots: scene.hotspots.map((h) => {
+        if (h.type === "area" && h.areaId) {
+          const availableCount = tables.filter(
+            (t) => t.areaId === h.areaId && t.available
+          ).length;
+          return { ...h, availableCount };
+        }
+        return { id: h.id, type: h.type, yaw: h.yaw, pitch: h.pitch,
+                 targetSceneId: h.targetSceneId, label: h.label };
+      }),
+    }));
 
-    const tableById = new Map(tables.map((t) => [t.id, t]));
-
-    const buildTableHotspot = (
-      table: Table,
-      pos: { yaw: number; pitch: number },
-    ) => ({
-      id: `table-${table.id}`,
-      type: "table" as const,
-      yaw: pos.yaw,
-      pitch: pos.pitch,
-      tableId: table.id,
-      tableName: table.name,
-      available: table.available,
-      capacity: table.capacity,
-      minSpend: table.minSpend.replace(" €", ""),
-      totalCost: table.totalCost.replace(" €", ""),
-      features: table.features || [],
-      locationDescription: table.locationDescription,
-    });
-
-    const scenesWithHotspots = scenes.map((scene) => {
-      // Table positions can live in two places: legacy inside scene.hotspots
-      // (entries with type==='table' and a tableId) and the canonical
-      // table.marzipanoPosition. Merge them keyed by tableId so the same
-      // table never renders twice. Canonical (table.marzipanoPosition) wins.
-      const tablePositionByTableId = new Map<string, { yaw: number; pitch: number }>();
-      scene.hotspots
-        .filter((h) => h.type === "table" && h.tableId)
-        .forEach((h) => {
-          tablePositionByTableId.set(h.tableId!, { yaw: h.yaw, pitch: h.pitch });
-        });
-      tables
-        .filter((t) => t.marzipanoPosition?.sceneId === scene.id)
-        .forEach((t) => {
-          tablePositionByTableId.set(t.id, {
-            yaw: t.marzipanoPosition!.yaw,
-            pitch: t.marzipanoPosition!.pitch,
-          });
-        });
-
-      const tableHotspots = Array.from(tablePositionByTableId.entries())
-        .map(([tableId, pos]) => {
-          const table = tableById.get(tableId);
-          return table ? buildTableHotspot(table, pos) : null;
-        })
-        .filter((h): h is ReturnType<typeof buildTableHotspot> => h !== null);
-
-      const nonTableHotspots = scene.hotspots
-        .filter((h) => h.type !== "table")
-        .map((h) => ({
-          id: h.id,
-          type: h.type,
-          yaw: h.yaw,
-          pitch: h.pitch,
-          targetSceneId: h.targetSceneId,
-          label: h.label,
-          areaId: h.areaId,
-          areaName: h.areaName,
-        }));
-
-      return {
-        id: scene.id,
-        name: scene.name,
-        imageUrl: scene.imageUrl,
-        initialView: scene.initialView,
-        hotspots: [...nonTableHotspots, ...tableHotspots],
-      };
-    });
-
-    return {
-      scenes: scenesWithHotspots,
-      availabilityMap,
-    };
+    return { scenes: scenesWithHotspots };
   }, [scenes, tables]);
 
 
@@ -151,14 +87,6 @@ export const MarzipanoViewer = forwardRef<
         if (initializedRef.current && webViewRef.current) {
           webViewRef.current.injectJavaScript(`
             window.switchToScene('${sceneId}');
-            true;
-          `);
-        }
-      },
-      updateHotspotVisibility: (visibleTableIds: string[] | null) => {
-        if (initializedRef.current && webViewRef.current) {
-          webViewRef.current.injectJavaScript(`
-            window.updateHotspotVisibility(${JSON.stringify(visibleTableIds)});
             true;
           `);
         }
@@ -237,25 +165,11 @@ export const MarzipanoViewer = forwardRef<
           setIsLoading(false);
           break;
 
-        case "HOTSPOT_CLICK":
-          console.log(
-            `🎯 Table hotspot clicked: ${message.tableName} (${message.tableId})`
-          );
-          onTableClickRef.current(message.tableId);
-          break;
-
         case "AREA_CLICK":
           console.log(
             `🎯 Area hotspot clicked: ${message.areaName} (${message.areaId})`
           );
-          onAreaClickRef.current?.(message.areaId, message.areaName);
-          break;
-
-        case "UNAVAILABLE_TABLE_CLICK":
-          console.log(
-            `🎯 Unavailable table clicked: ${message.tableName} (${message.tableId})`
-          );
-          alert(`${message.tableName} is currently unavailable.\n\nWould you like to:\n• View other available tables\n• Join the waitlist\n• Contact us for more information`);
+          onAreaClickRef.current(message.areaId, message.areaName);
           break;
 
         case "SCENE_CHANGE":

@@ -136,7 +136,7 @@ Nessuna modifica.
 
 ---
 
-## Verifica
+## Verifica (fix originali)
 
 - Aprire l'app nel simulatore iOS e osservare in Metro che `GET
   /events?limit=20&offset=0` parte una sola volta al focus della home.
@@ -148,3 +148,137 @@ Nessuna modifica.
   drag.
 - Tornare indietro e ripetere: niente più crash "Maximum call stack size
   exceeded" o `e.style undefined`.
+
+---
+
+# Refactor: unica fonte di verità per il tour 360° + prenotazione per area
+
+**Status**: implementazione completa — migration da applicare su Supabase.
+
+## Overview
+
+Due problemi risolti in un'unica serie di modifiche:
+
+1. **Doppia fonte di verità**: le posizioni degli hotspot erano salvate sia
+   in `events.marzipano_config` (scene.hotspots) sia in
+   `tables.marzipano_position`. Questo causava hotspot doppi nel viewer.
+   Soluzione: `marzipano_config` diventa l'unica fonte di verità; la colonna
+   `marzipano_position` viene droppata da `tables` e `areas`.
+
+2. **Prenotazione per area, non per tavolo**: gli hotspot tavolo spariscono
+   dal viewer. Rimangono solo due tipi: `scene-link` (navigazione) e `area`
+   (prenota un tavolo nell'area). Il backend auto-assegna il primo tavolo
+   libero dell'area usando `SELECT ... FOR UPDATE`.
+
+## Database
+
+### Migration `044_simplify_marzipano_positions.sql`
+
+- Backfill best-effort: copia le posizioni da `marzipano_position` nella
+  scena corrispondente di `marzipano_config` se l'hotspot mancava.
+- `ALTER TABLE tables DROP COLUMN IF EXISTS marzipano_position`
+- `ALTER TABLE areas DROP COLUMN IF EXISTS marzipano_position`
+- Drop dell'indice `idx_tables_marzipano_position`
+
+## Backend
+
+### Modelli (`models/table.rs`, `models/area.rs`)
+
+Rimosso `marzipano_position: Option<JsonValue>` da `Table`, `TableResponse`,
+`Area`, `AreaResponse`.
+
+### Persistenze
+
+- `table_persistence.rs`: rimosso campo dai SELECT/INSERT/UPDATE; aggiunta
+  `find_first_available_table_by_area` (senza lock, per pricing preview).
+- `area_persistence.rs`: rimosso campo dai SELECT/INSERT/UPDATE.
+
+### Controller `club_owner_controller.rs`
+
+Rimosso il loop che aggiornava `marzipano_position` sulle singole righe dopo
+il salvataggio delle scene.
+
+### Controller `table_controller.rs`
+
+`create_payment_intent` e `create_reservation_with_payment` ora accettano
+`area_id` in alternativa a `table_id`:
+- Se `area_id` → `find_first_available_table_by_area` fuori transazione per
+  ottenere prezzi; dentro la transazione `SELECT ... FOR UPDATE WHERE id = $1
+  AND available = true` per prevenire double-booking.
+- Se `table_id` → comportamento invariato (backward compatibility).
+- Se nessuno dei due → 400 Bad Request.
+
+## Mobile (`pierre_two`)
+
+### `types/index.ts`
+
+- Rimosso `marzipanoPosition?: MarzipanoPosition` da `Table`
+- Rimosso il tipo `MarzipanoPosition`
+- `MarzipanoHotspot.type`: solo `'scene-link' | 'area'` (rimosso `'table'`)
+- Aggiunto campo opzionale `availableCount?: number`
+
+### `MarzipanoViewer.tsx`
+
+- `buildViewerConfig`: arricchisce gli hotspot `area` con `availableCount`
+  (conteggio tavoli disponibili in quella area); gli hotspot `table`
+  scompaiono (non esistono più nel config).
+- Rimosso `updateHotspotVisibility` dalla ref API; rimosso `onTableClick`.
+- `AREA_CLICK`: chiama direttamente `onAreaClickRef.current` (non più
+  opzionale).
+
+### `TableReservationModal.tsx`
+
+- `handleAreaClick`: trova il primo tavolo disponibile nell'area e apre
+  subito il popup di prenotazione.
+- Rimosso `TableFilterMenu`, menu hamburger, e tutta la logica di filtraggio
+  per tavolo.
+- `MarzipanoViewer` montato con `onAreaClick={handleAreaClick}`.
+
+## Dashboard (`pierre_dashboard`)
+
+### `types/index.ts`
+
+- Rimosso `MarzipanoPosition`
+- `MarzipanoHotspotType = 'scene-link' | 'area'`
+- Rimossi `tableId?`, `tableName?` da `MarzipanoHotspot`
+- `TourConfigPayload = { scenes: MarzipanoScene[] | null }` (rimossi
+  `tablePositions`, `areaPositions`)
+- Rimosso `marzipanoPosition` da `Table` e `Area`
+
+### `HotspotInspector.tsx`
+
+Solo due tipi nel dropdown: `area` e `scene-link`. Rimosso il blocco
+configurazione table hotspot.
+
+### `TourConfigurator.tsx`
+
+Rimossi `tablePositions`/`areaPositions` dallo state, `syncPositions()`,
+`hotspotToPosition()`. Payload di salvataggio semplificato a
+`{ scenes: state.scenes }`. Click su canvas in armed mode crea hotspot
+`type: 'area'`.
+
+### `ClubTourConfigPage.tsx`, `EventTourConfigPage.tsx`
+
+Rimosso fetch delle tables; `handleResetOverride` usa `{ scenes: null }`.
+
+## Files Modified
+
+| File | Modifica |
+|---|---|
+| `DB/migrations/044_simplify_marzipano_positions.sql` | Nuova migration: backfill + drop colonne |
+| `rust_BE/src/models/table.rs` | Rimosso `marzipano_position` |
+| `rust_BE/src/models/area.rs` | Rimosso `marzipano_position` |
+| `rust_BE/src/infrastructure/repositories/table_persistence.rs` | Rimosso campo; aggiunta `find_first_available_table_by_area` |
+| `rust_BE/src/infrastructure/repositories/area_persistence.rs` | Rimosso `marzipano_position` |
+| `rust_BE/src/controllers/club_owner_controller.rs` | Rimosso loop aggiornamento posizioni |
+| `rust_BE/src/controllers/table_controller.rs` | Auto-assegnazione area con FOR UPDATE |
+| `rust_BE/src/controllers/area_controller.rs` | Adattato a modello senza `marzipano_position` |
+| `pierre_two/types/index.ts` | Tipi semplificati |
+| `pierre_two/components/event/MarzipanoViewer.tsx` | `buildViewerConfig` semplificato |
+| `pierre_two/components/event/TableReservationModal.tsx` | `handleAreaClick`, rimosso `TableFilterMenu` |
+| `pierre_dashboard/src/types/index.ts` | Tipi semplificati |
+| `pierre_dashboard/src/components/tour/HotspotInspector.tsx` | Solo 2 tipi hotspot |
+| `pierre_dashboard/src/components/tour/TourConfigurator.tsx` | Rimossi state e funzioni ridondanti |
+| `pierre_dashboard/src/components/tour/MarzipanoCanvas.tsx` | Schema colori aggiornato |
+| `pierre_dashboard/src/pages/ClubTourConfigPage.tsx` | Rimosso prop `tables` |
+| `pierre_dashboard/src/pages/EventTourConfigPage.tsx` | Rimosso fetch tables; fix payload |

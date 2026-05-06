@@ -177,7 +177,6 @@ pub async fn create_table(
         min_spend,
         req.location_description,
         req.features,
-        req.marzipano_position,
     )
     .await
     {
@@ -211,7 +210,6 @@ pub async fn update_table(
         req.available,
         req.location_description,
         req.features,
-        req.marzipano_position,
     )
     .await
     {
@@ -587,18 +585,31 @@ pub async fn create_payment_intent(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSplitPaymentIntentRequest>,
 ) -> Result<Json<CreatePaymentIntentResponse>, (StatusCode, String)> {
-    let table_id = Uuid::parse_str(&req.table_id)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
     let event_id = Uuid::parse_str(&req.event_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
     let owner_user_id = Uuid::parse_str(&req.owner_user_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
 
-    // Get table — capacity drives the per-person split
-    let table = match table_persistence::get_table_by_id(&state.db_pool, table_id).await {
-        Ok(t) => t,
-        Err(_) => return Err((StatusCode::NOT_FOUND, "Tavolo non trovato".to_string())),
+    // Resolve table: either explicit table_id or auto-pick first available in area (for pricing)
+    let table = if let Some(ref tid) = req.table_id {
+        let id = Uuid::parse_str(tid)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
+        match table_persistence::get_table_by_id(&state.db_pool, id).await {
+            Ok(t) => t,
+            Err(_) => return Err((StatusCode::NOT_FOUND, "Tavolo non trovato".to_string())),
+        }
+    } else if let Some(ref aid) = req.area_id {
+        let area_uuid = Uuid::parse_str(aid)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "ID area non valido".to_string()))?;
+        match table_persistence::find_first_available_table_by_area(&state.db_pool, area_uuid, event_id).await {
+            Ok(t) => t,
+            Err(sqlx::Error::RowNotFound) => return Err((StatusCode::CONFLICT, "Nessun tavolo disponibile per questa area".to_string())),
+            Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())),
+        }
+    } else {
+        return Err((StatusCode::BAD_REQUEST, "Specificare table_id o area_id".to_string()));
     };
+    let table_id = table.id;
 
     let total_cost = table.total_cost;
     let capacity = Decimal::from(table.capacity);
@@ -763,12 +774,30 @@ pub async fn create_reservation_with_payment(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSplitReservationRequest>,
 ) -> Result<Json<CreateSplitReservationResponse>, (StatusCode, String)> {
-    let table_id = Uuid::parse_str(&req.table_id)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
     let event_id = Uuid::parse_str(&req.event_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
     let owner_user_id = Uuid::parse_str(&req.owner_user_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "ID utente non valido".to_string()))?;
+
+    // Resolve table: explicit table_id or preview first available in area (for pricing/amount check)
+    let (table_id, table) = if let Some(ref tid) = req.table_id {
+        let id = Uuid::parse_str(tid)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "ID tavolo non valido".to_string()))?;
+        match table_persistence::get_table_by_id(&state.db_pool, id).await {
+            Ok(t) => (id, t),
+            Err(_) => return Err((StatusCode::NOT_FOUND, "Tavolo non trovato".to_string())),
+        }
+    } else if let Some(ref aid) = req.area_id {
+        let area_uuid = Uuid::parse_str(aid)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "ID area non valido".to_string()))?;
+        match table_persistence::find_first_available_table_by_area(&state.db_pool, area_uuid, event_id).await {
+            Ok(t) => (t.id, t),
+            Err(sqlx::Error::RowNotFound) => return Err((StatusCode::CONFLICT, "Nessun tavolo disponibile per questa area".to_string())),
+            Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())),
+        }
+    } else {
+        return Err((StatusCode::BAD_REQUEST, "Specificare table_id o area_id".to_string()));
+    };
 
     tracing::info!(
         owner_user_id = %owner_user_id,
@@ -777,12 +806,6 @@ pub async fn create_reservation_with_payment(
         payment_intent_id = %req.stripe_payment_intent_id,
         "Creating split reservation with payment"
     );
-
-    // Get table
-    let table = match table_persistence::get_table_by_id(&state.db_pool, table_id).await {
-        Ok(t) => t,
-        Err(_) => return Err((StatusCode::NOT_FOUND, "Tavolo non trovato".to_string())),
-    };
 
     let total_cost = table.total_cost;
     let capacity = table.capacity;
@@ -838,6 +861,23 @@ pub async fn create_reservation_with_payment(
         tracing::error!(error = %e, "Failed to begin transaction");
         (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
     })?;
+
+    // For area-based bookings: re-acquire the table with FOR UPDATE to prevent double-booking
+    let table_id = if req.area_id.is_some() {
+        let locked = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM tables WHERE id = $1 AND available = true FOR UPDATE"
+        )
+        .bind(table_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to lock table row");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())
+        })?;
+        locked.ok_or_else(|| (StatusCode::CONFLICT, "Tavolo non più disponibile".to_string()))?
+    } else {
+        table_id
+    };
 
     // Step 1: Create payment record for owner
     sqlx::query(

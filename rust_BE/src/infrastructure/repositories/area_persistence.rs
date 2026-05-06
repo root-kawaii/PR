@@ -1,6 +1,5 @@
 use crate::models::Area;
 use rust_decimal::Decimal;
-use serde_json::Value as JsonValue;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -24,12 +23,11 @@ pub async fn create_area(
     name: String,
     price: Decimal,
     description: Option<String>,
-    marzipano_position: Option<JsonValue>,
 ) -> Result<Area, sqlx::Error> {
     sqlx::query_as::<_, Area>(
         r#"
-        INSERT INTO areas (club_id, name, price, description, marzipano_position)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO areas (club_id, name, price, description)
+        VALUES ($1, $2, $3, $4)
         RETURNING *
         "#,
     )
@@ -37,7 +35,6 @@ pub async fn create_area(
     .bind(name)
     .bind(price)
     .bind(description)
-    .bind(marzipano_position)
     .fetch_one(pool)
     .await
 }
@@ -76,7 +73,6 @@ pub async fn get_or_create_default_area(
         "A".to_string(),
         default_price,
         Some("Default area created automatically".to_string()),
-        None,
     )
     .await
 }
@@ -87,50 +83,24 @@ pub async fn update_area(
     name: Option<String>,
     price: Option<Decimal>,
     description: Option<String>,
-    marzipano_position: Option<JsonValue>,
 ) -> Result<Area, sqlx::Error> {
     sqlx::query_as::<_, Area>(
         r#"
         UPDATE areas
-        SET name               = COALESCE($1, name),
-            price              = COALESCE($2, price),
-            description        = COALESCE($3, description),
-            marzipano_position = COALESCE($4, marzipano_position),
-            updated_at         = NOW()
-        WHERE id = $5
+        SET name        = COALESCE($1, name),
+            price       = COALESCE($2, price),
+            description = COALESCE($3, description),
+            updated_at  = NOW()
+        WHERE id = $4
         RETURNING *
         "#,
     )
     .bind(name)
     .bind(price)
     .bind(description)
-    .bind(marzipano_position)
     .bind(area_id)
     .fetch_one(pool)
     .await
-}
-
-/// Overwrite an area's `marzipano_position` (or clear it when `None`).
-/// Returns true if the area exists.
-pub async fn update_marzipano_position(
-    pool: &PgPool,
-    area_id: Uuid,
-    position: Option<JsonValue>,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        UPDATE areas
-        SET marzipano_position = $1,
-            updated_at = NOW()
-        WHERE id = $2
-        "#,
-    )
-    .bind(position)
-    .bind(area_id)
-    .execute(pool)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
 }
 
 pub async fn delete_area(pool: &PgPool, area_id: Uuid) -> Result<bool, sqlx::Error> {
