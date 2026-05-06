@@ -15,7 +15,7 @@ import {
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
-import type { EventReservationStats, TableResponse } from '../types';
+import type { EventReservationStats, EventResponse, TableResponse } from '../types';
 import { trackEvent } from '../config/analytics';
 import { EmptyState, PageHeader, SectionCard } from '../components/ui';
 import { ui } from '../components/ui-classes';
@@ -74,6 +74,18 @@ function getReservationStatusLabel(reservation: OwnerReservation): string {
   return STATUS_LABELS[reservation.status] ?? reservation.status;
 }
 
+function formatEventDate(dateStr: string): string {
+  const isoCandidate = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
+  const d = new Date(isoCandidate);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return new Intl.DateTimeFormat('it-IT', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).format(d);
+}
+
 function getReservationPaymentNote(reservation: OwnerReservation): string | null {
   if (
     reservation.status === 'pending' &&
@@ -95,6 +107,7 @@ export default function EventReservationsPage() {
   );
   const { data: tablesData } = useFetch<TablesData>(`/owner/events/${eventId}/tables`);
   const { data: statsData } = useFetch<EventReservationStats>(`/owner/events/${eventId}/stats`);
+  const { data: eventData } = useFetch<EventResponse>(`/events/${eventId}`);
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -362,14 +375,18 @@ export default function EventReservationsPage() {
   return (
     <div>
       <div className="mb-6">
-        <Link to={`/dashboard/events/${eventId}/tables`} className={`${ui.backLink} mb-3`}>
+        <Link to="/dashboard/events" className={`${ui.backLink} mb-3`}>
           <ArrowLeft size={16} />
-          Torna ai Tavoli
+          Torna agli Eventi
         </Link>
         <PageHeader
           className="mb-0"
-          title="Prenotazioni"
-          description="Gestisci stato, area/tavolo e composizione delle prenotazioni della serata."
+          title={eventData ? `Prenotazioni · ${eventData.title}` : 'Prenotazioni'}
+          description={
+            eventData
+              ? `${formatEventDate(eventData.date)}${eventData.time ? ` · ${eventData.time}` : ''}${eventData.venue ? ` · ${eventData.venue}` : ''}`
+              : 'Gestisci stato, area/tavolo e composizione delle prenotazioni della serata.'
+          }
           action={
             <button onClick={() => setShowForm(true)} className={ui.primaryButton}>
               <Plus size={18} />
