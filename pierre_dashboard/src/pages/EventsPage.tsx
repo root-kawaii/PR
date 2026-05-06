@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
-import { Plus, ChevronRight, X, Pencil, Trash2 } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Plus, ChevronRight, X, Pencil, Trash2, Compass } from "lucide-react";
 import { useFetch } from "../hooks/useFetch";
 import { useAuth } from "../context/AuthContext";
 import { API_URL } from "../config/api";
@@ -97,7 +97,15 @@ const emptyForm: EventFormData = {
 };
 
 export default function EventsPage() {
-  const [filterDate, setFilterDate] = useState(todayStr());
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterDate = searchParams.get("from") ?? todayStr();
+  const setFilterDate = (value: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set("from", value);
+    else next.delete("from");
+    setSearchParams(next, { replace: true });
+  };
   const { data: events, loading, refetch } = useFetch<EventResponse[]>(`/owner/events?from_date=${filterDate}`);
   const { data: genres } = useFetch<Genre[]>("/genres");
   const { token } = useAuth();
@@ -249,28 +257,25 @@ export default function EventsPage() {
         title="Eventi"
         description="Crea, modifica e monitora le serate in programma mantenendo locandine, prezzi e dettagli coerenti."
         action={
-          <button onClick={openCreate} className={ui.primaryButton}>
-            <Plus size={18} />
-            Nuovo evento
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              aria-label="Filtra eventi da data"
+              className={`${ui.input} h-10 w-37.5 py-1 text-sm`}
+            />
+            <button onClick={openCreate} className={`${ui.primaryButton} whitespace-nowrap`}>
+              <Plus size={18} />
+              Nuovo evento
+            </button>
+          </div>
         }
       />
 
-      {/* Date filter */}
-      <SectionCard className="mb-6 p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <label className={ui.label}>Da data</label>
-        <input
-          type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          className={`${ui.input} w-auto`}
-        />
-        <span className={`${ui.helperText} ${ui.tabularNums}`}>
-          {filteredEvents.length} eventi
-        </span>
-      </div>
-      </SectionCard>
+      <p className={`mb-4 ${ui.helperText} ${ui.tabularNums}`}>
+        {filteredEvents.length} eventi
+      </p>
 
       {/* Create / Edit modal */}
       {showForm && (
@@ -544,6 +549,16 @@ export default function EventsPage() {
                   </div>
                 </Link>
                 <div className="flex justify-end gap-2 border-t border-gray-100 px-4 pb-3 pt-2">
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      navigate(`/dashboard/events/${event.id}/tour`);
+                    }}
+                    className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                  >
+                    <Compass size={13} /> Tour 360
+                  </button>
                   <button
                     onClick={(e) => openEdit(e, event)}
                     className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
