@@ -489,7 +489,7 @@ export default function EventsPage() {
                 className="overflow-hidden transition-shadow group hover:shadow-lg"
               >
                 <Link
-                  to={`/dashboard/events/${event.id}/tables`}
+                  to={`/dashboard/events/${event.id}/reservations`}
                   className="block"
                 >
                   {eventImageSrc && (
