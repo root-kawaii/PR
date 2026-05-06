@@ -56,10 +56,19 @@ export const MarzipanoViewer = forwardRef<
       initialView: scene.initialView,
       hotspots: scene.hotspots.map((h) => {
         if (h.type === "area" && h.areaId) {
-          const availableCount = tables.filter(
-            (t) => t.areaId === h.areaId && t.available
-          ).length;
-          return { ...h, availableCount };
+          const tablesInArea = tables.filter((t) => t.areaId === h.areaId);
+          const availableTables = tablesInArea.filter((t) => t.available);
+          const representative = availableTables[0] ?? tablesInArea[0];
+          return {
+            ...h,
+            availableCount: availableTables.length,
+            totalCount: tablesInArea.length,
+            capacity: representative?.capacity,
+            totalCost: representative?.totalCost,
+            minSpend: representative?.minSpend,
+            features: representative?.features,
+            locationDescription: representative?.locationDescription,
+          };
         }
         return { id: h.id, type: h.type, yaw: h.yaw, pitch: h.pitch,
                  targetSceneId: h.targetSceneId, label: h.label };

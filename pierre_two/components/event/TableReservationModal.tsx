@@ -4,6 +4,7 @@ import {
   View,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
@@ -84,6 +85,10 @@ export const TableReservationModal = ({
       setShowPaymentModal(true);
     } else {
       console.log(`⚠️ No available tables in area: ${areaName ?? areaId}`);
+      Alert.alert(
+        "Area non disponibile",
+        `Non ci sono tavoli liberi nell'area "${areaName ?? "selezionata"}".`
+      );
     }
   };
 
