@@ -4,41 +4,21 @@ import {
   CheckCircle2,
   CreditCard,
   ExternalLink,
-  Plus,
   RefreshCw,
   Save,
-  Trash2,
-  X,
 } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import type {
   Club,
-  ClubImage,
   StripeConnectStatus,
   StripeOnboardingLinkResponse,
 } from '../types';
 import { trackEvent } from '../config/analytics';
-
-interface ClubImageApiRow {
-  id: string;
-  club_id?: string;
-  clubId?: string;
-  url: string;
-  display_order?: number;
-  displayOrder?: number;
-  alt_text?: string | null;
-  altText?: string | null;
-}
-
-interface ClubImagesData {
-  images?: ClubImageApiRow[];
-}
+import EventImageUpload from '../components/EventImageUpload';
 
 type StripeTone = 'slate' | 'green' | 'amber' | 'rose';
-
-type ClubImagesResponse = ClubImageApiRow[] | ClubImagesData | null;
 
 type RawStripeStatus = Partial<StripeConnectStatus & {
   connectedAccountId?: string | null;
@@ -56,17 +36,12 @@ interface ApiErrorResponse {
 }
 
 export default function ClubSettingsPage() {
-  const { token } = useAuth();
+  const { token, setClub: persistClub } = useAuth();
   const {
     data: club,
     loading: clubLoading,
     refetch: refetchClub,
   } = useFetch<Club>('/owner/club');
-  const {
-    data: imagesData,
-    loading: imagesLoading,
-    refetch: refetchImages,
-  } = useFetch<ClubImagesResponse>('/owner/club/images');
   const {
     data: stripeStatus,
     loading: stripeLoading,
@@ -75,31 +50,13 @@ export default function ClubSettingsPage() {
 
   const [name, setName] = useState('');
   const [subtitle, setSubtitle] = useState('');
+  const [image, setImage] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [website, setWebsite] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [startingOnboarding, setStartingOnboarding] = useState(false);
-
-  const [newImageUrl, setNewImageUrl] = useState('');
-  const [newImageAlt, setNewImageAlt] = useState('');
-  const [addingImage, setAddingImage] = useState(false);
-  const [showAddImage, setShowAddImage] = useState(false);
-
-  const clubImages = useMemo<ClubImage[]>(() => {
-    const rawImages = Array.isArray(imagesData)
-      ? imagesData
-      : imagesData?.images ?? [];
-
-    return rawImages.map((image) => ({
-      id: image.id,
-      club_id: image.clubId ?? image.club_id ?? '',
-      url: image.url,
-      display_order: image.displayOrder ?? image.display_order ?? 0,
-      alt_text: image.altText ?? image.alt_text ?? undefined,
-    }));
-  }, [imagesData]);
 
   const normalizedStripeStatus = useMemo<StripeConnectStatus>(() => {
     const rawStripeStatus = stripeStatus ?? {};
@@ -129,6 +86,7 @@ export default function ClubSettingsPage() {
 
     setName(club.name ?? '');
     setSubtitle(club.subtitle ?? '');
+    setImage(club.image ?? '');
     setAddress(club.address ?? '');
     setPhone(club.phone_number ?? '');
     setWebsite(club.website ?? '');
@@ -141,10 +99,9 @@ export default function ClubSettingsPage() {
 
     trackEvent('owner_club_settings_viewed', {
       club_id: club.id,
-      image_count: clubImages.length,
       stripe_connected: Boolean(normalizedStripeStatus.connected_account_id),
     });
-  }, [club, clubLoading, clubImages.length, normalizedStripeStatus.connected_account_id]);
+  }, [club, clubLoading, normalizedStripeStatus.connected_account_id]);
 
   const stripeToneClasses: Record<StripeTone, string> = {
     slate: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -209,6 +166,7 @@ export default function ClubSettingsPage() {
         body: JSON.stringify({
           name,
           subtitle,
+          image: image || undefined,
           address: address || undefined,
           phone_number: phone || undefined,
           website: website || undefined,
@@ -219,10 +177,13 @@ export default function ClubSettingsPage() {
         throw new Error('Errore nel salvataggio');
       }
 
+      const updatedClub = (await res.json()) as Club;
+
       trackEvent('owner_club_updated', {
-        club_id: club?.id ?? null,
+        club_id: updatedClub.id,
       });
 
+      persistClub(updatedClub);
       setSaveSuccess(true);
       refetchClub();
       refetchStripeStatus();
@@ -294,95 +255,14 @@ export default function ClubSettingsPage() {
     }
   };
 
-  const handleAddImage = async (e: FormEvent) => {
-    e.preventDefault();
-    setAddingImage(true);
-
-    trackEvent('owner_club_image_add_submitted', {
-      club_id: club?.id ?? null,
-    });
-
-    try {
-      const res = await fetch(`${API_URL}/owner/club/images`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          url: newImageUrl,
-          alt_text: newImageAlt || undefined,
-          display_order: clubImages.length,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Errore nel caricamento');
-      }
-
-      trackEvent('owner_club_image_added', {
-        club_id: club?.id ?? null,
-      });
-
-      setNewImageUrl('');
-      setNewImageAlt('');
-      setShowAddImage(false);
-      refetchImages();
-    } catch (err) {
-      trackEvent('owner_club_image_add_failed', {
-        club_id: club?.id ?? null,
-        error_message: err instanceof Error ? err.message : 'Errore',
-      });
-      alert(err instanceof Error ? err.message : 'Errore');
-    } finally {
-      setAddingImage(false);
-    }
-  };
-
-  const handleDeleteImage = async (imageId: string) => {
-    if (!confirm('Rimuovere questa immagine?')) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/owner/club/images/${imageId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        throw new Error('Errore nella rimozione');
-      }
-
-      trackEvent('owner_club_image_deleted', {
-        club_id: club?.id ?? null,
-        image_id: imageId,
-      });
-      refetchImages();
-    } catch (err) {
-      trackEvent('owner_club_image_delete_failed', {
-        club_id: club?.id ?? null,
-        image_id: imageId,
-        error_message: err instanceof Error ? err.message : 'Errore',
-      });
-      alert(err instanceof Error ? err.message : 'Errore');
-    }
-  };
-
   if (clubLoading) {
     return <div className="text-gray-500">Caricamento...</div>;
   }
 
   return (
     <div className="max-w-4xl">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Impostazioni Locale</h1>
-        <a
-          href="/dashboard/club/tour"
-          className="rounded-lg bg-pink-600 px-4 py-2 text-sm font-medium text-white hover:bg-pink-700"
-        >
-          Configura tour 360°
-        </a>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
@@ -473,6 +353,14 @@ export default function ClubSettingsPage() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Informazioni e commissioni</h2>
         <form onSubmit={handleSave} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Immagine locale</label>
+            <EventImageUpload
+              currentUrl={image || undefined}
+              onUploaded={(url) => setImage(url)}
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
@@ -542,100 +430,6 @@ export default function ClubSettingsPage() {
         </form>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Galleria Immagini</h2>
-          <button
-            onClick={() => setShowAddImage(true)}
-            className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-800 transition-colors"
-          >
-            <Plus size={16} />
-            Aggiungi
-          </button>
-        </div>
-
-        {showAddImage && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-gray-900">Nuova immagine</h3>
-                <button
-                  onClick={() => setShowAddImage(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <form onSubmit={handleAddImage} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    URL immagine
-                  </label>
-                  <input
-                    value={newImageUrl}
-                    onChange={e => setNewImageUrl(e.target.value)}
-                    required
-                    placeholder="https://..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Descrizione (opzionale)
-                  </label>
-                  <input
-                    value={newImageAlt}
-                    onChange={e => setNewImageAlt(e.target.value)}
-                    placeholder="Sala principale"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none text-gray-900"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={addingImage}
-                  className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50"
-                >
-                  {addingImage ? 'Aggiungendo...' : 'Aggiungi'}
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {imagesLoading ? (
-          <p className="text-gray-500 text-sm">Caricamento...</p>
-        ) : clubImages.length === 0 ? (
-          <p className="text-gray-500 text-sm">
-            Nessuna immagine. Aggiungi la prima immagine del locale.
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {clubImages.map((img) => (
-              <div
-                key={img.id}
-                className="relative group rounded-lg overflow-hidden aspect-video bg-gray-100"
-              >
-                <img
-                  src={img.url}
-                  alt={img.alt_text ?? ''}
-                  className="w-full h-full object-cover"
-                />
-                <button
-                  onClick={() => handleDeleteImage(img.id)}
-                  className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <Trash2 size={14} />
-                </button>
-                {img.alt_text && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-2 py-1 truncate">
-                    {img.alt_text}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -67,6 +67,12 @@ pub struct ClubResponse {
     pub subtitle: String,
     pub image: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub website: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stripe_connected_account_id: Option<String>,
@@ -92,6 +98,9 @@ impl From<Club> for ClubResponse {
             name: club.name,
             subtitle: club.subtitle.unwrap_or_default(),
             image: club.image,
+            address: club.address,
+            phone_number: club.phone_number,
+            website: club.website,
             owner_id: club.owner_id.map(|id| id.to_string()),
             stripe_connected_account_id: club.stripe_connected_account_id,
             stripe_onboarding_complete: club.stripe_onboarding_complete,
