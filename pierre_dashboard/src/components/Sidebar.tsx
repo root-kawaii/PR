@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, LogOut, Settings, QrCode, X } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, LogOut, Settings, QrCode, X, LayoutGrid } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getSafeImageUrl } from '../utils/image';
 
@@ -54,6 +54,11 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
         <NavLink to="/dashboard/events" className={navLinkClass} onClick={onClose}>
           <CalendarDays size={20} />
           Eventi
+        </NavLink>
+
+        <NavLink to="/dashboard/club/areas" className={navLinkClass} onClick={onClose}>
+          <LayoutGrid size={20} />
+          Aree e tavoli
         </NavLink>
 
         <NavLink to="/dashboard/scan" className={navLinkClass} onClick={onClose}>

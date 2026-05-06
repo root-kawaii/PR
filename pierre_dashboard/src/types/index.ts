@@ -150,7 +150,7 @@ export interface EventResponse {
 
 export interface TableResponse {
   id: string;
-  eventId: string;
+  eventId?: string;
   name: string;
   zone?: string;
   areaId?: string;
