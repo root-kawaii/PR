@@ -2,7 +2,6 @@ use super::ticket::EventSummary;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -22,7 +21,6 @@ pub struct Table {
     pub available: bool,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-    pub marzipano_position: Option<JsonValue>,
     pub area_id: Option<Uuid>,
     #[sqlx(default)]
     pub area_name: Option<String>,
@@ -39,7 +37,6 @@ pub struct CreateTableRequest {
     pub min_spend: f64, // Frontend sends as number
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-    pub marzipano_position: Option<JsonValue>,
 }
 
 /// Body for POST /owner/tables — create a club-level table (not bound to an event).
@@ -52,7 +49,6 @@ pub struct CreateClubTableRequest {
     pub min_spend: Option<f64>,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-    pub marzipano_position: Option<JsonValue>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,7 +60,6 @@ pub struct UpdateTableRequest {
     pub available: Option<bool>,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-    pub marzipano_position: Option<JsonValue>,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,7 +75,6 @@ pub struct TableResponse {
     pub available: bool,
     pub location_description: Option<String>,
     pub features: Option<Vec<String>>,
-    pub marzipano_position: Option<JsonValue>,
     pub area_id: Option<String>,
     pub area_name: Option<String>,
 }
@@ -98,7 +92,6 @@ impl From<Table> for TableResponse {
             available: table.available,
             location_description: table.location_description,
             features: table.features,
-            marzipano_position: table.marzipano_position,
             area_id: table.area_id.map(|id| id.to_string()),
             area_name: table.area_name,
         }
@@ -382,7 +375,9 @@ pub struct ReservationGuest {
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct CreateSplitPaymentIntentRequest {
-    pub table_id: String,
+    #[serde(default)]
+    pub table_id: Option<String>,
+    pub area_id: Option<String>,
     pub event_id: String,
     pub owner_user_id: String,
     pub contact_name: String,
@@ -394,7 +389,9 @@ pub struct CreateSplitPaymentIntentRequest {
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct CreateSplitReservationRequest {
-    pub table_id: String,
+    #[serde(default)]
+    pub table_id: Option<String>,
+    pub area_id: Option<String>,
     pub event_id: String,
     pub owner_user_id: String,
     pub stripe_payment_intent_id: String,

@@ -271,8 +271,7 @@ function buildHotspotElement(spot: MarzipanoHotspot, selected: boolean): HTMLEle
 }
 
 function applyHotspotStyle(el: HTMLElement, spot: MarzipanoHotspot, selected: boolean) {
-  const colour =
-    spot.type === 'table' ? '#ec4899' : spot.type === 'area' ? '#f59e0b' : '#60a5fa';
+  const colour = spot.type === 'area' ? '#f59e0b' : '#60a5fa';
   const size = selected ? '44px' : '40px';
   // Set individual properties — never overwrite el.style.cssText because
   // Marzipano writes its positioning transform directly on this element and
@@ -302,7 +301,6 @@ function labelFor(_spot: MarzipanoHotspot): string {
 }
 
 function tooltipFor(spot: MarzipanoHotspot): string {
-  if (spot.type === 'table') return spot.tableName ? `Tavolo ${spot.tableName}` : 'Tavolo';
   if (spot.type === 'area') return spot.areaName ? `Area ${spot.areaName}` : 'Area';
   return spot.label ?? 'Link scena';
 }

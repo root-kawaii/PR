@@ -4,14 +4,12 @@ import type {
   MarzipanoHotspot,
   MarzipanoHotspotType,
   MarzipanoScene,
-  TableResponse,
 } from '../../types';
 
 interface HotspotInspectorProps {
   hotspot: MarzipanoHotspot | null;
   scenes: MarzipanoScene[];
   currentSceneId: string | null;
-  tables: TableResponse[];
   areas: Area[];
   onChange: (patch: Partial<MarzipanoHotspot>) => void;
   onDelete: () => void;
@@ -21,8 +19,7 @@ interface HotspotInspectorProps {
 }
 
 const HOTSPOT_TYPES: Array<{ value: MarzipanoHotspotType; label: string }> = [
-  { value: 'table', label: 'Tavolo' },
-  { value: 'area', label: 'Area' },
+  { value: 'area', label: 'Prenota tavolo nell\'area' },
   { value: 'scene-link', label: 'Link a scena' },
 ];
 
@@ -30,7 +27,6 @@ export default function HotspotInspector({
   hotspot,
   scenes,
   currentSceneId,
-  tables,
   areas,
   onChange,
   onDelete,
@@ -76,33 +72,6 @@ export default function HotspotInspector({
                 ))}
               </select>
             </div>
-
-            {hotspot.type === 'table' && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">Tavolo</label>
-                <select
-                  value={hotspot.tableId ?? ''}
-                  onChange={(e) => {
-                    const t = tables.find((x) => x.id === e.target.value);
-                    onChange({ tableId: e.target.value || undefined, tableName: t?.name });
-                  }}
-                  className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                >
-                  <option value="">— seleziona —</option>
-                  {tables.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                      {t.zone ? ` (${t.zone})` : ''}
-                    </option>
-                  ))}
-                </select>
-                {tables.length === 0 && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Nessun tavolo disponibile. Creali nella pagina Tavoli evento.
-                  </p>
-                )}
-              </div>
-            )}
 
             {hotspot.type === 'area' && (
               <div>

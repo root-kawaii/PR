@@ -161,7 +161,6 @@ export interface TableResponse {
   available: boolean;
   locationDescription?: string;
   features?: string[];
-  marzipanoPosition?: MarzipanoPosition | null;
 }
 
 export interface Area {
@@ -170,7 +169,6 @@ export interface Area {
   name: string;
   price: string;
   description?: string;
-  marzipanoPosition?: MarzipanoPosition | null;
 }
 
 // ============================================================================
@@ -185,22 +183,13 @@ export interface MarzipanoView {
   fov: number;
 }
 
-export interface MarzipanoPosition {
-  sceneId: string;
-  yaw: number;
-  pitch: number;
-}
-
-export type MarzipanoHotspotType = 'table' | 'scene-link' | 'area';
+export type MarzipanoHotspotType = 'scene-link' | 'area';
 
 export interface MarzipanoHotspot {
   id: string;
   type: MarzipanoHotspotType;
   yaw: number;
   pitch: number;
-  // table
-  tableId?: string;
-  tableName?: string;
   // scene-link
   targetSceneId?: string;
   label?: string;
@@ -219,8 +208,6 @@ export interface MarzipanoScene {
 
 export interface TourConfigPayload {
   scenes: MarzipanoScene[] | null;
-  tablePositions: Array<{ tableId: string; sceneId: string; yaw: number; pitch: number }>;
-  areaPositions: Array<{ areaId: string; sceneId: string; yaw: number; pitch: number }>;
 }
 
 export interface AuthResponse {

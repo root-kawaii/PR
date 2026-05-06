@@ -10,13 +10,8 @@ import type {
   Club,
   EventResponse,
   MarzipanoScene,
-  TableResponse,
   TourConfigPayload,
 } from '../types';
-
-interface TablesData {
-  tables: TableResponse[];
-}
 
 export default function EventTourConfigPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -25,16 +20,13 @@ export default function EventTourConfigPage() {
     EventResponse[]
   >('/owner/events');
   const { data: club } = useFetch<Club>('/owner/club');
-  const { data: tables, loading: tablesLoading } = useFetch<TablesData>(
-    eventId ? `/owner/events/${eventId}/tables` : '',
-  );
   const { data: areas, loading: areasLoading } = useFetch<Area[]>('/owner/areas');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const event = events?.find((e) => e.id === eventId) ?? null;
-  const loading = eventsLoading || tablesLoading || areasLoading;
+  const loading = eventsLoading || areasLoading;
   const isOverriding = !!event?.marzipanoScenes;
   const inheritedScenes =
     (event?.marzipanoScenes as MarzipanoScene[] | null) ??
@@ -65,7 +57,7 @@ export default function EventTourConfigPage() {
 
   const handleResetOverride = async () => {
     if (!confirm('Rimuovere l\'override e tornare alla configurazione del club?')) return;
-    await putConfig({ scenes: null, tablePositions: [], areaPositions: [] });
+    await putConfig({ scenes: null });
   };
 
   return (
@@ -102,7 +94,6 @@ export default function EventTourConfigPage() {
         <TourConfigurator
           scope="event"
           initialScenes={inheritedScenes}
-          tables={tables?.tables ?? []}
           areas={areas ?? []}
           saving={saving}
           onSave={putConfig}
