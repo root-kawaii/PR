@@ -395,11 +395,19 @@ pub async fn get_my_club_tables(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let tables = table_persistence::get_tables_by_event_id(&state.db_pool, event_uuid)
+    let event_tables = table_persistence::get_tables_by_event_id(&state.db_pool, event_uuid)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let table_responses: Vec<TableResponse> = tables.into_iter().map(|t| t.into()).collect();
+    let club_tables = table_persistence::get_tables_by_club_id(&state.db_pool, club.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let table_responses: Vec<TableResponse> = event_tables
+        .into_iter()
+        .chain(club_tables.into_iter())
+        .map(|t| t.into())
+        .collect();
     Ok(Json(TablesResponse {
         tables: table_responses,
     }))
@@ -482,7 +490,7 @@ pub async fn update_my_club(
     let update_req = UpdateClubRequest {
         name: payload.name,
         subtitle: payload.subtitle,
-        image: None,
+        image: payload.image,
         address: payload.address,
         phone_number: payload.phone_number,
         website: payload.website,

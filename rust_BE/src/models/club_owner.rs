@@ -71,6 +71,7 @@ pub struct ClubOwnerAuthResponse {
 pub struct OwnerUpdateClubRequest {
     pub name: Option<String>,
     pub subtitle: Option<String>,
+    pub image: Option<String>,
     pub address: Option<String>,
     pub phone_number: Option<String>,
     pub website: Option<String>,
