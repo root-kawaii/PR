@@ -58,13 +58,56 @@ export const MarzipanoViewer = forwardRef<
       availabilityMap[table.id] = table.available;
     });
 
-    const scenesWithHotspots = scenes.map((scene) => ({
-      id: scene.id,
-      name: scene.name,
-      imageUrl: scene.imageUrl,
-      initialView: scene.initialView,
-      hotspots: [
-        ...scene.hotspots.map((h) => ({
+    const tableById = new Map(tables.map((t) => [t.id, t]));
+
+    const buildTableHotspot = (
+      table: Table,
+      pos: { yaw: number; pitch: number },
+    ) => ({
+      id: `table-${table.id}`,
+      type: "table" as const,
+      yaw: pos.yaw,
+      pitch: pos.pitch,
+      tableId: table.id,
+      tableName: table.name,
+      available: table.available,
+      capacity: table.capacity,
+      minSpend: table.minSpend.replace(" €", ""),
+      totalCost: table.totalCost.replace(" €", ""),
+      features: table.features || [],
+      locationDescription: table.locationDescription,
+    });
+
+    const scenesWithHotspots = scenes.map((scene) => {
+      // Table positions can live in two places: legacy inside scene.hotspots
+      // (entries with type==='table' and a tableId) and the canonical
+      // table.marzipanoPosition. Merge them keyed by tableId so the same
+      // table never renders twice. Canonical (table.marzipanoPosition) wins.
+      const tablePositionByTableId = new Map<string, { yaw: number; pitch: number }>();
+      scene.hotspots
+        .filter((h) => h.type === "table" && h.tableId)
+        .forEach((h) => {
+          tablePositionByTableId.set(h.tableId!, { yaw: h.yaw, pitch: h.pitch });
+        });
+      tables
+        .filter((t) => t.marzipanoPosition?.sceneId === scene.id)
+        .forEach((t) => {
+          tablePositionByTableId.set(t.id, {
+            yaw: t.marzipanoPosition!.yaw,
+            pitch: t.marzipanoPosition!.pitch,
+          });
+        });
+
+      const tableHotspots = Array.from(tablePositionByTableId.entries())
+        .map(([tableId, pos]) => {
+          const table = tableById.get(tableId);
+          return table ? buildTableHotspot(table, pos) : null;
+        })
+        .filter((h): h is ReturnType<typeof buildTableHotspot> => h !== null);
+
+      const nonTableHotspots = scene.hotspots
+        .filter((h) => h.type !== "table")
+        .map((h) => ({
           id: h.id,
           type: h.type,
           yaw: h.yaw,
@@ -73,25 +116,16 @@ export const MarzipanoViewer = forwardRef<
           label: h.label,
           areaId: h.areaId,
           areaName: h.areaName,
-        })),
-        ...tables
-          .filter((table) => table.marzipanoPosition?.sceneId === scene.id)
-          .map((table) => ({
-            id: `table-${table.id}`,
-            type: "table" as const,
-            yaw: table.marzipanoPosition!.yaw,
-            pitch: table.marzipanoPosition!.pitch,
-            tableId: table.id,
-            tableName: table.name,
-            available: table.available,
-            capacity: table.capacity,
-            minSpend: table.minSpend.replace(" €", ""),
-            totalCost: table.totalCost.replace(" €", ""),
-            features: table.features || [],
-            locationDescription: table.locationDescription,
-          })),
-      ],
-    }));
+        }));
+
+      return {
+        id: scene.id,
+        name: scene.name,
+        imageUrl: scene.imageUrl,
+        initialView: scene.initialView,
+        hotspots: [...nonTableHotspots, ...tableHotspots],
+      };
+    });
 
     return {
       scenes: scenesWithHotspots,
