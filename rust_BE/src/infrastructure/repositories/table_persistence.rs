@@ -1,7 +1,6 @@
 use crate::models::{ReservationGuest, ReservationPaymentShare, Table, TableReservation};
 use crate::models::club_owner::EventReservationStatsResponse;
 use rust_decimal::Decimal;
-use serde_json::Value as JsonValue;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -124,7 +123,6 @@ pub async fn create_club_table(
     min_spend: Decimal,
     location_description: Option<String>,
     features: Option<Vec<String>>,
-    marzipano_position: Option<JsonValue>,
 ) -> Result<Table, sqlx::Error> {
     let total_cost = min_spend * Decimal::from(capacity);
 
@@ -132,9 +130,9 @@ pub async fn create_club_table(
         r#"
         INSERT INTO tables (
             event_id, area_id, name, zone, capacity, min_spend, total_cost,
-            location_description, features, marzipano_position
+            location_description, features
         )
-        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id
         "#,
     )
@@ -146,7 +144,6 @@ pub async fn create_club_table(
     .bind(total_cost)
     .bind(location_description)
     .bind(features)
-    .bind(marzipano_position)
     .fetch_one(pool)
     .await?;
 
@@ -190,6 +187,30 @@ pub async fn get_table_by_id(pool: &PgPool, table_id: Uuid) -> Result<Table, sql
     Ok(table)
 }
 
+/// Find the first available table in a given area and event (no lock — for pricing preview only)
+pub async fn find_first_available_table_by_area(
+    pool: &PgPool,
+    area_id: Uuid,
+    event_id: Uuid,
+) -> Result<Table, sqlx::Error> {
+    sqlx::query_as::<_, Table>(
+        r#"
+        SELECT t.*, a.name AS area_name
+        FROM tables t
+        LEFT JOIN areas a ON a.id = t.area_id
+        WHERE t.area_id = $1
+          AND t.event_id = $2
+          AND t.available = true
+        ORDER BY t.name ASC
+        LIMIT 1
+        "#,
+    )
+    .bind(area_id)
+    .bind(event_id)
+    .fetch_one(pool)
+    .await
+}
+
 /// Create a new table
 pub async fn create_table(
     pool: &PgPool,
@@ -200,7 +221,6 @@ pub async fn create_table(
     min_spend: Decimal,
     location_description: Option<String>,
     features: Option<Vec<String>>,
-    marzipano_position: Option<JsonValue>,
 ) -> Result<Table, sqlx::Error> {
     let total_cost = min_spend * Decimal::from(capacity);
     let club_id = get_club_id_for_event(pool, event_id).await?;
@@ -212,8 +232,8 @@ pub async fn create_table(
 
     let table_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO tables (event_id, name, zone, capacity, min_spend, total_cost, location_description, features, marzipano_position, area_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO tables (event_id, name, zone, capacity, min_spend, total_cost, location_description, features, area_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id
         "#,
     )
@@ -225,7 +245,6 @@ pub async fn create_table(
     .bind(total_cost)
     .bind(location_description)
     .bind(features)
-    .bind(marzipano_position)
     .bind(default_area.id)
     .fetch_one(pool)
     .await?;
@@ -246,9 +265,9 @@ pub async fn duplicate_tables_between_events(
             r#"
             INSERT INTO tables (
                 event_id, name, zone, capacity, min_spend, total_cost, available,
-                location_description, features, marzipano_position, area_id
+                location_description, features, area_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9)
             RETURNING id
             "#,
         )
@@ -260,7 +279,6 @@ pub async fn duplicate_tables_between_events(
         .bind(source_table.total_cost)
         .bind(source_table.location_description)
         .bind(source_table.features)
-        .bind(source_table.marzipano_position)
         .bind(source_table.area_id)
         .fetch_one(pool)
         .await?;
@@ -282,7 +300,6 @@ pub async fn update_table(
     available: Option<bool>,
     location_description: Option<String>,
     features: Option<Vec<String>>,
-    marzipano_position: Option<JsonValue>,
 ) -> Result<Table, sqlx::Error> {
     // Get the current table to calculate new total_cost if needed
     let current_table = get_table_by_id(pool, table_id).await?;
@@ -302,9 +319,8 @@ pub async fn update_table(
             available = COALESCE($6, available),
             location_description = COALESCE($7, location_description),
             features = COALESCE($8, features),
-            marzipano_position = COALESCE($9, marzipano_position),
             updated_at = NOW()
-        WHERE id = $10
+        WHERE id = $9
         RETURNING id
         "#,
     )
@@ -316,7 +332,6 @@ pub async fn update_table(
     .bind(available)
     .bind(location_description)
     .bind(features)
-    .bind(marzipano_position)
     .bind(table_id)
     .fetch_one(pool)
     .await?;
@@ -332,29 +347,6 @@ pub async fn delete_table(pool: &PgPool, table_id: Uuid) -> Result<bool, sqlx::E
         WHERE id = $1
         "#,
     )
-    .bind(table_id)
-    .execute(pool)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
-}
-
-/// Overwrite a table's `marzipano_position` (or clear it when `None`).
-/// Returns true if the table exists.
-pub async fn update_marzipano_position(
-    pool: &PgPool,
-    table_id: Uuid,
-    position: Option<JsonValue>,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        UPDATE tables
-        SET marzipano_position = $1,
-            updated_at = NOW()
-        WHERE id = $2
-        "#,
-    )
-    .bind(position)
     .bind(table_id)
     .execute(pool)
     .await?;

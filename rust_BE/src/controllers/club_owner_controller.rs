@@ -449,7 +449,6 @@ pub async fn create_club_table(
         min_spend,
         req.location_description,
         req.features,
-        req.marzipano_position,
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1622,30 +1621,6 @@ pub async fn get_owner_stats_handler(
 #[derive(serde::Deserialize)]
 pub struct MarzipanoConfigPayload {
     pub scenes: Option<serde_json::Value>,
-    #[serde(rename = "tablePositions")]
-    pub table_positions: Option<Vec<TablePositionItem>>,
-    #[serde(rename = "areaPositions")]
-    pub area_positions: Option<Vec<AreaPositionItem>>,
-}
-
-#[derive(serde::Deserialize)]
-pub struct TablePositionItem {
-    #[serde(rename = "tableId")]
-    pub table_id: String,
-    #[serde(rename = "sceneId")]
-    pub scene_id: String,
-    pub yaw: f64,
-    pub pitch: f64,
-}
-
-#[derive(serde::Deserialize)]
-pub struct AreaPositionItem {
-    #[serde(rename = "areaId")]
-    pub area_id: String,
-    #[serde(rename = "sceneId")]
-    pub scene_id: String,
-    pub yaw: f64,
-    pub pitch: f64,
 }
 
 pub async fn update_club_marzipano_config_handler(
@@ -1662,34 +1637,6 @@ pub async fn update_club_marzipano_config_handler(
     club_persistence::update_marzipano_config(&state.db_pool, club.id, payload.scenes)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    for tp in payload.table_positions.unwrap_or_default() {
-        let table_id = Uuid::parse_str(&tp.table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-        let position = serde_json::json!({
-            "sceneId": tp.scene_id,
-            "yaw": tp.yaw,
-            "pitch": tp.pitch,
-        });
-        table_persistence::update_marzipano_position(&state.db_pool, table_id, Some(position))
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
-    for ap in payload.area_positions.unwrap_or_default() {
-        let area_id = Uuid::parse_str(&ap.area_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-        let position = serde_json::json!({
-            "sceneId": ap.scene_id,
-            "yaw": ap.yaw,
-            "pitch": ap.pitch,
-        });
-        crate::application::area_service::update_marzipano_position(
-            &state.db_pool,
-            area_id,
-            Some(position),
-        )
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
 
     Ok(StatusCode::OK)
 }
@@ -1722,34 +1669,6 @@ pub async fn update_event_marzipano_config_handler(
     event_persistence::update_marzipano_config(&state.db_pool, event_id, payload.scenes)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    for tp in payload.table_positions.unwrap_or_default() {
-        let table_id = Uuid::parse_str(&tp.table_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-        let position = serde_json::json!({
-            "sceneId": tp.scene_id,
-            "yaw": tp.yaw,
-            "pitch": tp.pitch,
-        });
-        table_persistence::update_marzipano_position(&state.db_pool, table_id, Some(position))
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
-    for ap in payload.area_positions.unwrap_or_default() {
-        let area_id = Uuid::parse_str(&ap.area_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-        let position = serde_json::json!({
-            "sceneId": ap.scene_id,
-            "yaw": ap.yaw,
-            "pitch": ap.pitch,
-        });
-        crate::application::area_service::update_marzipano_position(
-            &state.db_pool,
-            area_id,
-            Some(position),
-        )
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
 
     Ok(StatusCode::OK)
 }

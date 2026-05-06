@@ -72,7 +72,6 @@ pub async fn create_area(
         req.name,
         price,
         req.description,
-        req.marzipano_position,
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -114,7 +113,6 @@ pub async fn update_area(
         req.name,
         price,
         req.description,
-        req.marzipano_position,
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -304,7 +302,6 @@ pub async fn create_my_club_table(
         min_spend,
         req.location_description,
         req.features,
-        req.marzipano_position,
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -373,7 +370,6 @@ pub async fn update_my_club_table(
         req.available,
         req.location_description,
         req.features,
-        req.marzipano_position,
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

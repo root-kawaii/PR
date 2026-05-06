@@ -29,7 +29,6 @@ export type Table = {
   available: boolean;
   locationDescription?: string;
   features?: string[];
-  marzipanoPosition?: MarzipanoPosition; // NEW: Hotspot position in 360° view
 };
 
 export type PaymentShare = {
@@ -178,23 +177,14 @@ export type MarzipanoView = {
 
 export type MarzipanoHotspot = {
   id: string;
-  type: 'table' | 'scene-link' | 'area'; // Table / scene navigation / area pin
+  type: 'scene-link' | 'area';
   yaw: number; // Horizontal position in radians
   pitch: number; // Vertical position in radians
-  // For table hotspots
-  tableId?: string;
-  tableName?: string;
-  available?: boolean;
   // For scene-link hotspots
   targetSceneId?: string;
   label?: string; // Display text (e.g., "→ VIP Room")
-  // For area hotspots — tapping filters/shows the tables in that area
+  // For area hotspots — tapping opens the booking flow for that area
   areaId?: string;
   areaName?: string;
-};
-
-export type MarzipanoPosition = {
-  sceneId: string; // Which scene this position is in
-  yaw: number; // Horizontal position in radians
-  pitch: number; // Vertical position in radians
+  availableCount?: number; // Injected by viewer: available tables in this area
 };
