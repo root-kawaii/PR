@@ -16,7 +16,7 @@ import type {
   StripeOnboardingLinkResponse,
 } from '../types';
 import { trackEvent } from '../config/analytics';
-import EventImageUpload from '../components/EventImageUpload';
+import ImageUpload from '../components/ImageUpload';
 
 type StripeTone = 'slate' | 'green' | 'amber' | 'rose';
 
@@ -355,9 +355,12 @@ export default function ClubSettingsPage() {
         <form onSubmit={handleSave} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Immagine locale</label>
-            <EventImageUpload
+            <ImageUpload
               currentUrl={image || undefined}
               onUploaded={(url) => setImage(url)}
+              uploadEndpoint="/owner/club/image"
+              placeholder="Clicca per caricare il logo"
+              altText="Logo del club"
             />
           </div>
 

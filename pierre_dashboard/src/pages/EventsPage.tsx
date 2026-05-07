@@ -6,7 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { API_URL } from "../config/api";
 import type { EventResponse, Genre } from "../types";
 import { trackEvent } from "../config/analytics";
-import EventImageUpload from "../components/EventImageUpload";
+import ImageUpload from "../components/ImageUpload";
 import { formatPrice, priceToApiString } from "../utils/currency";
 import { getSafeImageUrl } from "../utils/image";
 import { EmptyState, PageHeader, SectionCard } from "../components/ui";
@@ -311,9 +311,11 @@ export default function EventsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Locandina
                 </label>
-                <EventImageUpload
+                <ImageUpload
                   currentUrl={form.image || undefined}
                   onUploaded={(url) => setForm((f) => ({ ...f, image: url }))}
+                  uploadEndpoint="/owner/events/image"
+                  altText="Locandina"
                 />
               </div>
 

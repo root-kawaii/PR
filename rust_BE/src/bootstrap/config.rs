@@ -58,6 +58,7 @@ pub struct StorageConfig {
     pub supabase_url: Option<String>,
     pub supabase_service_role_key: Option<String>,
     pub event_images_bucket: String,
+    pub club_images_bucket: String,
     pub panoramas_bucket: String,
     pub max_panorama_bytes: usize,
 }
@@ -209,6 +210,8 @@ impl AppConfig {
             .filter(|s| !s.is_empty());
         let event_images_bucket =
             env::var("SUPABASE_EVENT_IMAGES_BUCKET").unwrap_or_else(|_| "event-images".to_string());
+        let club_images_bucket =
+            env::var("SUPABASE_CLUB_IMAGES_BUCKET").unwrap_or_else(|_| "club-images".to_string());
         let panoramas_bucket =
             env::var("SUPABASE_PANORAMAS_BUCKET").unwrap_or_else(|_| "panoramas".to_string());
         let max_panorama_bytes = env::var("MAX_PANORAMA_BYTES")
@@ -279,6 +282,7 @@ impl AppConfig {
                 supabase_url,
                 supabase_service_role_key,
                 event_images_bucket,
+                club_images_bucket,
                 panoramas_bucket,
                 max_panorama_bytes,
             },

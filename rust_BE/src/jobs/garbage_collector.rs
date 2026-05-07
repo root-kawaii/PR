@@ -125,6 +125,22 @@ async fn run_round(state: &AppState) {
     );
 
     record_storage(
+        "storage_club_images",
+        storage::run_club_images(
+            &state.db_pool,
+            &state.http_client,
+            &state.config.storage,
+            ctx,
+        )
+        .await,
+        &mut details,
+        &mut total_detected,
+        &mut total_deleted,
+        &mut succeeded,
+        &mut failed,
+    );
+
+    record_storage(
         "storage_panoramas",
         storage::run_panoramas(
             &state.db_pool,

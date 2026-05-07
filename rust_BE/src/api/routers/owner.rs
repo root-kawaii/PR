@@ -14,6 +14,7 @@ use crate::controllers::club_owner_controller::{
     update_club_marzipano_config_handler, update_event_marzipano_config_handler, update_my_club,
     update_reservation_handler, update_reservation_status_handler, upload_panorama_handler,
 };
+use crate::controllers::club_image_controller::upload_club_image;
 use crate::controllers::event_image_controller::upload_event_image;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -35,6 +36,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/owner/club/marzipano-config",
             axum::routing::put(update_club_marzipano_config_handler),
+        )
+        .route(
+            "/owner/club/image",
+            axum::routing::post(upload_club_image),
         )
         .route(
             "/owner/events",

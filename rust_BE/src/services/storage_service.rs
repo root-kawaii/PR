@@ -145,7 +145,7 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
-// ─── Standalone function for event image uploads (used by event_image_controller) ─
+// ─── Standalone function for image uploads (used by event/club image controllers) ─
 
 fn ext_for(content_type: &str) -> &str {
     match content_type {
@@ -155,7 +155,7 @@ fn ext_for(content_type: &str) -> &str {
     }
 }
 
-pub async fn upload_event_image(
+pub async fn upload_image_to_bucket(
     client: &reqwest::Client,
     supabase_url: &str,
     service_role_key: &str,
