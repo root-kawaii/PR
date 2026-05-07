@@ -27,7 +27,7 @@ docs/             — Architecture and API reference documentation
 ls DB/migrations/*.sql | sort | tail -1
 ```
 
-Migration file naming: `NNN_snake_case_description.sql` (zero-padded, e.g. `037_...`). Always add new migrations as the next numbered file — never edit existing ones.
+Migration file naming: `NNN_snake_case_description.sql` (zero-padded, e.g. `037_...`). Always add new migrations as the next numbered file — never edit existing ones. Note: a few historical numbers (029, 030, 042) have duplicates from concurrent branches; pick the next free number after the highest in `ls DB/migrations/`, do not re-use a duplicated one.
 
 ### Backend
 ```bash
@@ -85,21 +85,26 @@ VITE_API_URL=http://localhost:3000   # defaults to this if unset
 
 ### Backend (rust_BE/src/)
 
-**Layer order:** `models/` → `persistences/` → `controllers/` — never skip layers. All routes are registered in `main.rs`, no magic routing.
+**Layer order:** `api/routers/` → `controllers/` → `application/` → `infrastructure/repositories/` → `models/`. Not every entity has a service layer (older code calls repositories directly from the controller); newer code goes through `application/<entity>_service.rs`.
 
 ```
-main.rs            — Router setup, AppState initialization, middleware wiring
-controllers/       — HTTP handlers; extract request, call persistence, return JSON
-persistences/      — All SQLx queries; one file per entity
-models/            — Serde structs for DB rows and request/response bodies
-middleware/        — Auth extractors: AuthUser (any JWT) and ClubOwnerUser (role="club_owner")
-services/          — SMS via Twilio (sms_service.rs)
-idempotency/       — Deduplication for payment mutations
-logging/           — Structured JSON logging via tracing
-utils/jwt.rs       — JWT encode/decode
+main.rs                          — entrypoint; delegates to bootstrap
+bootstrap/                       — config.rs, state.rs (AppState), migrations.rs
+api/routers/<entity>.rs          — Axum route registration, one file per entity (composed in api/routers/mod.rs)
+api/errors.rs                    — ApiError envelope (use crate::api::errors::ApiError)
+controllers/<entity>_controller.rs       — HTTP handlers; extract request, call service or repository, return JSON
+application/<entity>_service.rs           — Business logic / orchestration (auth, payment, reservation, …)
+infrastructure/repositories/<entity>_persistence.rs  — All SQLx queries, one file per entity (formerly persistences/)
+infrastructure/outbox/, infrastructure/analytics/, infrastructure/logging/  — cross-cutting infra
+models/<entity>.rs               — Serde structs for DB rows and request/response bodies
+middleware/                      — auth.rs (AuthUser extractor), request_id.rs
+services/                        — SMS (sms_service.rs), storage (storage_service.rs), notifications, garbage_collector/
+jobs/                            — Tokio background tasks: garbage_collector, idempotency_cleanup, outbox_dispatcher, payment_maintenance
+idempotency/                     — Deduplication service for payment mutations
+utils/jwt.rs                     — JWT encode/decode
 ```
 
-`AppState` (shared via `Arc<AppState>`) holds: `db_pool`, `stripe_client`, `jwt_secret`, `idempotency_service`, `stripe_webhook_secret`.
+`AppState` (shared via `Arc<AppState>`, defined in `bootstrap/state.rs`) holds: `db_pool`, `stripe_client`, `jwt_secret`, `idempotency_service`, `stripe_webhook_secret`.
 
 **Auth extractors:**
 - User JWT: `AuthUser(claims): AuthUser` (from `middleware/auth.rs`)
@@ -108,10 +113,25 @@ utils/jwt.rs       — JWT encode/decode
 
 **Error responses** — always use the `ApiError` envelope with Italian messages:
 ```rust
-return Err(crate::models::ApiError::new(StatusCode::CONFLICT, "Messaggio in italiano"));
+return Err(crate::api::errors::ApiError::new(StatusCode::CONFLICT, "Messaggio in italiano"));
 ```
 
-**Adding a route:** register handler in `src/main.rs` → `create_router()`; add model structs to `src/models/`, add DB query to `src/persistences/`, implement logic in `src/controllers/`.
+**Adding a route:** add the route to the relevant `src/api/routers/<entity>.rs` (or create one and register it in `api/routers/mod.rs`); add the handler in `src/controllers/<entity>_controller.rs`; if the logic is non-trivial, put it in `src/application/<entity>_service.rs`; add the SQL in `src/infrastructure/repositories/<entity>_persistence.rs`; add request/response structs to `src/models/<entity>.rs`.
+
+**Where to look (saves a grep):**
+
+| Question | File / dir |
+|---|---|
+| Which routes exist for entity X? | `rust_BE/src/api/routers/<entity>.rs` |
+| Which routes does the club owner dashboard hit? | `rust_BE/src/api/routers/owner.rs` |
+| Stripe webhook handler | `rust_BE/src/controllers/webhook_controller.rs` |
+| Reservation + payment atomic creation | `rust_BE/src/controllers/table_controller.rs` (large; use service: `application/reservation_service.rs`) |
+| Split-payment guest pages (`/pay/:token`, `/payment-links/:token`) | `rust_BE/src/api/routers/reservations.rs` |
+| `ApiError` definition | `rust_BE/src/api/errors.rs` |
+| Background jobs (cleanup, outbox dispatch) | `rust_BE/src/jobs/` |
+| GC reference sets (marzipano, table images) | `rust_BE/src/services/garbage_collector/` |
+| Mobile data hook for entity X | `pierre_two/hooks/use<Entity>.tsx` |
+| Dashboard page for route `/dashboard/<x>` | `pierre_dashboard/src/pages/` (see Pages table above) |
 
 ### Mobile app (pierre_two/)
 
