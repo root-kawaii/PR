@@ -5,6 +5,7 @@ use tracing::{error, info};
 
 use crate::bootstrap::state::AppState;
 
+pub mod garbage_collector;
 pub mod idempotency_cleanup;
 pub mod outbox_dispatcher;
 pub mod payment_maintenance;
@@ -27,6 +28,18 @@ pub fn start_background_jobs(app_state: Arc<AppState>) {
         outbox_dispatcher::run(outbox_state).await;
     });
     info!("Outbox dispatcher job started");
+
+    if app_state.config.gc.enabled {
+        let gc_state = Arc::clone(&app_state);
+        let dry_run = app_state.config.gc.dry_run;
+        let interval_seconds = app_state.config.gc.interval_seconds;
+        tokio::spawn(async move {
+            garbage_collector::run(gc_state).await;
+        });
+        info!(dry_run, interval_seconds, "Garbage collector job started");
+    } else {
+        info!("Garbage collector disabled (GC_ENABLED=false)");
+    }
 }
 
 pub async fn record_job_run(
