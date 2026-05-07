@@ -1,6 +1,7 @@
 pub mod area_controller;
 pub mod auth_controller;
 pub mod club_controller;
+pub mod club_image_controller;
 pub mod club_owner_controller;
 pub mod event_controller;
 pub mod event_image_controller;

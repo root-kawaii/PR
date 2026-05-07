@@ -54,6 +54,29 @@ pub async fn run_event_images(
     .await
 }
 
+pub async fn run_club_images(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    storage: &StorageConfig,
+    ctx: CleanerCtx,
+) -> Result<CleanerStats, String> {
+    let (supabase_url, service_key) = require_storage(storage)?;
+    let bucket = storage.club_images_bucket.as_str();
+
+    let referenced = referenced_club_image_paths(pool, supabase_url, bucket).await?;
+
+    run_bucket(
+        http,
+        supabase_url,
+        service_key,
+        bucket,
+        "storage_club_images",
+        &referenced,
+        ctx,
+    )
+    .await
+}
+
 pub async fn run_panoramas(
     pool: &PgPool,
     http: &reqwest::Client,
@@ -158,6 +181,39 @@ async fn referenced_event_image_paths(
         }
     }
     for (url,) in table_rows {
+        if let Some(p) = reference_path_from_url(&url, supabase_url, bucket) {
+            set.insert(p);
+        }
+    }
+    Ok(set)
+}
+
+async fn referenced_club_image_paths(
+    pool: &PgPool,
+    supabase_url: &str,
+    bucket: &str,
+) -> Result<HashSet<String>, String> {
+    let club_rows: Vec<(Option<String>,)> =
+        sqlx::query_as("SELECT image FROM clubs WHERE image IS NOT NULL AND image <> ''")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("failed to load club images: {e}"))?;
+
+    // The `club_images` gallery table can also point at this bucket; include
+    // its URLs so the GC doesn't wipe still-referenced gallery objects.
+    let gallery_rows: Vec<(String,)> =
+        sqlx::query_as("SELECT url FROM club_images WHERE url IS NOT NULL AND url <> ''")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("failed to load club gallery images: {e}"))?;
+
+    let mut set = HashSet::new();
+    for (url,) in club_rows.into_iter().filter_map(|(u,)| u.map(|u| (u,))) {
+        if let Some(p) = reference_path_from_url(&url, supabase_url, bucket) {
+            set.insert(p);
+        }
+    }
+    for (url,) in gallery_rows {
         if let Some(p) = reference_path_from_url(&url, supabase_url, bucket) {
             set.insert(p);
         }

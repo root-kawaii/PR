@@ -10,15 +10,14 @@ use axum::{
 use std::sync::Arc;
 use uuid::Uuid;
 
-/// Upload a locandina image for an event.
+/// Upload a logo image for a club.
 /// Accepts multipart/form-data with a field named "file".
 /// Returns { "url": "<public_url>" } on success.
-pub async fn upload_event_image(
+pub async fn upload_club_image(
     ClubOwnerUser(claims): ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    // Verify storage is configured
     let (supabase_url, service_role_key) = match (
         state.config.storage.supabase_url.as_deref(),
         state.config.storage.supabase_service_role_key.as_deref(),
@@ -30,14 +29,12 @@ pub async fn upload_event_image(
         }
     };
 
-    // Resolve the club_id for the authenticated owner
     let owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
     let club = club_persistence::get_club_by_owner_id(&state.db_pool, owner_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Extract the "file" field from the multipart body
     while let Some(field) = multipart
         .next_field()
         .await
@@ -56,20 +53,19 @@ pub async fn upload_event_image(
             &state.http_client,
             &supabase_url,
             &service_role_key,
-            &state.config.storage.event_images_bucket,
+            &state.config.storage.club_images_bucket,
             club.id,
             bytes,
             &content_type,
         )
         .await
         .map_err(|e| {
-            tracing::warn!(error = %e, "Evento image upload fallito");
+            tracing::warn!(error = %e, "Club image upload fallito");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
         return Ok(Json(serde_json::json!({ "url": url })));
     }
 
-    // No "file" field found
     Err(StatusCode::BAD_REQUEST)
 }
