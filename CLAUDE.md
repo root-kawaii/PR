@@ -198,5 +198,43 @@ Payment mutations accept an `Idempotency-Key` header. The `IdempotencyService` s
 ### Pull requests e issue linking
 Whenever creating a PR that resolves a GitHub issue, always include `Closes #<issue-number>` (or `Fixes #` / `Resolves #`) in the PR body so the issue is auto-closed on merge.
 
+### Before opening a PR
+Always merge `origin/develop` into the branch and re-run `cargo check` (and any other relevant lints/tests) **before** opening the PR. Other concurrent PRs can rename fields, restructure shared structs, or drop modules; branch protection only verifies each PR against its own base, so semantic drift between two green PRs can land a broken `develop`. Concretely:
+```bash
+git fetch origin develop
+git merge origin/develop
+cd rust_BE && cargo check    # repeat for the surface your PR touches
+```
+If the merge breaks the build, fix it on the same branch before pushing.
+
 ### Before committing
 Always propose updating (or creating) the daily progress log in `docs/daily-progress/` before creating a git commit. File name format: `YYYY-MM-DD-<short-slug>.md`. Follow the structure of existing files in that folder: Overview → Changes grouped by layer (Backend / Dashboard / Mobile / Database) → Files Modified table.
+
+### Fly.io deployments (prod vs staging)
+The `rust_BE/` directory contains **three** fly configs:
+
+| File | App |
+|---|---|
+| `fly.toml` (default) | `pierreclubs-backend-prod` |
+| `fly.production.toml` | `pierreclubs-backend-prod` |
+| `fly.staging.toml` | `pierreclubs-backend-staging` |
+
+`fly secrets set` and `fly deploy` apply to whichever app is in `fly.toml` unless `-c <file>` or `-a <app>` is passed. **Never assume the default targets staging** — `fly.toml` is prod. To target staging:
+```bash
+fly secrets set FOO=bar -c fly.staging.toml
+# or
+fly secrets set FOO=bar -a pierreclubs-backend-staging
+```
+Always verify with `fly status` or `fly secrets list -a <app>` before mutating shared state.
+
+## Deprecations and cross-cutting gotchas
+
+### `table_images` table is deprecated
+The `table_images` table is slated for removal as part of the table-images redesign. **Do not add new dependencies on it.** New work on table images should target the replacement (TBD), not extend the existing table.
+
+It's still actively written by `club_owner_persistence.rs`, so it can't be deleted today — but two pieces of GC code reference it as a safety net (`services/garbage_collector/table_images_orphans.rs` and the `SELECT url FROM table_images` query in `services/garbage_collector/storage.rs::referenced_event_image_paths`). When the table is finally dropped, both must be removed in the same migration PR. See `docs/GARBAGE_COLLECTOR.md` for the full removal checklist.
+
+### Marzipano config: club is the fallback for event
+The mobile 360° viewer uses `events.marzipano_config` when present, and falls back to `clubs.marzipano_config` otherwise (migration `042_add_club_marzipano_config.sql`). The two columns share an identical JSONB shape (array of `MarzipanoScene`).
+
+Any logic that reasons about referenced panorama assets — GC reference sets, integrity checks, migration scripts — must read **both** columns. Looking only at `events.marzipano_config` will silently miss club-fallback panoramas and treat them as unreferenced.
