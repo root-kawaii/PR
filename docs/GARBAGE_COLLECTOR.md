@@ -81,7 +81,6 @@ that drops the FK does not silently leak orphans.
 | Module | Predicate |
 |---|---|
 | `tickets_orphans` | `tickets t` where no `events.id = t.event_id`. |
-| `tables_orphans` | `tables t` where no `events.id = t.event_id`. |
 | `reservations_orphans` | `table_reservations r` where event or table no longer exists. |
 | `reservation_shares_orphans` | `reservation_payment_shares` orphaned from `table_reservations`. |
 | `reservation_guests_orphans` | `reservation_guests` orphaned from `table_reservations`. |
