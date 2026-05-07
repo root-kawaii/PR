@@ -5,12 +5,21 @@ import { getSafeImageUrl } from '../utils/image';
 
 type UploadState = 'idle' | 'uploading' | 'done' | 'error';
 
-interface EventImageUploadProps {
+interface ImageUploadProps {
   currentUrl?: string;
   onUploaded: (url: string) => void;
+  uploadEndpoint: string;
+  placeholder?: string;
+  altText?: string;
 }
 
-export default function EventImageUpload({ currentUrl, onUploaded }: EventImageUploadProps) {
+export default function ImageUpload({
+  currentUrl,
+  onUploaded,
+  uploadEndpoint,
+  placeholder = 'Clicca per caricare la locandina',
+  altText = 'Immagine',
+}: ImageUploadProps) {
   const { token } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
@@ -37,7 +46,7 @@ export default function EventImageUpload({ currentUrl, onUploaded }: EventImageU
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch(`${API_URL}/owner/events/image`, {
+      const res = await fetch(`${API_URL}${uploadEndpoint}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -62,7 +71,7 @@ export default function EventImageUpload({ currentUrl, onUploaded }: EventImageU
     <div>
       {previewSrc ? (
         <div className="relative w-full h-40 rounded-lg overflow-hidden border border-gray-200 mb-2">
-          <img src={previewSrc} alt="Locandina" className="w-full h-full object-cover" />
+          <img src={previewSrc} alt={altText} className="w-full h-full object-cover" />
           {uploadState === 'uploading' && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -90,7 +99,7 @@ export default function EventImageUpload({ currentUrl, onUploaded }: EventImageU
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              <span className="text-sm">Clicca per caricare la locandina</span>
+              <span className="text-sm">{placeholder}</span>
               <span className="text-xs mt-1">JPG, PNG, WEBP — max 5 MB</span>
             </>
           )}
