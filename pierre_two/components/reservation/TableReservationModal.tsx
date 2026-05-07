@@ -27,6 +27,13 @@ type TableReservationModalProps = {
   table: Table | null;
   event: Event | null;
   onClose: () => void;
+  /** Optional: when set, the BE auto-assigns the first free table inside the area
+   *  atomically (FOR UPDATE) instead of using `table.id`. The `table` prop is
+   *  still used as the representative for display (price, capacity, features). */
+  areaId?: string;
+  /** Fired after a reservation is successfully created — used by the parent
+   *  to refetch tables / update availability before the modal closes. */
+  onReservationCreated?: () => void;
 };
 
 export const TableReservationModal = ({
@@ -34,6 +41,8 @@ export const TableReservationModal = ({
   table,
   event,
   onClose,
+  areaId,
+  onReservationCreated,
 }: TableReservationModalProps) => {
   const { user, logout } = useAuth();
   const { theme } = useTheme();
@@ -127,22 +136,29 @@ export const TableReservationModal = ({
         owner_share: ownerShare,
       });
 
-      // Step 1: Create Stripe PaymentIntent for owner's share
+      // Step 1: Create Stripe PaymentIntent for owner's share.
+      // When `areaId` is provided, the BE atomically picks the first free table
+      // in that area (FOR UPDATE) — we never send a stale table_id from local state.
       lastStep = "create_payment_intent_request";
+      const intentBody: Record<string, unknown> = {
+        event_id: event.id,
+        owner_user_id: user.id,
+        contact_name: user.name,
+        contact_email: user.email,
+        contact_phone: user.phone_number || "",
+        special_requests: null,
+      };
+      if (areaId) {
+        intentBody.area_id = areaId;
+      } else {
+        intentBody.table_id = table.id;
+      }
       const paymentIntentResponse = await fetch(
         `${API_URL}/reservations/create-payment-intent`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            table_id: table.id,
-            event_id: event.id,
-            owner_user_id: user.id,
-            contact_name: user.name,
-            contact_email: user.email,
-            contact_phone: user.phone_number || "",
-            special_requests: null,
-          }),
+          body: JSON.stringify(intentBody),
         }
       );
 
@@ -156,6 +172,17 @@ export const TableReservationModal = ({
             "Sessione staging scaduta",
             "Accedi di nuovo nella app staging prima di riprovare il pagamento."
           );
+          return;
+        }
+        // Stop before opening the Stripe sheet and show the BE message
+        // (e.g. "Nessun tavolo disponibile per questa area" → 409).
+        if (paymentIntentResponse.status === 409) {
+          Alert.alert(
+            "Area non disponibile",
+            errorText || "Non ci sono più tavoli liberi in questa area."
+          );
+          onReservationCreated?.();
+          onClose();
           return;
         }
         throw new Error(`Failed to create payment intent: ${errorText}`);
@@ -230,23 +257,30 @@ export const TableReservationModal = ({
         return;
       }
 
-      // Step 3: Create reservation — generates the shared link
+      // Step 3: Create reservation — generates the shared link.
+      // Same area_id vs table_id logic as step 1: when area_id is provided,
+      // the BE re-picks + locks an available table inside the transaction.
       lastStep = "create_reservation_request";
+      const reservationBody: Record<string, unknown> = {
+        event_id: event.id,
+        owner_user_id: user.id,
+        stripe_payment_intent_id: paymentIntentData.paymentIntentId,
+        contact_name: user.name,
+        contact_email: user.email,
+        contact_phone: user.phone_number || "",
+        special_requests: null,
+      };
+      if (areaId) {
+        reservationBody.area_id = areaId;
+      } else {
+        reservationBody.table_id = table.id;
+      }
       const reservationResponse = await fetch(
         `${API_URL}/reservations/create-with-payment`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            table_id: table.id,
-            event_id: event.id,
-            owner_user_id: user.id,
-            stripe_payment_intent_id: paymentIntentData.paymentIntentId,
-            contact_name: user.name,
-            contact_email: user.email,
-            contact_phone: user.phone_number || "",
-            special_requests: null,
-          }),
+          body: JSON.stringify(reservationBody),
         }
       );
 
@@ -288,6 +322,7 @@ export const TableReservationModal = ({
         );
       }
 
+      onReservationCreated?.();
       onClose();
     } catch (error) {
       if (!failureTracked) {
