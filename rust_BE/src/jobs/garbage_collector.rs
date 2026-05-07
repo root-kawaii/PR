@@ -13,8 +13,7 @@ use tracing::{error, info};
 use crate::bootstrap::state::AppState;
 use crate::services::garbage_collector::{
     events_orphans, payments_orphans, reservation_guests_orphans, reservation_shares_orphans,
-    reservations_orphans, storage, table_images_orphans, tables_orphans, tickets_orphans,
-    CleanerCtx, CleanerStats,
+    reservations_orphans, storage, table_images_orphans, tickets_orphans, CleanerCtx, CleanerStats,
 };
 
 pub async fn run(state: Arc<AppState>) {
@@ -66,15 +65,6 @@ async fn run_round(state: &AppState) {
     record_db(
         "tickets_orphans",
         tickets_orphans::run(&state.db_pool, ctx).await,
-        &mut details,
-        &mut total_detected,
-        &mut total_deleted,
-        &mut succeeded,
-        &mut failed,
-    );
-    record_db(
-        "tables_orphans",
-        tables_orphans::run(&state.db_pool, ctx).await,
         &mut details,
         &mut total_detected,
         &mut total_deleted,

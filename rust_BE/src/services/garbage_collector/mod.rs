@@ -36,5 +36,4 @@ pub mod reservation_shares_orphans;
 pub mod reservations_orphans;
 pub mod storage;
 pub mod table_images_orphans;
-pub mod tables_orphans;
 pub mod tickets_orphans;
