@@ -283,23 +283,40 @@
       transform: translateY(0);
     }
 
-    /* Area Hotspot */
+    /* Area Hotspot — card popup, recycled from the legacy table hotspot */
     .hotspot.area {
-      background: rgba(245, 158, 11, 0.9);
-      color: #fff;
-      border: 2px solid rgba(255, 255, 255, 0.8);
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      font-size: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      width: auto;
+      min-width: 200px;
+      max-width: 280px;
+      margin-left: -100px;
+      margin-top: -80px;
     }
-    .hotspot.area:active {
-      transform: scale(0.93);
+
+    .hotspot.area .hotspot-content {
+      background: rgba(0, 0, 0, 0.88);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    }
+
+    .hotspot.area.available .hotspot-content {
+      border: 2px solid rgba(16, 185, 129, 0.8);
+    }
+
+    .hotspot.area.unavailable .hotspot-content {
+      border: 2px solid rgba(107, 114, 128, 0.6);
+      opacity: 0.75;
+    }
+
+    .hotspot.area.available .hotspot-icon {
+      background: rgba(16, 185, 129, 0.9);
+      color: white;
+    }
+
+    .hotspot.area.unavailable .hotspot-icon {
+      background: rgba(107, 114, 128, 0.6);
+      color: white;
     }
 
     /* Scene Link Hotspot */
@@ -513,7 +530,10 @@
 
     // Create a single hotspot
     function createHotspot(hotspot) {
-      const { id, type, yaw, pitch, tableId, tableName, available, targetSceneId, label, areaId, areaName } = hotspot;
+      const { id, type, yaw, pitch, tableId, tableName, available, targetSceneId, label,
+              areaId, areaName, availableCount, totalCount,
+              capacity: areaCapacity, totalCost: areaTotalCost,
+              features: areaFeatures, locationDescription: areaLocation } = hotspot;
 
       // Create hotspot element
       const element = document.createElement('div');
@@ -589,12 +609,55 @@
         }
       } else if (type === 'area') {
         element.classList.add('area');
-        element.innerHTML = '◆';
-        element.title = areaName || 'Area';
-        element.onclick = (e) => {
-          e.stopPropagation();
-          handleAreaClick(areaId, areaName);
-        };
+
+        const isAreaAvailable = (availableCount || 0) > 0;
+        element.classList.toggle('available', isAreaAvailable);
+        element.classList.toggle('unavailable', !isAreaAvailable);
+
+        const areaFeaturesList = areaFeatures && areaFeatures.length > 0
+          ? `<div class="hotspot-features">${areaFeatures.slice(0, 2).map(f => `<span class="feature-tag">${f}</span>`).join('')}</div>`
+          : '';
+
+        const areaLocationText = areaLocation
+          ? `<div class="hotspot-location">${areaLocation}</div>`
+          : '';
+
+        const tablesLeftText = (typeof totalCount === 'number')
+          ? `${availableCount || 0}/${totalCount} tavoli liberi`
+          : `${availableCount || 0} tavoli liberi`;
+
+        element.innerHTML = `
+          <div class="hotspot-content">
+            <div class="hotspot-header">
+              <div class="hotspot-icon">${isAreaAvailable ? '✓' : '✕'}</div>
+              <div class="hotspot-title">${areaName || 'Area'}</div>
+            </div>
+            ${areaLocationText}
+            <div class="hotspot-details">
+              ${areaCapacity ? `<div class="detail-item"><span class="detail-icon">👥</span> ${areaCapacity} posti</div>` : ''}
+              ${areaTotalCost ? `<div class="detail-item"><span class="detail-icon">💳</span> Totale: ${areaTotalCost}</div>` : ''}
+              <div class="detail-item"><span class="detail-icon">🪑</span> ${tablesLeftText}</div>
+            </div>
+            ${areaFeaturesList}
+            ${isAreaAvailable ? `
+              <button class="reserve-button" data-area-id="${areaId}" data-area-name="${areaName || ''}">
+                Prenota Ora
+              </button>
+            ` : `
+              <div class="unavailable-button">Non disponibile</div>
+            `}
+          </div>
+        `;
+
+        if (isAreaAvailable) {
+          const reserveBtn = element.querySelector('.reserve-button');
+          if (reserveBtn) {
+            reserveBtn.onclick = (e) => {
+              e.stopPropagation();
+              handleAreaClick(areaId, areaName);
+            };
+          }
+        }
       } else if (type === 'scene-link') {
         element.classList.add('scene-link');
         element.innerHTML = `<div>${label || '→'}</div>`;
@@ -660,6 +723,9 @@
 
     // Handle area hotspot click
     function handleAreaClick(areaId, areaName) {
+      const now = Date.now();
+      if (now - lastClickTime < 500) return;
+      lastClickTime = now;
       notifyReactNative({
         type: 'AREA_CLICK',
         areaId: areaId,

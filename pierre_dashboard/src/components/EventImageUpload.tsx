@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import { getSafeImageUrl } from '../utils/image';
@@ -17,6 +17,11 @@ export default function EventImageUpload({ currentUrl, onUploaded }: EventImageU
   const [preview, setPreview] = useState<string | null>(currentUrl ?? null);
   const [error, setError] = useState<string | null>(null);
   const previewSrc = getSafeImageUrl(preview, { allowBlob: true });
+
+  useEffect(() => {
+    if (uploadState === 'uploading') return;
+    setPreview(currentUrl ?? null);
+  }, [currentUrl, uploadState]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

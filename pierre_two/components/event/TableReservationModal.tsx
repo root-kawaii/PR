@@ -4,6 +4,7 @@ import {
   View,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
@@ -33,6 +34,7 @@ export const TableReservationModal = ({
   const marzipanoViewerRef = useRef<MarzipanoViewerRef>(null);
   const [currentSceneName, setCurrentSceneName] = useState<string>("");
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // Fetch area-backed table inventory when modal opens.
@@ -48,6 +50,7 @@ export const TableReservationModal = ({
       // Reset state when main modal closes
       setShowPaymentModal(false);
       setSelectedTable(null);
+      setSelectedAreaId(null);
       setCurrentSceneName("");
       setHasFetchedTables(false);
     }
@@ -75,15 +78,23 @@ export const TableReservationModal = ({
     }
   };
 
-  // Area hotspot tapped: auto-select first available table in that area
+  // Area hotspot tapped: pass area_id to the BE so it auto-assigns the first
+  // free table atomically. We still resolve a representative table from local
+  // state purely to populate the PaymentModal display (price, capacity,
+  // features, location) — its `id` is NOT used for the booking.
   const handleAreaClick = (areaId: string, areaName?: string) => {
-    const table = tables.find((t) => t.areaId === areaId && t.available);
-    if (table) {
-      console.log(`✅ Opening payment modal for area: ${areaName ?? areaId} → table: ${table.name}`);
-      setSelectedTable(table);
+    const representative = tables.find((t) => t.areaId === areaId && t.available);
+    if (representative) {
+      console.log(`✅ Opening payment modal for area: ${areaName ?? areaId}`);
+      setSelectedTable(representative);
+      setSelectedAreaId(areaId);
       setShowPaymentModal(true);
     } else {
       console.log(`⚠️ No available tables in area: ${areaName ?? areaId}`);
+      Alert.alert(
+        "Area non disponibile",
+        `Non ci sono tavoli liberi nell'area "${areaName ?? "selezionata"}".`
+      );
     }
   };
 
@@ -152,10 +163,13 @@ export const TableReservationModal = ({
       <PaymentModal
         visible={showPaymentModal}
         table={selectedTable}
+        areaId={selectedAreaId ?? undefined}
         event={event}
+        onReservationCreated={fetchTables}
         onClose={() => {
           setShowPaymentModal(false);
           setSelectedTable(null);
+          setSelectedAreaId(null);
         }}
       />
     </Modal>
