@@ -61,6 +61,16 @@ pub struct StorageConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct GcConfig {
+    pub enabled: bool,
+    pub dry_run: bool,
+    pub interval_seconds: u64,
+    pub min_orphan_age_hours: i64,
+    pub first_run_delay_seconds: u64,
+    pub panoramas_bucket: Option<String>,
+}
+
+#[derive(Clone, Debug)]
 pub struct AppConfig {
     pub database: DatabaseConfig,
     pub auth: AuthConfig,
@@ -70,6 +80,7 @@ pub struct AppConfig {
     pub feature_flags: FeatureFlagsConfig,
     pub jobs: JobsConfig,
     pub storage: StorageConfig,
+    pub gc: GcConfig,
     pub app_base_url: String,
     pub owner_app_base_url: String,
     pub auto_run_db_migrations: bool,
@@ -195,6 +206,30 @@ impl AppConfig {
         let event_images_bucket =
             env::var("SUPABASE_EVENT_IMAGES_BUCKET").unwrap_or_else(|_| "event-images".to_string());
 
+        let gc_enabled = env::var("GC_ENABLED")
+            .ok()
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        let gc_dry_run = env::var("GC_DRY_RUN")
+            .ok()
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(true);
+        let gc_interval_seconds = env::var("GC_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(86_400);
+        let gc_min_orphan_age_hours = env::var("GC_MIN_ORPHAN_AGE_HOURS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(24);
+        let gc_first_run_delay_seconds = env::var("GC_FIRST_RUN_DELAY_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(300);
+        let gc_panoramas_bucket = env::var("SUPABASE_PANORAMAS_BUCKET")
+            .ok()
+            .filter(|s| !s.is_empty());
+
         Self {
             database: DatabaseConfig {
                 url: database_url,
@@ -237,6 +272,14 @@ impl AppConfig {
                 supabase_url,
                 service_role_key: supabase_service_role_key,
                 event_images_bucket,
+            },
+            gc: GcConfig {
+                enabled: gc_enabled,
+                dry_run: gc_dry_run,
+                interval_seconds: gc_interval_seconds,
+                min_orphan_age_hours: gc_min_orphan_age_hours,
+                first_run_delay_seconds: gc_first_run_delay_seconds,
+                panoramas_bucket: gc_panoramas_bucket,
             },
             app_base_url,
             owner_app_base_url,
