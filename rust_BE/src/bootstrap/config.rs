@@ -69,7 +69,6 @@ pub struct GcConfig {
     pub interval_seconds: u64,
     pub min_orphan_age_hours: i64,
     pub first_run_delay_seconds: u64,
-    pub panoramas_bucket: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -237,9 +236,6 @@ impl AppConfig {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(300);
-        let gc_panoramas_bucket = env::var("SUPABASE_PANORAMAS_BUCKET")
-            .ok()
-            .filter(|s| !s.is_empty());
 
         Self {
             database: DatabaseConfig {
@@ -292,7 +288,6 @@ impl AppConfig {
                 interval_seconds: gc_interval_seconds,
                 min_orphan_age_hours: gc_min_orphan_age_hours,
                 first_run_delay_seconds: gc_first_run_delay_seconds,
-                panoramas_bucket: gc_panoramas_bucket,
             },
             app_base_url,
             owner_app_base_url,

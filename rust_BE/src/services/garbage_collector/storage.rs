@@ -80,7 +80,7 @@ pub async fn run_panoramas(
 fn require_storage(storage: &StorageConfig) -> Result<(&str, &str), String> {
     match (
         storage.supabase_url.as_deref(),
-        storage.service_role_key.as_deref(),
+        storage.supabase_service_role_key.as_deref(),
     ) {
         (Some(url), Some(key)) => Ok((url, key)),
         _ => Err("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for storage GC".into()),
