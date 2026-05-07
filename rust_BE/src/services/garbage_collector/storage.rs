@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 
-use super::{CleanerCtx, CleanerStats};
+use super::{CleanerCtx, CleanerStats, SAMPLE_SIZE};
 use crate::bootstrap::config::StorageConfig;
 
 const DELETE_BATCH_SIZE: usize = 100;
@@ -80,7 +80,7 @@ pub async fn run_panoramas(
 fn require_storage(storage: &StorageConfig) -> Result<(&str, &str), String> {
     match (
         storage.supabase_url.as_deref(),
-        storage.service_role_key.as_deref(),
+        storage.supabase_service_role_key.as_deref(),
     ) {
         (Some(url), Some(key)) => Ok((url, key)),
         _ => Err("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for storage GC".into()),
@@ -101,6 +101,7 @@ async fn run_bucket(
     let min_age = Duration::hours(ctx.min_orphan_age_hours);
     let candidates = diff_orphans(&listed, referenced, min_age, now);
     let detected = candidates.len() as u64;
+    let sample: Vec<String> = candidates.iter().take(SAMPLE_SIZE).cloned().collect();
 
     let deleted = if ctx.dry_run {
         0
@@ -122,7 +123,11 @@ async fn run_bucket(
         "GC cleaner completed"
     );
 
-    Ok(CleanerStats { detected, deleted })
+    Ok(CleanerStats {
+        detected,
+        deleted,
+        sample,
+    })
 }
 
 async fn referenced_event_image_paths(
@@ -136,6 +141,10 @@ async fn referenced_event_image_paths(
             .await
             .map_err(|e| format!("failed to load event images: {e}"))?;
 
+    // DEPRECATION NOTE: `table_images` is slated for removal. While the table
+    // still exists and is written by club_owner_persistence, its URLs must
+    // remain in the reference set so we don't delete still-linked storage
+    // objects. Drop this query once the table is removed.
     let table_rows: Vec<(String,)> =
         sqlx::query_as("SELECT url FROM table_images WHERE url IS NOT NULL AND url <> ''")
             .fetch_all(pool)
@@ -161,14 +170,22 @@ async fn referenced_panorama_paths(
     supabase_url: &str,
     bucket: &str,
 ) -> Result<HashSet<String>, String> {
-    let rows: Vec<(Option<Value>,)> =
+    // Both events and clubs carry a `marzipano_config` JSONB array. The
+    // mobile viewer falls back to the club's config when the event has none,
+    // so panorama scenes referenced by either source must be preserved.
+    let event_rows: Vec<(Option<Value>,)> =
         sqlx::query_as("SELECT marzipano_config FROM events WHERE marzipano_config IS NOT NULL")
             .fetch_all(pool)
             .await
-            .map_err(|e| format!("failed to load marzipano configs: {e}"))?;
+            .map_err(|e| format!("failed to load event marzipano configs: {e}"))?;
+    let club_rows: Vec<(Option<Value>,)> =
+        sqlx::query_as("SELECT marzipano_config FROM clubs WHERE marzipano_config IS NOT NULL")
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("failed to load club marzipano configs: {e}"))?;
 
     let mut set = HashSet::new();
-    for (cfg,) in rows {
+    for (cfg,) in event_rows.into_iter().chain(club_rows) {
         if let Some(cfg) = cfg {
             for url in extract_panorama_urls(&cfg) {
                 if let Some(p) = reference_path_from_url(&url, supabase_url, bucket) {

@@ -134,26 +134,22 @@ async fn run_round(state: &AppState) {
         &mut failed,
     );
 
-    if let Some(bucket) = state.config.gc.panoramas_bucket.as_deref() {
-        record_storage(
-            "storage_panoramas",
-            storage::run_panoramas(
-                &state.db_pool,
-                &state.http_client,
-                &state.config.storage,
-                bucket,
-                ctx,
-            )
-            .await,
-            &mut details,
-            &mut total_detected,
-            &mut total_deleted,
-            &mut succeeded,
-            &mut failed,
-        );
-    } else {
-        details.insert("storage_panoramas".into(), json!({ "skipped": true }));
-    }
+    record_storage(
+        "storage_panoramas",
+        storage::run_panoramas(
+            &state.db_pool,
+            &state.http_client,
+            &state.config.storage,
+            &state.config.storage.panoramas_bucket,
+            ctx,
+        )
+        .await,
+        &mut details,
+        &mut total_detected,
+        &mut total_deleted,
+        &mut succeeded,
+        &mut failed,
+    );
 
     let status = if failed.is_empty() {
         "success"
@@ -209,7 +205,11 @@ fn record_db(
             *succeeded += 1;
             details.insert(
                 name.into(),
-                json!({ "detected": stats.detected, "deleted": stats.deleted }),
+                json!({
+                    "detected": stats.detected,
+                    "deleted": stats.deleted,
+                    "sample": stats.sample,
+                }),
             );
         }
         Err(e) => {
@@ -236,7 +236,11 @@ fn record_storage(
             *succeeded += 1;
             details.insert(
                 name.into(),
-                json!({ "detected": stats.detected, "deleted": stats.deleted }),
+                json!({
+                    "detected": stats.detected,
+                    "deleted": stats.deleted,
+                    "sample": stats.sample,
+                }),
             );
         }
         Err(e) => {
