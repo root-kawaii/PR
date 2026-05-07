@@ -205,7 +205,11 @@ fn record_db(
             *succeeded += 1;
             details.insert(
                 name.into(),
-                json!({ "detected": stats.detected, "deleted": stats.deleted }),
+                json!({
+                    "detected": stats.detected,
+                    "deleted": stats.deleted,
+                    "sample": stats.sample,
+                }),
             );
         }
         Err(e) => {
@@ -232,7 +236,11 @@ fn record_storage(
             *succeeded += 1;
             details.insert(
                 name.into(),
-                json!({ "detected": stats.detected, "deleted": stats.deleted }),
+                json!({
+                    "detected": stats.detected,
+                    "deleted": stats.deleted,
+                    "sample": stats.sample,
+                }),
             );
         }
         Err(e) => {

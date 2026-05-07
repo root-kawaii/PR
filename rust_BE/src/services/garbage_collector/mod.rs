@@ -7,10 +7,20 @@
 
 use serde::Serialize;
 
-#[derive(Debug, Default, Clone, Copy, Serialize)]
+/// Maximum number of identifiers (UUIDs / storage paths) included in each
+/// cleaner's `sample` for the audit log. Bounds the size of the JSON payload
+/// written to `background_job_runs.details`.
+pub const SAMPLE_SIZE: usize = 25;
+
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct CleanerStats {
     pub detected: u64,
     pub deleted: u64,
+    /// Up to `SAMPLE_SIZE` identifiers (UUID strings for DB rows, storage
+    /// paths for bucket objects). In dry-run mode these are the rows that
+    /// *would* be deleted; in live mode they are the rows that *were*
+    /// deleted.
+    pub sample: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
