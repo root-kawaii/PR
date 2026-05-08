@@ -62,10 +62,6 @@ impl StorageService {
         Self { client, cfg }
     }
 
-    pub fn is_configured(&self) -> bool {
-        self.cfg.supabase_url.is_some() && self.cfg.supabase_service_role_key.is_some()
-    }
-
     pub fn max_bytes(&self) -> usize {
         self.cfg.max_panorama_bytes
     }
@@ -77,7 +73,11 @@ impl StorageService {
         content_type: &str,
         body: Vec<u8>,
     ) -> Result<UploadResult, StorageError> {
-        let base_url = self.cfg.supabase_url.as_ref().ok_or(StorageError::NotConfigured)?;
+        let base_url = self
+            .cfg
+            .supabase_url
+            .as_ref()
+            .ok_or(StorageError::NotConfigured)?;
         let service_key = self
             .cfg
             .supabase_service_role_key

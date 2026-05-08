@@ -59,8 +59,7 @@ pub async fn get_all_events(
                     .await
                     .unwrap_or_default();
 
-            let mut responses =
-                event_responses_with_club_fallback(&state, events).await;
+            let mut responses = event_responses_with_club_fallback(&state, events).await;
             for r in responses.iter_mut() {
                 if let Ok(id) = Uuid::parse_str(&r.id) {
                     r.genres = genres_map.get(&id).cloned().unwrap_or_default();
@@ -245,11 +244,8 @@ pub(crate) async fn event_responses_with_club_fallback(
     let configs = if club_ids.is_empty() {
         std::collections::HashMap::new()
     } else {
-        match club_persistence::get_marzipano_configs_for_clubs(
-            &state.read_db_pool,
-            &club_ids,
-        )
-        .await
+        match club_persistence::get_marzipano_configs_for_clubs(&state.read_db_pool, &club_ids)
+            .await
         {
             Ok(map) => map,
             Err(error) => {

@@ -601,13 +601,32 @@ pub async fn create_payment_intent(
     } else if let Some(ref aid) = req.area_id {
         let area_uuid = Uuid::parse_str(aid)
             .map_err(|_| (StatusCode::BAD_REQUEST, "ID area non valido".to_string()))?;
-        match table_persistence::find_first_available_table_by_area(&state.db_pool, area_uuid, event_id).await {
+        match table_persistence::find_first_available_table_by_area(
+            &state.db_pool,
+            area_uuid,
+            event_id,
+        )
+        .await
+        {
             Ok(t) => t,
-            Err(sqlx::Error::RowNotFound) => return Err((StatusCode::CONFLICT, "Nessun tavolo disponibile per questa area".to_string())),
-            Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())),
+            Err(sqlx::Error::RowNotFound) => {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Nessun tavolo disponibile per questa area".to_string(),
+                ))
+            }
+            Err(_) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Errore del database".to_string(),
+                ))
+            }
         }
     } else {
-        return Err((StatusCode::BAD_REQUEST, "Specificare table_id o area_id".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Specificare table_id o area_id".to_string(),
+        ));
     };
     let table_id = table.id;
 
@@ -790,13 +809,32 @@ pub async fn create_reservation_with_payment(
     } else if let Some(ref aid) = req.area_id {
         let area_uuid = Uuid::parse_str(aid)
             .map_err(|_| (StatusCode::BAD_REQUEST, "ID area non valido".to_string()))?;
-        match table_persistence::find_first_available_table_by_area(&state.db_pool, area_uuid, event_id).await {
+        match table_persistence::find_first_available_table_by_area(
+            &state.db_pool,
+            area_uuid,
+            event_id,
+        )
+        .await
+        {
             Ok(t) => (t.id, t),
-            Err(sqlx::Error::RowNotFound) => return Err((StatusCode::CONFLICT, "Nessun tavolo disponibile per questa area".to_string())),
-            Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string())),
+            Err(sqlx::Error::RowNotFound) => {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Nessun tavolo disponibile per questa area".to_string(),
+                ))
+            }
+            Err(_) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Errore del database".to_string(),
+                ))
+            }
         }
     } else {
-        return Err((StatusCode::BAD_REQUEST, "Specificare table_id o area_id".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Specificare table_id o area_id".to_string(),
+        ));
     };
 
     tracing::info!(

@@ -25,7 +25,12 @@ pub async fn run_startup_migrations(pool: &PgPool) -> Result<usize, String> {
 
     let migrations_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../DB/migrations");
     let mut migration_paths = fs::read_dir(&migrations_dir)
-        .map_err(|error| format!("failed to read migrations directory {:?}: {error}", migrations_dir))?
+        .map_err(|error| {
+            format!(
+                "failed to read migrations directory {:?}: {error}",
+                migrations_dir
+            )
+        })?
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
         .filter(|path| path.extension().is_some_and(|ext| ext == "sql"))
         .collect::<Vec<_>>();

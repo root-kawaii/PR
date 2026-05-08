@@ -65,24 +65,6 @@ pub async fn load_payment_service(
     .ok_or(StatusCode::NOT_FOUND)
 }
 
-// Helper function to get payment by Stripe payment intent ID
-pub async fn load_payment_by_stripe_id(
-    stripe_payment_intent_id: &str,
-    app_state: &AppState,
-) -> Result<PaymentEntity, StatusCode> {
-    sqlx::query_as::<_, PaymentEntity>(
-        "SELECT id, sender_id, receiver_id, amount, status, insert_date, update_date, stripe_payment_intent_id, user_ids, capture_method, authorization_status, authorized_at, captured_at, cancelled_at, authorized_amount, captured_amount, stripe_customer_id, stripe_payment_method_id FROM payments WHERE stripe_payment_intent_id = $1"
-    )
-    .bind(stripe_payment_intent_id)
-    .fetch_optional(&app_state.db_pool)
-    .await
-    .map_err(|e| {
-        error!(error = %e, stripe_payment_intent_id = %stripe_payment_intent_id, "Failed to load payment by Stripe ID");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?
-    .ok_or(StatusCode::NOT_FOUND)
-}
-
 use stripe::{CreatePaymentIntent, Currency, PaymentIntent};
 
 pub async fn create_payment_service(

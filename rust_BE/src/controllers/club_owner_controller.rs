@@ -1694,7 +1694,11 @@ pub async fn upload_panorama_handler(
     let mut content_type = String::from("image/jpeg");
     let mut file_bytes: Vec<u8> = Vec::new();
 
-    while let Some(field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+    {
         let field_name = field.name().unwrap_or("").to_string();
         if field_name == "file" {
             if let Some(name) = field.file_name() {
@@ -1703,7 +1707,11 @@ pub async fn upload_panorama_handler(
             if let Some(ct) = field.content_type() {
                 content_type = ct.to_string();
             }
-            file_bytes = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?.to_vec();
+            file_bytes = field
+                .bytes()
+                .await
+                .map_err(|_| StatusCode::BAD_REQUEST)?
+                .to_vec();
         }
     }
 

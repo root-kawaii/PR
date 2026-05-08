@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
+#[allow(dead_code)]
 pub struct OutboxEvent {
     pub id: Uuid,
     pub event_type: String,

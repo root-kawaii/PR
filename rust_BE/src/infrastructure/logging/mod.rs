@@ -82,32 +82,3 @@ pub fn log_request_complete(
         "Request completed"
     );
 }
-
-pub fn log_business_event(event_name: &str, entity_type: &str, entity_id: &str) {
-    tracing::info!(
-        log_category = "business_event",
-        event_name,
-        entity_type,
-        entity_id,
-        "Business event"
-    );
-}
-
-pub fn log_dependency_event(dependency: &str, operation: &str, outcome: &str) {
-    tracing::info!(
-        log_category = "dependency",
-        dependency,
-        operation,
-        outcome,
-        "Dependency call"
-    );
-}
-
-pub fn log_security_event(event_name: &str, actor_id: Option<&str>) {
-    tracing::warn!(
-        log_category = "security",
-        event_name,
-        actor_id = actor_id.unwrap_or("anonymous"),
-        "Security event"
-    );
-}

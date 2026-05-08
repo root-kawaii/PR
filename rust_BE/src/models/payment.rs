@@ -56,18 +56,6 @@ pub struct PaymentRequest {
     pub idempotency_key: Option<Uuid>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PaymentResponse {
-    pub id: Uuid,
-    pub sender_id: Uuid,
-    pub receiver_id: Uuid,
-    pub amount: Decimal,
-    pub insert_date: NaiveDateTime,
-    pub update_date: Option<NaiveDateTime>,
-    pub stripe_payment_intent_id: Option<String>,
-    pub user_ids: Option<Vec<Uuid>>,
-}
-
 #[derive(Debug, serde::Deserialize)]
 pub struct PaymentFilter {
     pub sender_id: Option<i32>,
