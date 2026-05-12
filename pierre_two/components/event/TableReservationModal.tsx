@@ -167,17 +167,20 @@ export const TableReservationModal = ({
         table={selectedTable}
         areaId={selectedAreaId ?? undefined}
         event={event}
-        onReservationCreated={fetchTables}
         onClose={() => {
           setShowPaymentModal(false);
           setSelectedTable(null);
           setSelectedAreaId(null);
         }}
         onReservationCreated={(reservation) => {
+          fetchTables();
           setShowPaymentModal(false);
           setSelectedTable(null);
+          setSelectedAreaId(null);
           onClose();
-          onReservationCreated?.(reservation);
+          if (reservation) {
+            onReservationCreated?.(reservation);
+          }
         }}
       />
     </Modal>
