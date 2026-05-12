@@ -268,27 +268,76 @@ export function TicketPurchaseModal({
             </View>
 
             <View style={[styles.priceCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-              <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>
-                {isFreeTicket ? "Costo" : "Totale"}
-              </ThemedText>
-              <ThemedText style={[styles.priceValue, { color: theme.text }]}>
-                {isFreeTicket ? "Gratis" : ticketPriceLabel}
-              </ThemedText>
+              <View style={styles.priceHeader}>
+                <View style={styles.priceHeaderCopy}>
+                  <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>
+                    {isFreeTicket ? "Ticket personale" : "Totale da pagare"}
+                  </ThemedText>
+                  <ThemedText style={[styles.priceSubtitle, { color: theme.textSecondary }]}>
+                    {isFreeTicket
+                      ? "Nessun addebito, il ticket viene generato subito."
+                      : "Un acquisto corrisponde a un solo ingresso."}
+                  </ThemedText>
+                </View>
+                <View
+                  style={[
+                    styles.priceChip,
+                    {
+                      backgroundColor: `${theme.primary}12`,
+                      borderColor: `${theme.primary}2A`,
+                    },
+                  ]}
+                >
+                  <IconSymbol
+                    name="ticket.fill"
+                    size={14}
+                    color={theme.primary}
+                  />
+                  <ThemedText style={[styles.priceChipText, { color: theme.primary }]}>
+                    {isFreeTicket ? "Gratis" : "Pagamento"}
+                  </ThemedText>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.amountPanel,
+                  { backgroundColor: theme.background, borderColor: theme.border },
+                ]}
+              >
+                <ThemedText style={[styles.amountValue, { color: theme.text }]}>
+                  {isFreeTicket ? "0 €" : ticketPriceLabel}
+                </ThemedText>
+                <ThemedText style={[styles.amountCaption, { color: theme.textTertiary }]}>
+                  {isFreeTicket
+                    ? "Il ticket gratuito conferma il tuo accesso all'evento."
+                    : "Importo finale del biglietto evento."}
+                </ThemedText>
+              </View>
+
+              <View style={styles.summaryList}>
+                <View style={styles.summaryRow}>
+                  <ThemedText style={[styles.summaryLabel, { color: theme.textTertiary }]}>
+                    Accesso
+                  </ThemedText>
+                  <ThemedText style={[styles.summaryValue, { color: theme.text }]}>
+                    {isFreeTicket ? "Ticket gratuito" : "Ticket a pagamento"}
+                  </ThemedText>
+                </View>
+                <View style={styles.summaryRow}>
+                  <ThemedText style={[styles.summaryLabel, { color: theme.textTertiary }]}>
+                    Prenotazione area
+                  </ThemedText>
+                  <ThemedText style={[styles.summaryValue, { color: theme.text }]}>
+                    Separata
+                  </ThemedText>
+                </View>
+              </View>
+
               <ThemedText style={[styles.caption, { color: theme.textTertiary }]}>
                 {isFreeTicket
-                  ? "La conferma genera un ticket personale senza pagamento."
-                  : "Un acquisto corrisponde a un ticket personale."}
-              </ThemedText>
-            </View>
-
-            <View style={[styles.noticeCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
-              <ThemedText style={[styles.noticeTitle, { color: theme.text }]}>
-                Flusso separato dal tavolo
-              </ThemedText>
-              <ThemedText style={[styles.noticeText, { color: theme.textTertiary }]}>
-                {isFreeTicket
-                  ? "Il ticket gratuito conferma l&apos;ingresso all&apos;evento. La prenotazione area, se disponibile, resta un flusso distinto."
-                  : "Il biglietto copre l&apos;ingresso all&apos;evento. La prenotazione area, se disponibile, resta un flusso distinto."}
+                  ? "Se disponibile, tavolo e aree riservate si prenotano con un flusso distinto."
+                  : "Tavolo e aree riservate, se disponibili, restano una prenotazione separata."}
               </ThemedText>
             </View>
 
@@ -346,10 +395,10 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   heroCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
-    padding: 18,
-    gap: 10,
+    padding: 20,
+    gap: 12,
   },
   badge: {
     alignSelf: "flex-start",
@@ -367,9 +416,9 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "700",
-    lineHeight: 30,
+    lineHeight: 32,
   },
   metaRow: {
     flexDirection: "row",
@@ -381,36 +430,88 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   priceCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
-    padding: 18,
-    alignItems: "center",
-    gap: 6,
+    padding: 20,
+    gap: 16,
+  },
+  priceHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  priceHeaderCopy: {
+    flex: 1,
+    gap: 4,
   },
   priceLabel: {
     fontSize: 13,
-  },
-  priceValue: {
-    fontSize: 28,
     fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  priceSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  priceChip: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  priceChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  amountPanel: {
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    gap: 8,
+    alignItems: "center",
+  },
+  amountValue: {
+    fontSize: 44,
+    fontWeight: "700",
+    lineHeight: 48,
+    fontVariant: ["tabular-nums"],
+  },
+  amountCaption: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  summaryList: {
+    gap: 10,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  summaryValue: {
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "right",
+    fontVariant: ["tabular-nums"],
   },
   caption: {
     fontSize: 13,
-    textAlign: "center",
-  },
-  noticeCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 18,
-    gap: 8,
-  },
-  noticeTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  noticeText: {
-    fontSize: 13,
-    lineHeight: 20,
+    lineHeight: 19,
   },
   ctaWrap: {
     marginTop: 4,
