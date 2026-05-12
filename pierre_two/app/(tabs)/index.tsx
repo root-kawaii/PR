@@ -36,17 +36,6 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
-  const {
-    events,
-    loading,
-    refetch: refetchEvents,
-    loadMore,
-    loadingMore,
-    hasMore,
-  } = useEvents();
-  const eventModal = useModal();
-  const reservationModal = useModal();
-  const params = useLocalSearchParams();
 
   const toDateKey = (date: Date) => {
     const year = date.getFullYear();
@@ -54,6 +43,19 @@ export default function HomeScreen() {
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
+
+  const selectedDateKey = toDateKey(selectedDate);
+  const {
+    events,
+    loading,
+    refetch: refetchEvents,
+    loadMore,
+    loadingMore,
+    hasMore,
+  } = useEvents(selectedDateKey);
+  const eventModal = useModal();
+  const reservationModal = useModal();
+  const params = useLocalSearchParams();
 
   const parseDateKey = (dateStr: string) => {
     const [year, month, day] = dateStr.split("-").map(Number);
@@ -82,14 +84,14 @@ export default function HomeScreen() {
 
     trackEvent("home_events_loaded", {
       result_count: events.length,
-      selected_date: toDateKey(selectedDate),
+      selected_date: selectedDateKey,
       has_more: hasMore,
     });
-  }, [events.length, hasMore, loading, selectedDate]);
+  }, [events.length, hasMore, loading, selectedDateKey]);
 
   const onRefresh = async () => {
     trackEvent("home_events_refresh_requested", {
-      selected_date: toDateKey(selectedDate),
+      selected_date: selectedDateKey,
     });
     setRefreshing(true);
     await refetchEvents(true);

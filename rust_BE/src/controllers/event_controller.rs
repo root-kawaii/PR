@@ -5,13 +5,15 @@ use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{
     is_valid_event_image_url, normalize_entry_type, normalize_event_price,
     normalize_ticketing_mode, AppState, CreateEventRequest, Event, EventResponse,
-    PaginationParams, UpdateEventRequest,
+    UpdateEventRequest,
 };
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
+use chrono::NaiveDate;
+use serde::Deserialize;
 use serde::Serialize;
 use std::sync::Arc;
 use tracing::warn;
@@ -54,15 +56,29 @@ pub struct EventsResponse {
     pub events: Vec<EventResponse>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PublicEventQueryParams {
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    #[serde(default)]
+    pub offset: i64,
+    pub from_date: Option<NaiveDate>,
+}
+
+fn default_limit() -> i64 {
+    50
+}
+
 /// Get all events (paginated, default limit=50)
 pub async fn get_all_events(
     State(state): State<Arc<AppState>>,
-    Query(pagination): Query<PaginationParams>,
+    Query(query): Query<PublicEventQueryParams>,
 ) -> Result<Json<EventsResponse>, StatusCode> {
     match event_persistence::get_all_events(
         &state.read_db_pool,
-        pagination.limit,
-        pagination.offset,
+        query.limit,
+        query.offset,
+        query.from_date,
     )
     .await
     {
@@ -75,8 +91,9 @@ pub async fn get_all_events(
                 Some("event"),
                 None,
                 serde_json::json!({
-                    "limit": pagination.limit,
-                    "offset": pagination.offset,
+                    "limit": query.limit,
+                    "offset": query.offset,
+                    "from_date": query.from_date,
                     "result_count": events.len(),
                     "outcome": "success",
                 }),
@@ -113,8 +130,9 @@ pub async fn get_all_events(
                 None,
                 &error.to_string(),
                 serde_json::json!({
-                    "limit": pagination.limit,
-                    "offset": pagination.offset,
+                    "limit": query.limit,
+                    "offset": query.offset,
+                    "from_date": query.from_date,
                 }),
             )
             .await;

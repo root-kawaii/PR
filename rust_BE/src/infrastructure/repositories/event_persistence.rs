@@ -97,21 +97,63 @@ pub async fn set_event_genres(pool: &PgPool, event_id: Uuid, genre_ids: &[Uuid])
     Ok(())
 }
 
-/// Get all events with pagination (limit/offset)
-pub async fn get_all_events(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<Event>> {
-    let events = sqlx::query_as::<_, Event>(
-        r#"
-        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
-               tour_provider, marzipano_config, event_date, created_at, updated_at
-        FROM events
-        ORDER BY created_at DESC
-        LIMIT $1 OFFSET $2
-        "#,
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await?;
+/// Get public events with pagination (limit/offset), optionally filtered from a given date onward.
+pub async fn get_all_events(
+    pool: &PgPool,
+    limit: i64,
+    offset: i64,
+    from_date: Option<NaiveDate>,
+) -> Result<Vec<Event>> {
+    let events = if let Some(date) = from_date {
+        sqlx::query_as::<_, Event>(
+            r#"
+            SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
+                   tour_provider, marzipano_config, event_date, created_at, updated_at
+            FROM events
+            WHERE COALESCE(
+                    event_date,
+                    CASE WHEN date ~ '^\d{4}-\d{2}-\d{2}'
+                         THEN LEFT(date, 10)::date
+                         ELSE NULL END
+                  ) >= $1
+            ORDER BY
+                COALESCE(
+                    event_date,
+                    CASE WHEN date ~ '^\d{4}-\d{2}-\d{2}'
+                         THEN LEFT(date, 10)::date
+                         ELSE NULL END
+                ) ASC NULLS LAST,
+                created_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(date)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, Event>(
+            r#"
+            SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
+                   tour_provider, marzipano_config, event_date, created_at, updated_at
+            FROM events
+            ORDER BY
+                COALESCE(
+                    event_date,
+                    CASE WHEN date ~ '^\d{4}-\d{2}-\d{2}'
+                         THEN LEFT(date, 10)::date
+                         ELSE NULL END
+                ) ASC NULLS LAST,
+                created_at DESC
+            LIMIT $1 OFFSET $2
+            "#,
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?
+    };
 
     Ok(events)
 }
@@ -322,10 +364,9 @@ pub async fn get_public_reservable_flags_for_events(
                 SELECT 1
                 FROM tables t
                 LEFT JOIN areas a ON a.id = t.area_id
-                WHERE (t.event_id = e.id AND t.available = true)
+                WHERE t.event_id = e.id
                    OR (
                         t.event_id IS NULL
-                        AND t.available = true
                         AND e.club_id IS NOT NULL
                         AND a.club_id = e.club_id
                    )
@@ -349,10 +390,9 @@ pub async fn refresh_event_has_reservable_areas(pool: &PgPool, event_id: Uuid) -
             SELECT 1
             FROM tables t
             LEFT JOIN areas a ON a.id = t.area_id
-            WHERE (t.event_id = e.id AND t.available = true)
+            WHERE t.event_id = e.id
                OR (
                     t.event_id IS NULL
-                    AND t.available = true
                     AND e.club_id IS NOT NULL
                     AND a.club_id = e.club_id
                )
@@ -374,10 +414,9 @@ pub async fn refresh_club_events_has_reservable_areas(pool: &PgPool, club_id: Uu
             SELECT 1
             FROM tables t
             LEFT JOIN areas a ON a.id = t.area_id
-            WHERE (t.event_id = e.id AND t.available = true)
+            WHERE t.event_id = e.id
                OR (
                     t.event_id IS NULL
-                    AND t.available = true
                     AND e.club_id IS NOT NULL
                     AND a.club_id = e.club_id
                )

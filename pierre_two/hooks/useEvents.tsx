@@ -6,7 +6,7 @@ import { dedupeEvents } from "@/utils/events";
 
 const PAGE_SIZE = 20;
 
-export const useEvents = () => {
+export const useEvents = (fromDate?: string) => {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -15,16 +15,18 @@ export const useEvents = () => {
   const offsetRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    fetchEvents();
-    return () => abortRef.current?.abort();
-  }, []);
-
   const fetchPage = async (
     offset: number,
     signal: AbortSignal,
   ): Promise<{ events: Event[]; rawCount: number }> => {
-    const res = await apiFetch(`${API_URL}/events?limit=${PAGE_SIZE}&offset=${offset}`, { signal });
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String(offset),
+    });
+    if (fromDate) {
+      params.set("from_date", fromDate);
+    }
+    const res = await apiFetch(`${API_URL}/events?${params.toString()}`, { signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const rawEvents = data.events || [];
@@ -55,7 +57,7 @@ export const useEvents = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [fromDate]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
@@ -77,6 +79,11 @@ export const useEvents = () => {
       setLoadingMore(false);
     }
   }, [loadingMore, hasMore]);
+
+  useEffect(() => {
+    fetchEvents();
+    return () => abortRef.current?.abort();
+  }, [fetchEvents]);
 
   return { events, loading, loadingMore, error, hasMore, refetch: fetchEvents, loadMore };
 };
