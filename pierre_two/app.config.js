@@ -7,6 +7,7 @@ const easProjectId =
   process.env.EAS_PROJECT_ID ||
   '6c405b8b-7cb7-454f-a1a7-fb52014dcf35';
 const updatesUrl = easProjectId ? `https://u.expo.dev/${easProjectId}` : undefined;
+const runtimeVersion = process.env.EXPO_RUNTIME_VERSION || '1.1.0';
 
 const extra = {
   router: {},
@@ -87,9 +88,7 @@ export default {
       reactCompiler: true,
     },
     ...(updatesUrl ? { updates: { url: updatesUrl } } : {}),
-    runtimeVersion: {
-      policy: 'appVersion',
-    },
+    runtimeVersion,
     extra,
   },
 };
