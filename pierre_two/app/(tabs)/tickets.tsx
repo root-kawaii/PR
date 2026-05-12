@@ -11,7 +11,7 @@ import {
   NativeSyntheticEvent,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTickets } from '@/hooks/useTickets';
 import { useFocusEffect } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
@@ -34,6 +34,7 @@ export default function BookingsScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const apiFetch = useApiFetch();
+  const insets = useSafeAreaInsets();
 
   const [filter, setFilter] = useState<BookingFilter>('upcoming');
   const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
@@ -284,6 +285,7 @@ export default function BookingsScreen() {
           scrollEventThrottle={400}
           contentContainerStyle={[
             s.scrollContent,
+            { paddingBottom: Math.max(insets.bottom + 124, 148) },
             loading && s.scrollCentered,
           ]}
           refreshControl={

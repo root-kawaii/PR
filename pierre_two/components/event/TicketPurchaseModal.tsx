@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -46,6 +46,7 @@ export function TicketPurchaseModal({
   const { theme } = useTheme();
   const apiFetch = useApiFetch();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const {
     configurePaymentSheet,
     initPaymentSheet,
@@ -70,6 +71,14 @@ export function TicketPurchaseModal({
   const ticketPriceLabel = getEventPriceLabel(event);
   const ticketingMode = resolveEventTicketingMode(event);
   const isFreeTicket = ticketingMode === "free";
+
+  const finishPurchaseFlow = () => {
+    onPurchaseCompleted?.();
+    onClose();
+    setTimeout(() => {
+      router.replace("/tickets");
+    }, 180);
+  };
 
   const handlePurchase = async () => {
     if (!user) {
@@ -126,10 +135,7 @@ export function TicketPurchaseModal({
           ticketing_mode: ticketingMode,
         });
 
-        onPurchaseCompleted?.();
-        onClose();
-        router.push("/(tabs)/tickets");
-        Alert.alert("Ticket ottenuto", "Trovi il ticket nella sezione I miei acquisti.");
+        finishPurchaseFlow();
         return;
       }
 
@@ -195,10 +201,7 @@ export function TicketPurchaseModal({
         ticketing_mode: ticketingMode,
       });
 
-      onPurchaseCompleted?.();
-      onClose();
-      router.push("/(tabs)/tickets");
-      Alert.alert("Biglietto acquistato", "Trovi il ticket nella sezione I miei acquisti.");
+      finishPurchaseFlow();
     } catch (error) {
       const message =
         error instanceof Error
@@ -240,7 +243,13 @@ export function TicketPurchaseModal({
             <View style={styles.backButton} />
           </View>
 
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            contentContainerStyle={[
+              styles.content,
+              { paddingBottom: Math.max(insets.bottom + 120, 140) },
+            ]}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={[styles.heroCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
               <View style={[styles.badge, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}3D` }]}>
                 <IconSymbol name="ticket.fill" size={14} color={theme.primary} />
@@ -324,21 +333,7 @@ export function TicketPurchaseModal({
                     {isFreeTicket ? "Ticket gratuito" : "Ticket a pagamento"}
                   </ThemedText>
                 </View>
-                <View style={styles.summaryRow}>
-                  <ThemedText style={[styles.summaryLabel, { color: theme.textTertiary }]}>
-                    Prenotazione area
-                  </ThemedText>
-                  <ThemedText style={[styles.summaryValue, { color: theme.text }]}>
-                    Separata
-                  </ThemedText>
-                </View>
               </View>
-
-              <ThemedText style={[styles.caption, { color: theme.textTertiary }]}>
-                {isFreeTicket
-                  ? "Se disponibile, tavolo e aree riservate si prenotano con un flusso distinto."
-                  : "Tavolo e aree riservate, se disponibili, restano una prenotazione separata."}
-              </ThemedText>
             </View>
 
             <TouchableOpacity
@@ -508,10 +503,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "right",
     fontVariant: ["tabular-nums"],
-  },
-  caption: {
-    fontSize: 13,
-    lineHeight: 19,
   },
   ctaWrap: {
     marginTop: 4,

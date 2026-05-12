@@ -53,7 +53,13 @@ pub async fn get_tables_by_event_id(
             a.name AS area_name
         FROM tables t
         LEFT JOIN areas a ON a.id = t.area_id
+        JOIN events e ON e.id = $1
         WHERE t.event_id = $1
+           OR (
+                t.event_id IS NULL
+                AND e.club_id IS NOT NULL
+                AND a.club_id = e.club_id
+           )
         ORDER BY COALESCE(a.name, t.zone, 'A') ASC, t.name ASC
         "#,
     )
@@ -76,7 +82,14 @@ pub async fn get_available_tables_by_event_id(
             a.name AS area_name
         FROM tables t
         LEFT JOIN areas a ON a.id = t.area_id
-        WHERE t.event_id = $1 AND t.available = true
+        JOIN events e ON e.id = $1
+        WHERE (t.event_id = $1 AND t.available = true)
+           OR (
+                t.event_id IS NULL
+                AND t.available = true
+                AND e.club_id IS NOT NULL
+                AND a.club_id = e.club_id
+           )
         ORDER BY COALESCE(a.name, t.zone, 'A') ASC, t.name ASC
         "#,
     )
