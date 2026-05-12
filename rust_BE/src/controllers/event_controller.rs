@@ -3,8 +3,9 @@ use crate::application::event_service as event_persistence;
 use crate::application::outbox_service;
 use crate::middleware::auth::ClubOwnerUser;
 use crate::models::{
-    is_valid_event_image_url, AppState, CreateEventRequest, Event, EventResponse, PaginationParams,
-    UpdateEventRequest,
+    is_valid_event_image_url, normalize_entry_type, normalize_event_price,
+    normalize_ticketing_mode, AppState, CreateEventRequest, Event, EventResponse,
+    PaginationParams, UpdateEventRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -15,6 +16,38 @@ use serde::Serialize;
 use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
+
+fn apply_club_fallback(
+    mut response: EventResponse,
+    club: Option<&club_persistence::ClubEventFallbackData>,
+    has_reservable_areas: Option<bool>,
+) -> EventResponse {
+    if let Some(club) = club {
+        if response.venue.trim().is_empty() {
+            response.venue = club.name.clone();
+        }
+
+        if response.marzipano_scenes.is_none() {
+            response.marzipano_scenes = club.marzipano_config.clone();
+        }
+
+        response.club_name = Some(club.name.clone());
+        response.club_address = club.address.as_ref().and_then(|address| {
+            let trimmed = address.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+    }
+
+    if let Some(has_reservable_areas) = has_reservable_areas {
+        response.has_reservable_areas = has_reservable_areas;
+    }
+
+    response
+}
 
 #[derive(Serialize)]
 pub struct EventsResponse {
@@ -70,6 +103,7 @@ pub async fn get_all_events(
             Ok(Json(EventsResponse { events: responses }))
         }
         Err(error) => {
+            warn!(error = %error, "Failed to load events list");
             let _ = outbox_service::enqueue_analytics_error(
                 &state.db_pool,
                 &state.config,
@@ -125,6 +159,7 @@ pub async fn get_event(
         }
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(error) => {
+            warn!(error = %error, event_id = %event_id, "Failed to load event detail");
             let _ = outbox_service::enqueue_analytics_error(
                 &state.db_pool,
                 &state.config,
@@ -147,16 +182,39 @@ pub async fn get_event(
 pub async fn create_event(
     _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<CreateEventRequest>,
+    Json(mut payload): Json<CreateEventRequest>,
 ) -> Result<(StatusCode, Json<EventResponse>), StatusCode> {
     if !is_valid_event_image_url(&payload.image) {
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    payload.price = normalize_event_price(payload.price);
+    payload.entry_type = Some(normalize_entry_type(
+        payload.entry_type.clone(),
+        payload.price.as_deref(),
+    ));
+    payload.ticketing_mode = Some(normalize_ticketing_mode(
+        payload.ticketing_mode.clone(),
+        payload.entry_type.as_deref(),
+        payload.price.as_deref(),
+    ));
+
     let genre_ids = payload.genre_ids.clone().unwrap_or_default();
 
     match event_persistence::create_event(&state.db_pool, payload).await {
         Ok(event) => {
+            let event = if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, event.id)
+                .await
+                .is_ok()
+            {
+                event_persistence::get_event_by_id(&state.db_pool, event.id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or(event)
+            } else {
+                event
+            };
             if !genre_ids.is_empty() {
                 let _ =
                     event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids).await;
@@ -177,7 +235,7 @@ pub async fn update_event(
     _: ClubOwnerUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-    Json(payload): Json<UpdateEventRequest>,
+    Json(mut payload): Json<UpdateEventRequest>,
 ) -> Result<Json<EventResponse>, StatusCode> {
     let event_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     if let Some(image) = payload.image.as_deref() {
@@ -185,10 +243,36 @@ pub async fn update_event(
             return Err(StatusCode::BAD_REQUEST);
         }
     }
+    payload.price = normalize_event_price(payload.price);
+    if payload.price.is_some() || payload.entry_type.is_some() {
+        payload.entry_type = Some(normalize_entry_type(
+            payload.entry_type.clone(),
+            payload.price.as_deref(),
+        ));
+    }
+    if payload.price.is_some() || payload.entry_type.is_some() || payload.ticketing_mode.is_some() {
+        payload.ticketing_mode = Some(normalize_ticketing_mode(
+            payload.ticketing_mode.clone(),
+            payload.entry_type.as_deref(),
+            payload.price.as_deref(),
+        ));
+    }
     let genre_ids = payload.genre_ids.clone();
 
     match event_persistence::update_event(&state.db_pool, event_id, payload).await {
         Ok(Some(event)) => {
+            let event = if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, event.id)
+                .await
+                .is_ok()
+            {
+                event_persistence::get_event_by_id(&state.db_pool, event.id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or(event)
+            } else {
+                event
+            };
             if let Some(ids) = genre_ids {
                 let _ = event_persistence::set_event_genres(&state.db_pool, event_id, &ids).await;
             }
@@ -210,23 +294,34 @@ pub(crate) async fn event_response_with_club_fallback(
     state: &AppState,
     event: Event,
 ) -> EventResponse {
-    if event.marzipano_config.is_some() {
-        return EventResponse::from(event);
-    }
+    let fallback_reservable = if event.has_reservable_areas.is_none() {
+        event_persistence::get_public_reservable_flags_for_events(&state.read_db_pool, &[event.id])
+            .await
+            .ok()
+            .and_then(|map| map.get(&event.id).copied())
+    } else {
+        event.has_reservable_areas
+    };
+
     if let Some(club_id) = event.club_id {
         if let Ok(Some(club)) = club_persistence::get_club_by_id(&state.read_db_pool, club_id).await
         {
-            let mut resp = EventResponse::from(event);
-            resp.marzipano_scenes = club.marzipano_config;
-            return resp;
+            return apply_club_fallback(
+                EventResponse::from(event),
+                Some(&club_persistence::ClubEventFallbackData {
+                    name: club.name,
+                    address: club.address,
+                    marzipano_config: club.marzipano_config,
+                }),
+                fallback_reservable,
+            );
         }
     }
-    EventResponse::from(event)
+    apply_club_fallback(EventResponse::from(event), None, fallback_reservable)
 }
 
-/// Build a batch of `EventResponse`s, filling `marzipano_scenes` from each
-/// event's club tour config when the event itself has none. Resolves all
-/// referenced clubs in a single query to avoid N+1.
+/// Build a batch of `EventResponse`s, filling club-derived venue/details and
+/// `marzipano_scenes` in a single query to avoid N+1.
 ///
 /// On batch lookup failure responses are returned without fallback applied —
 /// this enrichment is non-essential, not worth a 500.
@@ -236,16 +331,15 @@ pub(crate) async fn event_responses_with_club_fallback(
 ) -> Vec<EventResponse> {
     let club_ids: Vec<Uuid> = events
         .iter()
-        .filter(|e| e.marzipano_config.is_none())
         .filter_map(|e| e.club_id)
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
 
-    let configs = if club_ids.is_empty() {
+    let club_data = if club_ids.is_empty() {
         std::collections::HashMap::new()
     } else {
-        match club_persistence::get_marzipano_configs_for_clubs(
+        match club_persistence::get_event_fallback_data_for_clubs(
             &state.read_db_pool,
             &club_ids,
         )
@@ -253,7 +347,30 @@ pub(crate) async fn event_responses_with_club_fallback(
         {
             Ok(map) => map,
             Err(error) => {
-                warn!(error = %error, "Failed to load club marzipano configs for fallback");
+                warn!(error = %error, "Failed to load club fallback data for events");
+                std::collections::HashMap::new()
+            }
+        }
+    };
+
+    let fallback_event_ids: Vec<Uuid> = events
+        .iter()
+        .filter(|event| event.has_reservable_areas.is_none())
+        .map(|event| event.id)
+        .collect();
+
+    let reservable_flags = if fallback_event_ids.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        match event_persistence::get_public_reservable_flags_for_events(
+            &state.read_db_pool,
+            &fallback_event_ids,
+        )
+        .await
+        {
+            Ok(map) => map,
+            Err(error) => {
+                warn!(error = %error, "Failed to load public reservable flags for events");
                 std::collections::HashMap::new()
             }
         }
@@ -262,17 +379,12 @@ pub(crate) async fn event_responses_with_club_fallback(
     events
         .into_iter()
         .map(|event| {
-            let needs_fallback = event.marzipano_config.is_none();
             let club_id = event.club_id;
-            let mut resp = EventResponse::from(event);
-            if needs_fallback {
-                if let Some(cid) = club_id {
-                    if let Some(cfg) = configs.get(&cid) {
-                        resp.marzipano_scenes = Some(cfg.clone());
-                    }
-                }
-            }
-            resp
+            let club = club_id.and_then(|cid| club_data.get(&cid));
+            let has_reservable_areas = event
+                .has_reservable_areas
+                .or_else(|| reservable_flags.get(&event.id).copied());
+            apply_club_fallback(EventResponse::from(event), club, has_reservable_areas)
         })
         .collect()
 }

@@ -1,7 +1,17 @@
+export type EventPricing = {
+  isFree: boolean;
+  displayPrice?: string;
+};
+
+export type EventEntryType = 'free' | 'ticketed';
+export type EventTicketingMode = 'none' | 'free' | 'paid';
+
 export type Event = {
   id: string;
   title: string;
   venue?: string;
+  clubName?: string;
+  clubAddress?: string;
   date: string;
   image: string;
   status?: string;
@@ -9,6 +19,10 @@ export type Event = {
   ageLimit?: string;
   endTime?: string;
   price?: string;
+  pricing?: EventPricing;
+  entryType?: EventEntryType;
+  ticketingMode?: EventTicketingMode;
+  hasReservableAreas?: boolean;
   description?: string;
   tourProvider?: 'marzipano' | 'kuula' | 'cloudpano';
   marzipanoScenes?: MarzipanoScene[]; // NEW: Marzipano 360° viewer configuration
@@ -93,6 +107,8 @@ export type TableReservation = {
     id: string;
     title: string;
     venue: string;
+    clubName?: string;
+    clubAddress?: string;
     date: string;
     image: string;
   };
@@ -153,6 +169,8 @@ export type Ticket = {
     id: string;
     title: string;
     venue: string;
+    clubName?: string;
+    clubAddress?: string;
     date: string;
     image: string;
     status?: string;

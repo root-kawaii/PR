@@ -8,7 +8,7 @@ import {
 import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Event, Table } from "@/types";
+import { Event, Table, TableReservation } from "@/types";
 import { useState, useEffect, useRef } from "react";
 import { API_URL } from "@/config/api";
 import { useTheme } from "@/context/ThemeContext";
@@ -20,12 +20,14 @@ type TableReservationModalProps = {
   event: Event | null;
   onClose: () => void;
   onReserveTable: (table: Table) => void;
+  onReservationCreated?: (reservation: TableReservation) => void;
 };
 
 export const TableReservationModal = ({
   visible,
   event,
   onClose,
+  onReservationCreated,
 }: TableReservationModalProps) => {
   const { theme } = useTheme();
   const [tables, setTables] = useState<Table[]>([]);
@@ -156,6 +158,12 @@ export const TableReservationModal = ({
         onClose={() => {
           setShowPaymentModal(false);
           setSelectedTable(null);
+        }}
+        onReservationCreated={(reservation) => {
+          setShowPaymentModal(false);
+          setSelectedTable(null);
+          onClose();
+          onReservationCreated?.(reservation);
         }}
       />
     </Modal>

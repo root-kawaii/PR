@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Event, Table } from "@/types";
+import { Event, Table, TableReservation } from "@/types";
 import { useState, useEffect } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "@/context/AuthContext";
@@ -21,13 +21,25 @@ import { useTheme } from "@/context/ThemeContext";
 import { trackEvent } from "@/config/analytics";
 import { Alert } from "react-native";
 import { TableReservationModal } from "./TableReservationModal";
+import { TicketPurchaseModal } from "./TicketPurchaseModal";
 import { ThemePalette } from "@/constants/theme";
+import {
+  formatEventDateTimeLabel,
+  hasEventReservableAreas,
+  getEventAddressLabel,
+  getEventPriceLabel,
+  getEventVenueLabel,
+  isEventFreeEntry,
+  resolveEventEntryType,
+  resolveEventTicketingMode,
+} from "@/utils/eventDisplay";
 
 type EventDetailModalProps = {
   visible: boolean;
   event: Event | null;
   onClose: () => void;
   onReserveTable: (table: Table) => void;
+  onReservationCreated?: (reservation: TableReservation) => void;
 };
 
 export const EventDetailModal = ({
@@ -35,15 +47,18 @@ export const EventDetailModal = ({
   event,
   onClose,
   onReserveTable,
+  onReservationCreated,
 }: EventDetailModalProps) => {
   const { user } = useAuth();
   const { theme } = useTheme();
   const [showTableReservation, setShowTableReservation] = useState(false);
+  const [showTicketPurchase, setShowTicketPurchase] = useState(false);
 
   // Reset table reservation modal when main modal closes
   useEffect(() => {
     if (!visible) {
       setShowTableReservation(false);
+      setShowTicketPurchase(false);
     }
   }, [visible]);
 
@@ -59,19 +74,27 @@ export const EventDetailModal = ({
     });
   }, [event?.id, visible]);
 
-  const handleBuyTicket = () => {
+  const requireUser = (action: "ticket" | "reservation") => {
     if (!event) return;
 
     if (!user) {
-      trackEvent("reserve_table_login_required", {
+      trackEvent(action === "ticket" ? "ticket_purchase_login_required" : "reserve_table_login_required", {
         event_id: event.id,
         event_title: event.title,
       });
-      Alert.alert("Accesso richiesto", "Effettua il login per prenotare un tavolo.", [
+      Alert.alert("Accesso richiesto", action === "ticket"
+        ? "Effettua il login per acquistare un biglietto."
+        : "Effettua il login per prenotare un tavolo.", [
         { text: "OK" },
       ]);
-      return;
+      return false;
     }
+
+    return true;
+  };
+
+  const handleReserveArea = () => {
+    if (!event || !requireUser("reservation")) return;
 
     trackEvent("reserve_table_tapped", {
       event_id: event.id,
@@ -81,7 +104,37 @@ export const EventDetailModal = ({
     setShowTableReservation(true);
   };
 
+  const handleBuyTicket = () => {
+    if (!event || !requireUser("ticket")) return;
+
+    trackEvent("ticket_purchase_tapped", {
+      event_id: event.id,
+      event_title: event.title,
+    });
+
+    setShowTicketPurchase(true);
+  };
+
   if (!event) return null;
+
+  const venueLabel = getEventVenueLabel(event);
+  const addressLabel = getEventAddressLabel(event);
+  const entryPriceLabel = getEventPriceLabel(event);
+  const hasFreeEntry = isEventFreeEntry(event);
+  const entryType = resolveEventEntryType(event);
+  const ticketingMode = resolveEventTicketingMode(event);
+  const hasReservableAreas = hasEventReservableAreas(event);
+  const showTicketCta = ticketingMode !== "none";
+  const showReservationCta = hasReservableAreas;
+  const showFreeEntryInfo =
+    entryType === "free" && ticketingMode === "none" && !showReservationCta;
+  const showReservationNotice = showReservationCta;
+  const reservationNoticeText =
+    ticketingMode === "paid"
+      ? "La quota area copre la tua parte del tavolo. Il ticket di ingresso si acquista separatamente."
+      : ticketingMode === "free"
+        ? "La quota area copre la tua parte del tavolo. Il ticket gratuito si ottiene separatamente."
+        : "La prenotazione area copre la tua parte del tavolo per l'evento a ingresso libero.";
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -105,19 +158,27 @@ export const EventDetailModal = ({
                 style={styles.modalImageOverlay}
               />
               <View style={styles.imageContent}>
-                <View style={[styles.eventTag, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}35` }]}>
-                  <IconSymbol name="wineglass.fill" size={12} color={theme.primary} />
-                  <ThemedText style={[styles.eventTagText, { color: theme.primary }]}>Esperienza serale</ThemedText>
-                </View>
                 <ThemedText style={[styles.modalTitle, { color: theme.text }]}>{event.title}</ThemedText>
                 <View style={styles.modalDateRow}>
                   <IconSymbol name="calendar" size={16} color={theme.textSecondary} />
-                  <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>{event.date}</ThemedText>
+                  <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>
+                    {formatEventDateTimeLabel(event)}
+                  </ThemedText>
                 </View>
-                {event.venue ? (
+                {venueLabel ? (
                   <View style={styles.modalDateRow}>
                     <IconSymbol name="mappin" size={16} color={theme.textSecondary} />
-                    <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>{event.venue}</ThemedText>
+                    <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>
+                      {venueLabel}
+                    </ThemedText>
+                  </View>
+                ) : null}
+                {addressLabel ? (
+                  <View style={styles.modalDateRow}>
+                    <IconSymbol name="location.fill" size={16} color={theme.textSecondary} />
+                    <ThemedText style={[styles.modalDate, { color: theme.textSecondary }]}>
+                      {addressLabel}
+                    </ThemedText>
                   </View>
                 ) : null}
                 {event.genres && event.genres.length > 0 && (
@@ -141,26 +202,68 @@ export const EventDetailModal = ({
             </View>
 
             <View style={styles.ctaSection}>
-              <View style={[styles.priceBox, { backgroundColor: theme.backgroundElevated }]}>
-                <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>Ingresso</ThemedText>
-                <ThemedText style={[styles.priceValue, { color: theme.text }]}>
-                  {event.price || "32 €"}
-                </ThemedText>
-              </View>
-
-              <TouchableOpacity onPress={handleBuyTicket} activeOpacity={0.8}>
-                <LinearGradient
-                  colors={theme.gradientPrimary as [string, string]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[styles.buyButton, { shadowColor: theme.primary }]}
-                >
-                  <IconSymbol name="calendar" size={20} color={theme.textInverse} />
-                  <ThemedText style={[styles.buyButtonText, { color: theme.textInverse }]}>
-                    Prenota Tavolo
+              {!hasFreeEntry && entryPriceLabel ? (
+                <View style={[styles.priceBox, { backgroundColor: theme.backgroundElevated }]}>
+                  <ThemedText style={[styles.priceLabel, { color: theme.textTertiary }]}>Ingresso evento</ThemedText>
+                  <ThemedText style={[styles.priceValue, { color: theme.text }]}>
+                    {entryPriceLabel}
                   </ThemedText>
-                </LinearGradient>
-              </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {showTicketCta ? (
+                <TouchableOpacity onPress={handleBuyTicket} activeOpacity={0.8}>
+                  <LinearGradient
+                    colors={theme.gradientPrimary as [string, string]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.buyButton, { shadowColor: theme.primary }]}
+                  >
+                    <IconSymbol name="ticket.fill" size={20} color={theme.textInverse} />
+                    <ThemedText style={[styles.buyButtonText, { color: theme.textInverse }]}>
+                      {ticketingMode === "free" ? "Ottieni ticket" : "Acquista biglietto"}
+                    </ThemedText>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : null}
+
+              {showReservationCta ? (
+                <TouchableOpacity
+                  onPress={handleReserveArea}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.secondaryButton,
+                    { backgroundColor: theme.backgroundElevated, borderColor: theme.border },
+                  ]}
+                >
+                  <IconSymbol name="table.furniture" size={18} color={theme.text} />
+                  <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
+                    Prenota area
+                  </ThemedText>
+                </TouchableOpacity>
+              ) : null}
+
+              {showReservationNotice ? (
+                <View style={[styles.infoNotice, { backgroundColor: theme.backgroundElevated }]}>
+                  <ThemedText style={[styles.infoNoticeTitle, { color: theme.text }]}>
+                    Cosa include la prenotazione
+                  </ThemedText>
+                  <ThemedText style={[styles.infoNoticeText, { color: theme.textTertiary }]}>
+                    {reservationNoticeText}
+                  </ThemedText>
+                </View>
+              ) : null}
+
+              {showFreeEntryInfo ? (
+                <View style={[styles.infoNotice, { backgroundColor: theme.backgroundElevated }]}>
+                  <ThemedText style={[styles.infoNoticeTitle, { color: theme.text }]}>
+                    Ingresso libero
+                  </ThemedText>
+                  <ThemedText style={[styles.infoNoticeText, { color: theme.textTertiary }]}>
+                    Questo evento non richiede acquisto ticket e non ha aree prenotabili disponibili.
+                  </ThemedText>
+                </View>
+              ) : null}
             </View>
 
             {event.description && (
@@ -184,6 +287,21 @@ export const EventDetailModal = ({
         event={event}
         onClose={() => setShowTableReservation(false)}
         onReserveTable={onReserveTable}
+        onReservationCreated={(reservation) => {
+          setShowTableReservation(false);
+          onClose();
+          onReservationCreated?.(reservation);
+        }}
+      />
+
+      <TicketPurchaseModal
+        visible={showTicketPurchase}
+        event={event}
+        onClose={() => setShowTicketPurchase(false)}
+        onPurchaseCompleted={() => {
+          setShowTicketPurchase(false);
+          onClose();
+        }}
       />
     </Modal>
   );
@@ -237,17 +355,6 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 8,
   },
-  eventTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    marginBottom: 6,
-  },
   genreRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -266,7 +373,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  eventTagText: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 },
   modalTitle: { fontSize: 30, fontWeight: "bold", marginBottom: 4, lineHeight: 34 },
   modalDateRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   modalDate: { fontSize: 14, color: "#9ca3af" },
@@ -313,6 +419,33 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   buyButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  secondaryButton: {
+    paddingVertical: 17,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  infoNotice: {
+    padding: 16,
+    borderRadius: 16,
+    gap: 8,
+  },
+  infoNoticeTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  infoNoticeText: {
+    fontSize: 13,
+    lineHeight: 20,
+  },
   descriptionSection: {
     marginHorizontal: 16,
     marginTop: 24,

@@ -14,43 +14,24 @@ pub async fn list_user_tickets_with_event_details(
 
     Ok(results
         .into_iter()
-        .map(
-            |(
-                ticket_id,
-                event_id,
-                _user_id,
-                ticket_code,
-                ticket_type,
-                price,
-                status,
-                purchase_date,
-                qr_code,
-                _created_at,
-                _updated_at,
-                event_title,
-                event_venue,
-                event_date,
-                event_image,
-                event_status,
-            )| {
-                TicketWithEventResponse {
-                    id: ticket_id.to_string(),
-                    ticket_code,
-                    ticket_type,
-                    price: format!("{:.2} €", price),
-                    status,
-                    purchase_date: purchase_date.to_rfc3339(),
-                    qr_code,
-                    event: EventSummary {
-                        id: event_id.to_string(),
-                        title: event_title,
-                        venue: event_venue,
-                        date: event_date,
-                        image: event_image,
-                        status: event_status,
-                    },
-                }
+        .map(|row| TicketWithEventResponse {
+            id: row.id.to_string(),
+            ticket_code: row.ticket_code,
+            ticket_type: row.ticket_type,
+            price: format!("{:.2} €", row.price),
+            status: row.status,
+            purchase_date: row.purchase_date.to_rfc3339(),
+            qr_code: row.qr_code,
+            event: EventSummary {
+                id: row.event_id.to_string(),
+                title: row.event_title,
+                venue: row.event_venue,
+                club_name: row.club_name,
+                club_address: row.club_address,
+                date: row.event_date,
+                image: row.event_image,
+                status: row.event_status,
             },
-        )
+        })
         .collect())
 }

@@ -101,7 +101,7 @@ pub async fn set_event_genres(pool: &PgPool, event_id: Uuid, genre_ids: &[Uuid])
 pub async fn get_all_events(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<Event>> {
     let events = sqlx::query_as::<_, Event>(
         r#"
-        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
                tour_provider, marzipano_config, event_date, created_at, updated_at
         FROM events
         ORDER BY created_at DESC
@@ -120,7 +120,7 @@ pub async fn get_all_events(pool: &PgPool, limit: i64, offset: i64) -> Result<Ve
 pub async fn get_event_by_id(pool: &PgPool, event_id: Uuid) -> Result<Option<Event>> {
     let event = sqlx::query_as::<_, Event>(
         r#"
-        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+        SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
                tour_provider, marzipano_config, event_date, created_at, updated_at
         FROM events
         WHERE id = $1
@@ -137,10 +137,10 @@ pub async fn get_event_by_id(pool: &PgPool, event_id: Uuid) -> Result<Option<Eve
 pub async fn create_event(pool: &PgPool, request: CreateEventRequest) -> Result<Event> {
     let event = sqlx::query_as::<_, Event>(
         r#"
-        INSERT INTO events (id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+        INSERT INTO events (id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, description, club_id,
                            tour_provider, marzipano_config, event_date, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
-        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
+        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
                   tour_provider, marzipano_config, event_date, created_at, updated_at
         "#,
     )
@@ -154,6 +154,8 @@ pub async fn create_event(pool: &PgPool, request: CreateEventRequest) -> Result<
     .bind(request.age_limit)
     .bind(request.end_time)
     .bind(request.price)
+    .bind(request.entry_type)
+    .bind(request.ticketing_mode)
     .bind(request.description)
     .bind(request.club_id)
     .bind(request.tour_provider)
@@ -184,14 +186,16 @@ pub async fn update_event(
             age_limit = COALESCE($7, age_limit),
             end_time = COALESCE($8, end_time),
             price = COALESCE($9, price),
-            description = COALESCE($10, description),
-            club_id = COALESCE($11, club_id),
-            tour_provider = COALESCE($12, tour_provider),
-            marzipano_config = COALESCE($13, marzipano_config),
-            event_date = COALESCE($14, event_date),
+            entry_type = COALESCE($10, entry_type),
+            ticketing_mode = COALESCE($11, ticketing_mode),
+            description = COALESCE($12, description),
+            club_id = COALESCE($13, club_id),
+            tour_provider = COALESCE($14, tour_provider),
+            marzipano_config = COALESCE($15, marzipano_config),
+            event_date = COALESCE($16, event_date),
             updated_at = NOW()
-        WHERE id = $15
-        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+        WHERE id = $17
+        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
                   tour_provider, marzipano_config, event_date, created_at, updated_at
         "#,
     )
@@ -204,6 +208,8 @@ pub async fn update_event(
     .bind(request.age_limit)
     .bind(request.end_time)
     .bind(request.price)
+    .bind(request.entry_type)
+    .bind(request.ticketing_mode)
     .bind(request.description)
     .bind(request.club_id)
     .bind(request.tour_provider)
@@ -225,7 +231,7 @@ pub async fn get_events_by_club_id(
     let events = if let Some(date) = from_date {
         sqlx::query_as::<_, Event>(
             r#"
-            SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+            SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
                    tour_provider, marzipano_config, event_date, created_at, updated_at
             FROM events
             WHERE club_id = $1
@@ -245,7 +251,7 @@ pub async fn get_events_by_club_id(
     } else {
         sqlx::query_as::<_, Event>(
             r#"
-            SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+            SELECT id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
                    tour_provider, marzipano_config, event_date, created_at, updated_at
             FROM events
             WHERE club_id = $1
@@ -273,7 +279,7 @@ pub async fn update_marzipano_config(
         SET marzipano_config = $1,
             updated_at = NOW()
         WHERE id = $2
-        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, description, club_id,
+        RETURNING id, title, venue, date, image, status, time, age_limit, end_time, price, entry_type, ticketing_mode, has_reservable_areas, description, club_id,
                   tour_provider, marzipano_config, event_date, created_at, updated_at
         "#,
     )
@@ -298,4 +304,90 @@ pub async fn delete_event(pool: &PgPool, event_id: Uuid) -> Result<bool> {
     .await?;
 
     Ok(result.rows_affected() > 0)
+}
+
+pub async fn get_public_reservable_flags_for_events(
+    pool: &PgPool,
+    event_ids: &[Uuid],
+) -> Result<HashMap<Uuid, bool>> {
+    if event_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sqlx::query_as::<_, (Uuid, bool)>(
+        r#"
+        SELECT
+            e.id,
+            EXISTS (
+                SELECT 1
+                FROM tables t
+                LEFT JOIN areas a ON a.id = t.area_id
+                WHERE (t.event_id = e.id AND t.available = true)
+                   OR (
+                        t.event_id IS NULL
+                        AND t.available = true
+                        AND e.club_id IS NOT NULL
+                        AND a.club_id = e.club_id
+                   )
+            ) AS has_reservable_areas
+        FROM events e
+        WHERE e.id = ANY($1)
+        "#,
+    )
+    .bind(event_ids)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().collect())
+}
+
+pub async fn refresh_event_has_reservable_areas(pool: &PgPool, event_id: Uuid) -> Result<bool> {
+    sqlx::query_scalar::<_, bool>(
+        r#"
+        UPDATE events e
+        SET has_reservable_areas = EXISTS (
+            SELECT 1
+            FROM tables t
+            LEFT JOIN areas a ON a.id = t.area_id
+            WHERE (t.event_id = e.id AND t.available = true)
+               OR (
+                    t.event_id IS NULL
+                    AND t.available = true
+                    AND e.club_id IS NOT NULL
+                    AND a.club_id = e.club_id
+               )
+        )
+        WHERE e.id = $1
+        RETURNING COALESCE(has_reservable_areas, false)
+        "#,
+    )
+    .bind(event_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn refresh_club_events_has_reservable_areas(pool: &PgPool, club_id: Uuid) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE events e
+        SET has_reservable_areas = EXISTS (
+            SELECT 1
+            FROM tables t
+            LEFT JOIN areas a ON a.id = t.area_id
+            WHERE (t.event_id = e.id AND t.available = true)
+               OR (
+                    t.event_id IS NULL
+                    AND t.available = true
+                    AND e.club_id IS NOT NULL
+                    AND a.club_id = e.club_id
+               )
+        )
+        WHERE e.club_id = $1
+        "#,
+    )
+    .bind(club_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }

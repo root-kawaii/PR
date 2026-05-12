@@ -7,26 +7,32 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Linking from "expo-linking";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Table, Event } from "@/types";
+import { Table, Event, TableReservation } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/context/ThemeContext";
 import { trackEvent } from "@/config/analytics";
 import { usePaymentSheet } from "@/components/payments/usePaymentSheet";
 import { API_URL } from "@/config/api";
 import { getExpoExtraString } from "@/config/expoExtra";
+import {
+  formatCurrencyAmount,
+  formatEventDateTimeLabel,
+  getEventAddressLabel,
+  getEventVenueLabel,
+} from "@/utils/eventDisplay";
 
 type TableReservationModalProps = {
   visible: boolean;
   table: Table | null;
   event: Event | null;
   onClose: () => void;
+  onReservationCreated?: (reservation: TableReservation) => void;
 };
 
 export const TableReservationModal = ({
@@ -34,6 +40,7 @@ export const TableReservationModal = ({
   table,
   event,
   onClose,
+  onReservationCreated,
 }: TableReservationModalProps) => {
   const { user, logout } = useAuth();
   const { theme } = useTheme();
@@ -62,6 +69,8 @@ export const TableReservationModal = ({
     ? Math.round((tableTotalCost / table.capacity) * 100) / 100
     : 0;
   const tableAreaLabel = table?.areaName?.trim() || table?.zone?.trim() || table?.name?.trim() || null;
+  const eventVenueLabel = event ? getEventVenueLabel(event) : "";
+  const eventAddressLabel = event ? getEventAddressLabel(event) : undefined;
 
   useEffect(() => {
     if (!visible || !table || !event) {
@@ -258,35 +267,44 @@ export const TableReservationModal = ({
 
       const data = await reservationResponse.json();
       lastStep = "completed";
-      const shareLink: string = data.shareLink || "";
-
       trackEvent("table_reservation_flow_completed", {
         event_id: event.id,
         table_id: table.id,
         reservation_id: data.reservation?.id || null,
-        has_share_link: Boolean(shareLink),
+        has_share_link: Boolean(data.shareLink),
       });
 
-      // Show share sheet immediately with the link
-      if (shareLink) {
-        try {
-          trackEvent("table_reservation_share_sheet_opened", {
-            event_id: event.id,
-            table_id: table.id,
-          });
-          await Share.share({
-            message: `Unisciti alla mia area "${tableAreaLabel ?? table.name}" all'evento "${event.title}"! Paga la tua quota qui: ${shareLink}`,
-            url: shareLink,
-          });
-        } catch (_) {
-          // User cancelled share — that's fine
-        }
-      } else {
-        Alert.alert(
-          "Prenotazione Confermata!",
-          `Codice: ${data.reservation?.reservationCode}\nLa tua quota: €${ownerShare.toFixed(2)}\n\nPuoi condividere il link dalla schermata prenotazioni.`
-        );
-      }
+      const reservationForDetail: TableReservation = {
+        ...data.reservation,
+        shareLink: data.shareLink || undefined,
+        paymentShares: data.paymentShares || [],
+        slotsFilled: data.paymentShares?.filter((share: { isOwner: boolean; status: string }) =>
+          !share.isOwner && (share.status === "paid" || share.status === "checkout_pending")
+        ).length ?? 0,
+        slotsTotal: Math.max((table.capacity || 1) - 1, 0),
+        table: {
+          id: table.id,
+          name: table.name,
+          zone: table.zone,
+          areaName: table.areaName,
+          capacity: table.capacity,
+          minSpend: table.minSpend,
+          totalCost: table.totalCost,
+          locationDescription: table.locationDescription,
+          features: table.features,
+        },
+        event: {
+          id: event.id,
+          title: event.title,
+          venue: eventVenueLabel,
+          clubName: event.clubName,
+          clubAddress: event.clubAddress,
+          date: event.date,
+          image: event.image,
+        },
+      };
+
+      onReservationCreated?.(reservationForDetail);
 
       onClose();
     } catch (error) {
@@ -373,8 +391,13 @@ export const TableReservationModal = ({
 
               <View style={styles.eventInfo}>
                 <ThemedText style={styles.eventTitle}>{event.title}</ThemedText>
-                <ThemedText style={styles.eventVenue}>{event.venue}</ThemedText>
-                <ThemedText style={styles.eventDate}>{event.date}</ThemedText>
+                {eventVenueLabel ? (
+                  <ThemedText style={styles.eventVenue}>{eventVenueLabel}</ThemedText>
+                ) : null}
+                {eventAddressLabel ? (
+                  <ThemedText style={styles.eventVenue}>{eventAddressLabel}</ThemedText>
+                ) : null}
+                <ThemedText style={styles.eventDate}>{formatEventDateTimeLabel(event)}</ThemedText>
               </View>
 
               {(table.features?.length || table.locationDescription) ? (
@@ -403,7 +426,7 @@ export const TableReservationModal = ({
               <View style={styles.infoBox}>
                 <View style={styles.infoRow}>
                   <ThemedText style={styles.infoLabel}>Costo tavolo:</ThemedText>
-                  <ThemedText style={styles.infoValue}>€{tableTotalCost.toFixed(2)}</ThemedText>
+                  <ThemedText style={styles.infoValue}>{formatCurrencyAmount(tableTotalCost)}</ThemedText>
                 </View>
 
                 <View style={styles.infoRow}>
@@ -414,13 +437,16 @@ export const TableReservationModal = ({
                 <View style={[styles.infoRow, styles.totalRow]}>
                   <ThemedText style={styles.totalLabel}>La tua quota:</ThemedText>
                   <ThemedText style={[styles.infoValue, styles.highlightValue]}>
-                    €{ownerShare.toFixed(2)}
+                    {formatCurrencyAmount(ownerShare)}
                   </ThemedText>
                 </View>
               </View>
 
               <ThemedText style={styles.linkHint}>
-                Dopo il pagamento riceverai un link da condividere con gli altri partecipanti.
+                Dopo il pagamento atterrerai nel dettaglio prenotazione, dove potrai condividere il link con gli altri partecipanti.
+              </ThemedText>
+              <ThemedText style={styles.linkHint}>
+                La quota area copre il tavolo. L&apos;eventuale ingresso evento resta separato.
               </ThemedText>
             </View>
 
@@ -457,7 +483,7 @@ export const TableReservationModal = ({
                 <>
                   <IconSymbol name="checkmark.circle" size={20} color="#fff" />
                   <ThemedText style={styles.reserveButtonText}>
-                    PAGA €{ownerShare.toFixed(2)} E PRENOTA
+                    PAGA {formatCurrencyAmount(ownerShare)} E PRENOTA
                   </ThemedText>
                 </>
               )}

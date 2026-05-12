@@ -135,6 +135,8 @@ export interface EventResponse {
   id: string;
   title: string;
   venue?: string;
+  clubName?: string;
+  clubAddress?: string;
   date: string;
   image: string;
   status?: string;
@@ -142,6 +144,9 @@ export interface EventResponse {
   ageLimit?: string;
   endTime?: string;
   price?: string;
+  entryType?: 'free' | 'ticketed';
+  ticketingMode?: 'none' | 'free' | 'paid';
+  hasReservableAreas?: boolean;
   description?: string;
   tourProvider?: string;
   marzipanoScenes?: MarzipanoScene[] | null;

@@ -17,8 +17,9 @@ use crate::models::club_owner::{
 };
 use crate::models::table::TableReservationResponse;
 use crate::models::{
-    ApiError, AppState, ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest,
-    EventResponse, TableResponse, TablesResponse, UpdateClubRequest, UpdateEventRequest,
+    normalize_entry_type, normalize_event_price, normalize_ticketing_mode, ApiError, AppState,
+    ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest, EventResponse,
+    TableResponse, TablesResponse, UpdateClubRequest, UpdateEventRequest,
 };
 use crate::utils::jwt;
 use axum::{
@@ -334,11 +335,32 @@ pub async fn create_club_event(
 
     // Force club_id to the owner's club
     payload.club_id = Some(club.id);
+    payload.price = normalize_event_price(payload.price);
+    payload.entry_type = Some(normalize_entry_type(
+        payload.entry_type.clone(),
+        payload.price.as_deref(),
+    ));
+    payload.ticketing_mode = Some(normalize_ticketing_mode(
+        payload.ticketing_mode.clone(),
+        payload.entry_type.as_deref(),
+        payload.price.as_deref(),
+    ));
     let genre_ids = payload.genre_ids.clone().unwrap_or_default();
 
     let event = event_persistence::create_event(&state.db_pool, payload)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let event = if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, event.id)
+        .await
+        .is_ok()
+    {
+        event_persistence::get_event_by_id(&state.db_pool, event.id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .unwrap_or(event)
+    } else {
+        event
+    };
 
     if !genre_ids.is_empty() {
         event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids)
@@ -1539,12 +1561,38 @@ pub async fn update_club_event(
 
     // Prevent changing the event's club association
     payload.club_id = None;
+    payload.price = normalize_event_price(payload.price);
+    if payload.price.is_some() || payload.entry_type.is_some() {
+        payload.entry_type = Some(normalize_entry_type(
+            payload.entry_type.clone(),
+            payload.price.as_deref(),
+        ));
+    }
+    if payload.price.is_some() || payload.entry_type.is_some() || payload.ticketing_mode.is_some()
+    {
+        payload.ticketing_mode = Some(normalize_ticketing_mode(
+            payload.ticketing_mode.clone(),
+            payload.entry_type.as_deref(),
+            payload.price.as_deref(),
+        ));
+    }
     let genre_ids = payload.genre_ids.clone();
 
     let updated = event_persistence::update_event(&state.db_pool, event_uuid, payload)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    let updated = if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, updated.id)
+        .await
+        .is_ok()
+    {
+        event_persistence::get_event_by_id(&state.db_pool, updated.id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .unwrap_or(updated)
+    } else {
+        updated
+    };
 
     if let Some(ids) = genre_ids {
         event_persistence::set_event_genres(&state.db_pool, event_uuid, &ids)

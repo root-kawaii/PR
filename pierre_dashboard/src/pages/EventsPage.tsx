@@ -68,6 +68,14 @@ function todayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function isZeroLikePrice(value?: string | null): boolean {
+  if (!value) return false;
+  const normalized = value.trim().replace(/[^\d.,-]/g, "").replace(",", ".");
+  if (!normalized) return false;
+  const amount = Number.parseFloat(normalized);
+  return Number.isFinite(amount) && amount === 0;
+}
+
 interface EventFormData {
   title: string;
   venue: string; // hidden from UI — preserved on edit, "" for new events
@@ -78,6 +86,8 @@ interface EventFormData {
   status: string;
   age_limit: string;
   price: string;
+  entryType: 'free' | 'ticketed';
+  ticketingMode: 'none' | 'free' | 'paid';
   description: string;
   genreIds: string[];
 }
@@ -92,6 +102,8 @@ const emptyForm: EventFormData = {
   status: "",
   age_limit: "",
   price: "",
+  entryType: "free",
+  ticketingMode: "none",
   description: "",
   genreIds: [],
 };
@@ -154,6 +166,13 @@ export default function EventsPage() {
       status: event.status ?? "",
       age_limit: event.ageLimit ?? "",
       price: event.price ?? "",
+      entryType: event.entryType ?? (event.price && !isZeroLikePrice(event.price) ? "ticketed" : "free"),
+      ticketingMode:
+        event.ticketingMode ??
+        ((event.entryType ?? (event.price && !isZeroLikePrice(event.price) ? "ticketed" : "free")) ===
+        "ticketed"
+          ? "paid"
+          : "none"),
       description: event.description ?? "",
       genreIds: event.genres?.map((g) => g.id) ?? [],
     });
@@ -195,10 +214,17 @@ export default function EventsPage() {
     setSubmitting(true);
     trackEvent("owner_event_create_submitted", {
       has_price: Boolean(form.price),
+      entry_type: form.entryType,
+      ticketing_mode: form.ticketingMode,
       has_description: Boolean(form.description),
     });
     try {
+      if (form.ticketingMode === "paid" && !form.price.trim()) {
+        throw new Error("Inserisci il prezzo del biglietto per un evento ticketed");
+      }
       const dateToSend = form.time ? `${form.date}T${form.time}:00` : form.date;
+      const price =
+        form.ticketingMode === "paid" ? priceToApiString(form.price) : undefined;
       const body = {
         title: form.title,
         venue: form.venue,
@@ -207,7 +233,9 @@ export default function EventsPage() {
         status: form.status || undefined,
         age_limit: form.age_limit || undefined,
         end_time: form.end_time || undefined,
-        price: priceToApiString(form.price),
+        price,
+        entry_type: form.entryType,
+        ticketing_mode: form.ticketingMode,
         description: form.description || undefined,
         genre_ids: form.genreIds.length ? form.genreIds : undefined,
       };
@@ -234,6 +262,8 @@ export default function EventsPage() {
       trackEvent("owner_event_created", {
         title: form.title,
         venue: form.venue,
+        entry_type: form.entryType,
+        ticketing_mode: form.ticketingMode,
       });
       closeForm();
       refetch();
@@ -375,8 +405,8 @@ export default function EventsPage() {
                 </div>
               </div>
 
-              {/* Status + Price */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Status + Entry type + Ticketing mode */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stato
@@ -396,22 +426,101 @@ export default function EventsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Prezzo{" "}
-                    <span className="text-gray-400 font-normal">
-                      (€, vuoto = gratis)
-                    </span>
+                    Tipo ingresso
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.50"
-                    value={form.price}
+                  <select
+                    value={form.entryType}
                     onChange={(e) =>
-                      setForm({ ...form, price: e.target.value })
+                      setForm((current) => {
+                        const nextEntryType = e.target.value as "free" | "ticketed";
+                        const nextTicketingMode =
+                          nextEntryType === "free"
+                            ? current.ticketingMode === "paid"
+                              ? "none"
+                              : current.ticketingMode
+                            : current.ticketingMode === "none" || current.ticketingMode === "free"
+                              ? "paid"
+                              : current.ticketingMode;
+                        return {
+                          ...current,
+                          entryType: nextEntryType,
+                          ticketingMode: nextTicketingMode,
+                          price:
+                            nextEntryType === "free"
+                              ? ""
+                              : current.price,
+                        };
+                      })
                     }
-                    placeholder="15"
-                    className={ui.input}
-                  />
+                    className={ui.select}
+                  >
+                    <option value="free">Ingresso libero</option>
+                    <option value="ticketed">Biglietto</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Ticket app
+                  </label>
+                  <select
+                    value={form.ticketingMode}
+                    onChange={(e) =>
+                      setForm((current) => {
+                        const nextTicketingMode = e.target.value as "none" | "free" | "paid";
+                        return {
+                          ...current,
+                          ticketingMode: nextTicketingMode,
+                          entryType:
+                            nextTicketingMode === "paid"
+                              ? "ticketed"
+                              : "free",
+                          price: nextTicketingMode === "paid" ? current.price : "",
+                        };
+                      })
+                    }
+                    className={ui.select}
+                  >
+                    <option value="none">Nessun ticket</option>
+                    <option value="free">Ticket gratuito</option>
+                    <option value="paid">Ticket a pagamento</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Price */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Prezzo ticket{" "}
+                  <span className="text-gray-400 font-normal">
+                    ({form.ticketingMode === "paid" ? "€" : "non usato"})
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.50"
+                  value={form.price}
+                  onChange={(e) =>
+                    setForm({ ...form, price: e.target.value })
+                  }
+                  placeholder={form.ticketingMode === "paid" ? "15" : "0"}
+                  disabled={form.ticketingMode !== "paid"}
+                  className={`${ui.input} ${form.ticketingMode !== "paid" ? "opacity-60 cursor-not-allowed" : ""}`}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Logica CTA app
+                  </label>
+                  <p className="text-sm text-gray-500">
+                    {form.ticketingMode === "none"
+                      ? "Nessun CTA ticket. Se esistono aree prenotabili, l'app mostrerà Prenota area."
+                      : form.ticketingMode === "free"
+                        ? "L'app mostrerà Ottieni ticket. Se esistono aree prenotabili, Prenota area resterà disponibile separatamente."
+                        : "L'app mostrerà Acquista biglietto. Se esistono aree prenotabili, Prenota area resterà come azione secondaria."}
+                  </p>
                 </div>
               </div>
 
@@ -528,6 +637,14 @@ export default function EventsPage() {
                           {event.status}
                         </span>
                       )}
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${event.entryType === "ticketed" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                        {event.entryType === "ticketed" ? "Ticket" : "Ingresso libero"}
+                      </span>
+                      {event.hasReservableAreas ? (
+                        <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded font-medium">
+                          Aree prenotabili
+                        </span>
+                      ) : null}
                       {event.ageLimit && (
                         <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
                           {event.ageLimit}

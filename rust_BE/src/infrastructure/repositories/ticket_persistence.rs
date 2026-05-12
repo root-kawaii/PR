@@ -2,6 +2,28 @@ use crate::models::{CreateTicketRequest, Ticket, UpdateTicketRequest};
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
+#[derive(sqlx::FromRow)]
+pub struct TicketWithEventRow {
+    pub id: Uuid,
+    pub event_id: Uuid,
+    pub user_id: Uuid,
+    pub ticket_code: String,
+    pub ticket_type: String,
+    pub price: rust_decimal::Decimal,
+    pub status: String,
+    pub purchase_date: chrono::DateTime<chrono::Utc>,
+    pub qr_code: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub event_title: String,
+    pub event_venue: String,
+    pub club_name: Option<String>,
+    pub club_address: Option<String>,
+    pub event_date: String,
+    pub event_image: String,
+    pub event_status: Option<String>,
+}
+
 /// Get all tickets (admin view - paginated)
 pub async fn get_all_tickets(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<Ticket>> {
     let tickets = sqlx::query_as::<_, Ticket>(
@@ -73,33 +95,21 @@ pub async fn get_ticket_by_code(pool: &PgPool, ticket_code: &str) -> Result<Opti
 pub async fn get_tickets_with_events_by_user_id(
     pool: &PgPool,
     user_id: Uuid,
-) -> Result<
-    Vec<(
-        Uuid,
-        Uuid,
-        Uuid,
-        String,
-        String,
-        rust_decimal::Decimal,
-        String,
-        chrono::DateTime<chrono::Utc>,
-        Option<String>,
-        chrono::DateTime<chrono::Utc>,
-        chrono::DateTime<chrono::Utc>,
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-    )>,
-> {
-    let results = sqlx::query_as::<_, (Uuid, Uuid, Uuid, String, String, rust_decimal::Decimal, String, chrono::DateTime<chrono::Utc>, Option<String>, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>, String, String, String, String, Option<String>)>(
+) -> Result<Vec<TicketWithEventRow>> {
+    let results = sqlx::query_as::<_, TicketWithEventRow>(
         r#"
         SELECT
             t.id, t.event_id, t.user_id, t.ticket_code, t.ticket_type, t.price, t.status, t.purchase_date, t.qr_code, t.created_at, t.updated_at,
-            e.title, e.venue, e.date, e.image, e.status as event_status
+            e.title as event_title,
+            COALESCE(NULLIF(TRIM(e.venue), ''), c.name, '') as event_venue,
+            c.name as club_name,
+            c.address as club_address,
+            e.date as event_date,
+            e.image as event_image,
+            e.status as event_status
         FROM tickets t
         INNER JOIN events e ON t.event_id = e.id
+        LEFT JOIN clubs c ON e.club_id = c.id
         WHERE t.user_id = $1
         ORDER BY t.purchase_date DESC
         "#,
