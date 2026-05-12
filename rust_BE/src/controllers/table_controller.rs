@@ -336,7 +336,19 @@ pub async fn get_reservation_by_code(
     Path(code): Path<String>,
 ) -> Result<Json<TableReservationWithDetailsResponse>, StatusCode> {
     match table_persistence::get_reservation_with_details_by_code(&state.db_pool, &code).await {
-        Ok((reservation, table, (event_id, event_title, event_venue, event_date, event_image))) => {
+        Ok((
+            reservation,
+            table,
+            (
+                event_id,
+                event_title,
+                event_venue,
+                event_club_name,
+                event_club_address,
+                event_date,
+                event_image,
+            ),
+        )) => {
             let amount_remaining = reservation.total_amount - reservation.amount_paid;
             let _ = outbox_service::enqueue_analytics_event(
                 &state.db_pool,
@@ -384,6 +396,8 @@ pub async fn get_reservation_by_code(
                     id: event_id.to_string(),
                     title: event_title,
                     venue: event_venue,
+                    club_name: event_club_name,
+                    club_address: event_club_address,
                     date: event_date,
                     image: event_image,
                     status: None,

@@ -96,8 +96,37 @@ pub struct EventSummary {
     pub id: String,
     pub title: String,
     pub venue: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub club_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub club_address: Option<String>,
     pub date: String,
     pub image: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTicketPurchaseIntentRequest {
+    pub event_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConfirmTicketPurchaseRequest {
+    pub event_id: String,
+    pub stripe_payment_intent_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClaimFreeTicketRequest {
+    pub event_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketPurchaseIntentResponse {
+    pub client_secret: String,
+    pub payment_intent_id: String,
+    pub stripe_publishable_key: String,
+    pub amount: String,
 }

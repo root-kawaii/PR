@@ -20,6 +20,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { TableReservationDetailModal } from '@/components/reservation/TableReservationDetailModal';
 import * as Clipboard from 'expo-clipboard';
 import { trackEvent } from '@/config/analytics';
+import { formatEventDateLabel } from '@/utils/eventDisplay';
 
 type ReservationFilter = 'upcoming' | 'past';
 
@@ -235,34 +236,7 @@ export default function ReservationsScreen() {
                       <View style={styles.infoRow}>
                         <IconSymbol name="calendar" size={14} color={theme.textTertiary} />
                         <Text style={[styles.infoText, { color: theme.textTertiary }]}>
-                          {(() => {
-                            if (!reservation.event?.date) return 'Date TBD';
-
-                            try {
-                              const dateStr = reservation.event.date;
-                              let date;
-
-                              if (dateStr.includes('|') || /^\d{1,2}\s+[A-Z]{3}/.test(dateStr)) {
-                                return dateStr;
-                              }
-
-                              date = new Date(dateStr);
-
-                              if (isNaN(date.getTime())) {
-                                return dateStr;
-                              }
-
-                              return date.toLocaleDateString('it-IT', {
-                                weekday: 'short',
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric'
-                              });
-                            } catch (error) {
-                              console.error('Date parsing error:', error, reservation.event.date);
-                              return reservation.event.date;
-                            }
-                          })()}
+                          {reservation.event?.date ? formatEventDateLabel(reservation.event.date, true) : 'Data da definire'}
                         </Text>
                       </View>
                       <View style={styles.infoRow}>

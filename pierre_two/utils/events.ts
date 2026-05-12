@@ -106,6 +106,8 @@ const mergeEventFields = (preferred: Event, fallback: Event): Event => ({
   ...preferred,
   title: preferred.title.trim() || fallback.title,
   venue: preferred.venue?.trim() || fallback.venue,
+  clubName: preferred.clubName?.trim() || fallback.clubName,
+  clubAddress: preferred.clubAddress?.trim() || fallback.clubAddress,
   date: preferred.date || fallback.date,
   image: preferred.image || fallback.image,
   status: preferred.status ?? fallback.status,
@@ -113,6 +115,11 @@ const mergeEventFields = (preferred: Event, fallback: Event): Event => ({
   ageLimit: preferred.ageLimit ?? fallback.ageLimit,
   endTime: preferred.endTime ?? fallback.endTime,
   price: preferred.price ?? fallback.price,
+  pricing: preferred.pricing ?? fallback.pricing,
+  entryType: preferred.entryType ?? fallback.entryType,
+  ticketingMode: preferred.ticketingMode ?? fallback.ticketingMode,
+  hasReservableAreas:
+    preferred.hasReservableAreas ?? fallback.hasReservableAreas,
   description: preferred.description ?? fallback.description,
   tourProvider: preferred.tourProvider ?? fallback.tourProvider,
   marzipanoScenes:

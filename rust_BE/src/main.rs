@@ -28,8 +28,11 @@ async fn main() {
             }
 
             if let Some((key, value)) = trimmed.split_once('=') {
-                unsafe {
-                    std::env::set_var(key.trim(), value.trim());
+                let key = key.trim();
+                if std::env::var_os(key).is_none() {
+                    unsafe {
+                        std::env::set_var(key, value.trim());
+                    }
                 }
             }
         }

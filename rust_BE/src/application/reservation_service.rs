@@ -18,10 +18,13 @@ pub async fn list_user_reservations_with_details(
     let event_results =
         table_repository::get_event_details_by_reservation_ids(pool, reservation_ids).await?;
 
-    let event_map: HashMap<Uuid, (Uuid, String, String, String, String)> = event_results
+    let event_map: HashMap<Uuid, (Uuid, String, String, Option<String>, Option<String>, String, String)> = event_results
         .into_iter()
-        .map(|(res_id, event_id, title, venue, date, image)| {
-            (res_id, (event_id, title, venue, date, image))
+        .map(|(res_id, event_id, title, venue, club_name, club_address, date, image)| {
+            (
+                res_id,
+                (event_id, title, venue, club_name, club_address, date, image),
+            )
         })
         .collect();
 
@@ -47,12 +50,22 @@ pub async fn list_user_reservations_with_details(
                 min_spend,
             )| {
                 let amount_remaining = total_amount - amount_paid;
-                let (event_id, event_title, event_venue, event_date, event_image) =
+                let (
+                    event_id,
+                    event_title,
+                    event_venue,
+                    event_club_name,
+                    event_club_address,
+                    event_date,
+                    event_image,
+                ) =
                     event_map.get(&res_id).cloned().unwrap_or_else(|| {
                         (
                             Uuid::nil(),
                             String::from("Unknown Event"),
                             String::new(),
+                            None,
+                            None,
                             String::new(),
                             String::new(),
                         )
@@ -88,6 +101,8 @@ pub async fn list_user_reservations_with_details(
                         id: event_id.to_string(),
                         title: event_title,
                         venue: event_venue,
+                        club_name: event_club_name,
+                        club_address: event_club_address,
                         date: event_date,
                         image: event_image,
                         status: None,

@@ -46,11 +46,6 @@ export default function GuestPaymentScreen() {
   const [payLoading, setPayLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  useEffect(() => {
-    if (!token) return;
-    loadPreview();
-  }, [token, loadPreview]);
-
   const loadPreview = useCallback(async () => {
     setStep('loading');
     trackEvent('guest_payment_preview_requested', {
@@ -89,6 +84,11 @@ export default function GuestPaymentScreen() {
       setStep('error');
     }
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    loadPreview();
+  }, [token, loadPreview]);
 
   const handlePay = async () => {
     if (!guestName.trim()) {
