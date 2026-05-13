@@ -29,6 +29,21 @@ export const ui = {
   modalOverlay: 'fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4',
   modalPanel:
     'w-full max-w-lg overflow-y-auto rounded-[28px] border border-gray-200 bg-white p-6 shadow-2xl max-h-[90vh]',
+  modalPanelBase:
+    'flex w-full flex-col overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-2xl max-h-[90vh]',
+  modalSizeSm: 'max-w-md',
+  modalSizeMd: 'max-w-lg',
+  modalSizeLg: 'max-w-2xl',
+  modalSizeXl: 'max-w-3xl',
+  modalHeader:
+    'flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-6 py-4',
+  modalBody: 'flex-1 overflow-y-auto px-6 py-5',
+  modalFooter:
+    'flex shrink-0 items-center justify-end gap-2 border-t border-gray-200 bg-white px-6 py-4',
+  sectionTitle:
+    'mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500',
+  helperInfoBox:
+    'rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-600',
   tableWrap: 'overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_0_0_1px_rgba(17,24,39,0.03),0_10px_24px_rgba(17,24,39,0.05)]',
   tableHeader:
     'bg-gray-50/90 border-b border-gray-200 text-left px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500',

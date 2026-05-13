@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, ChevronRight, X, Pencil, Trash2, Compass } from "lucide-react";
+import { Plus, ChevronRight, Pencil, Trash2, Compass } from "lucide-react";
 import { useFetch } from "../hooks/useFetch";
 import { useAuth } from "../context/AuthContext";
 import { API_URL } from "../config/api";
@@ -11,6 +11,8 @@ import { formatPrice, priceToApiString } from "../utils/currency";
 import { getSafeImageUrl } from "../utils/image";
 import { EmptyState, PageHeader, SectionCard } from "../components/ui";
 import { ui } from "../components/ui-classes";
+import { Modal } from "../components/Modal";
+import { FormSection } from "../components/FormSection";
 
 const MONTH_MAP: Record<string, number> = {
   GEN: 0,
@@ -308,26 +310,95 @@ export default function EventsPage() {
       </p>
 
       {/* Create / Edit modal */}
-      {showForm && (
-        <div className={ui.modalOverlay}>
-          <div className={ui.modalPanel}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">
-                {editingEvent ? "Modifica evento" : "Nuovo evento"}
-              </h2>
-              <button
-                onClick={closeForm}
-                className={ui.iconButton}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Title */}
+      <Modal
+        open={showForm}
+        onClose={closeForm}
+        size="xl"
+        title={editingEvent ? "Modifica evento" : "Nuovo evento"}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={closeForm}
+              className={ui.secondaryButton}
+            >
+              Annulla
+            </button>
+            <button
+              type="submit"
+              form="event-form"
+              disabled={submitting}
+              className={ui.primaryButton}
+            >
+              {submitting
+                ? editingEvent
+                  ? "Salvataggio..."
+                  : "Creazione..."
+                : editingEvent
+                  ? "Salva modifiche"
+                  : "Crea evento"}
+            </button>
+          </>
+        }
+      >
+        <form
+          id="event-form"
+          onSubmit={handleSubmit}
+          className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6"
+        >
+          {/* Colonna sinistra */}
+          <div className="space-y-6">
+            <FormSection title="Locandina">
+              <ImageUpload
+                currentUrl={form.image || undefined}
+                onUploaded={(url) => setForm((f) => ({ ...f, image: url }))}
+                uploadEndpoint="/owner/events/image"
+                altText="Locandina"
+              />
+            </FormSection>
+
+            {genres && genres.length > 0 && (
+              <FormSection title="Generi">
+                <div className="flex flex-wrap gap-2">
+                  {genres.map((g) => {
+                    const selected = form.genreIds.includes(g.id);
+                    return (
+                      <button
+                        key={g.id}
+                        type="button"
+                        style={selected ? { backgroundColor: g.color } : {}}
+                        onClick={() => toggleGenre(g.id)}
+                        className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                          selected
+                            ? "text-white border-transparent"
+                            : "text-gray-700 border-gray-300 bg-white hover:bg-gray-50"
+                        }`}
+                      >
+                        {g.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FormSection>
+            )}
+
+            <FormSection title="Descrizione">
+              <textarea
+                value={form.description}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
+                rows={4}
+                className={ui.textarea}
+              />
+            </FormSection>
+          </div>
+
+          {/* Colonna destra */}
+          <div className="space-y-6">
+            <FormSection title="Dettagli evento">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Titolo *
-                </label>
+                <label className={ui.label}>Titolo *</label>
                 <input
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
@@ -335,26 +406,9 @@ export default function EventsPage() {
                   className={ui.input}
                 />
               </div>
-
-              {/* Locandina */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Locandina
-                </label>
-                <ImageUpload
-                  currentUrl={form.image || undefined}
-                  onUploaded={(url) => setForm((f) => ({ ...f, image: url }))}
-                  uploadEndpoint="/owner/events/image"
-                  altText="Locandina"
-                />
-              </div>
-
-              {/* Date + Start time */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Data *
-                  </label>
+                  <label className={ui.label}>Data *</label>
                   <input
                     type="date"
                     value={form.date}
@@ -364,9 +418,7 @@ export default function EventsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ora inizio
-                  </label>
+                  <label className={ui.label}>Ora inizio</label>
                   <input
                     type="time"
                     value={form.time}
@@ -375,13 +427,9 @@ export default function EventsPage() {
                   />
                 </div>
               </div>
-
-              {/* End time + Age limit */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ora fine
-                  </label>
+                  <label className={ui.label}>Ora fine</label>
                   <input
                     type="time"
                     value={form.end_time}
@@ -392,9 +440,7 @@ export default function EventsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Eta minima
-                  </label>
+                  <label className={ui.label}>Eta minima</label>
                   <input
                     type="text"
                     value={form.age_limit}
@@ -406,30 +452,27 @@ export default function EventsPage() {
                   />
                 </div>
               </div>
+              <div>
+                <label className={ui.label}>Stato</label>
+                <select
+                  value={form.status}
+                  onChange={(e) =>
+                    setForm({ ...form, status: e.target.value })
+                  }
+                  className={`${ui.select} w-full`}
+                >
+                  <option value="">Nessuno</option>
+                  <option value="HOT">HOT</option>
+                  <option value="SOLD OUT">SOLD OUT</option>
+                  <option value="CANCELLED">ANNULLATO</option>
+                </select>
+              </div>
+            </FormSection>
 
-              {/* Status + Entry type + Ticketing mode */}
-              <div className="grid grid-cols-3 gap-3">
+            <FormSection title="Biglietteria">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Stato
-                  </label>
-                  <select
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm({ ...form, status: e.target.value })
-                    }
-                    className={ui.select}
-                  >
-                    <option value="">Nessuno</option>
-                    <option value="HOT">HOT</option>
-                    <option value="SOLD OUT">SOLD OUT</option>
-                    <option value="CANCELLED">ANNULLATO</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo ingresso
-                  </label>
+                  <label className={ui.label}>Tipo ingresso</label>
                   <select
                     value={form.entryType}
                     onChange={(e) =>
@@ -454,16 +497,14 @@ export default function EventsPage() {
                         };
                       })
                     }
-                    className={ui.select}
+                    className={`${ui.select} w-full`}
                   >
                     <option value="free">Ingresso libero</option>
                     <option value="ticketed">Biglietto</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ticket app
-                  </label>
+                  <label className={ui.label}>Ticket app</label>
                   <select
                     value={form.ticketingMode}
                     onChange={(e) =>
@@ -480,7 +521,7 @@ export default function EventsPage() {
                         };
                       })
                     }
-                    className={ui.select}
+                    className={`${ui.select} w-full`}
                   >
                     <option value="none">Nessun ticket</option>
                     <option value="free">Ticket gratuito</option>
@@ -488,10 +529,8 @@ export default function EventsPage() {
                   </select>
                 </div>
               </div>
-
-              {/* Price */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className={ui.label}>
                   Prezzo ticket{" "}
                   <span className="text-gray-400 font-normal">
                     ({form.ticketingMode === "paid" ? "€" : "non usato"})
@@ -510,83 +549,18 @@ export default function EventsPage() {
                   className={`${ui.input} ${form.ticketingMode !== "paid" ? "opacity-60 cursor-not-allowed" : ""}`}
                 />
               </div>
-
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Logica CTA app
-                  </label>
-                  <p className="text-sm text-gray-500">
-                    {form.ticketingMode === "none"
-                      ? "Nessun CTA ticket. Se esistono aree prenotabili, l'app mostrerà Prenota area."
-                      : form.ticketingMode === "free"
-                        ? "L'app mostrerà Ottieni ticket. Se esistono aree prenotabili, Prenota area resterà disponibile separatamente."
-                        : "L'app mostrerà Acquista biglietto. Se esistono aree prenotabili, Prenota area resterà come azione secondaria."}
-                  </p>
-                </div>
-              </div>
-
-              {/* Genre pills */}
-              {genres && genres.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Generi
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {genres.map((g) => {
-                      const selected = form.genreIds.includes(g.id);
-                      return (
-                        <button
-                          key={g.id}
-                          type="button"
-                          style={selected ? { backgroundColor: g.color } : {}}
-                          onClick={() => toggleGenre(g.id)}
-                          className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
-                            selected
-                              ? "text-white border-transparent"
-                              : "text-gray-700 border-gray-300 bg-white hover:bg-gray-50"
-                          }`}
-                        >
-                          {g.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Description */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Descrizione
-                </label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) =>
-                    setForm({ ...form, description: e.target.value })
-                  }
-                  rows={3}
-                  className={ui.textarea}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className={`${ui.primaryButton} w-full`}
-              >
-                {submitting
-                  ? editingEvent
-                    ? "Salvataggio..."
-                    : "Creazione..."
-                  : editingEvent
-                    ? "Salva modifiche"
-                    : "Crea evento"}
-              </button>
-            </form>
+              <p className={ui.helperInfoBox}>
+                <span className="font-medium text-gray-700">Logica CTA app: </span>
+                {form.ticketingMode === "none"
+                  ? "nessun CTA ticket. Se esistono aree prenotabili, l'app mostrerà Prenota area."
+                  : form.ticketingMode === "free"
+                    ? "l'app mostrerà Ottieni ticket. Se esistono aree prenotabili, Prenota area resterà disponibile separatamente."
+                    : "l'app mostrerà Acquista biglietto. Se esistono aree prenotabili, Prenota area resterà come azione secondaria."}
+              </p>
+            </FormSection>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
       {/* Events list */}
       {!filteredEvents.length ? (
