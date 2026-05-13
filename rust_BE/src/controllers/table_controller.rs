@@ -194,19 +194,13 @@ pub async fn update_table(
 ) -> Result<Json<TableResponse>, StatusCode> {
     let table_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let min_spend = if let Some(ms) = req.min_spend {
-        Some(Decimal::from_f64_retain(ms).ok_or(StatusCode::BAD_REQUEST)?)
-    } else {
-        None
-    };
-
     match table_persistence::update_table(
         &state.db_pool,
         table_id,
         req.name,
-        req.zone,
+        None,
         req.capacity,
-        min_spend,
+        None,
         req.available,
         req.location_description,
         req.features,

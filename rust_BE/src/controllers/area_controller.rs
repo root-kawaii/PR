@@ -288,18 +288,13 @@ pub async fn create_my_club_table(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let min_spend = match req.min_spend {
-        Some(value) => Decimal::from_f64_retain(value).ok_or(StatusCode::BAD_REQUEST)?,
-        None => area.price,
-    };
-
     let table = table_persistence::create_club_table(
         &state.db_pool,
         area_uuid,
         req.name,
-        req.zone,
+        None,
         req.capacity,
-        min_spend,
+        area.price,
         req.location_description,
         req.features,
     )
@@ -355,18 +350,13 @@ pub async fn update_my_club_table(
         .map_err(|_| StatusCode::NOT_FOUND)?;
     ensure_table_belongs_to_club(&state, &table, club.id).await?;
 
-    let min_spend = req
-        .min_spend
-        .map(|v| Decimal::from_f64_retain(v).ok_or(StatusCode::BAD_REQUEST))
-        .transpose()?;
-
     let updated = table_persistence::update_table(
         &state.db_pool,
         table_uuid,
         req.name,
-        req.zone,
+        None,
         req.capacity,
-        min_spend,
+        None,
         req.available,
         req.location_description,
         req.features,

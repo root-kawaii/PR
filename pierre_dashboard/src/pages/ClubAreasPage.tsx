@@ -20,8 +20,6 @@ interface TableFormData {
   areaId: string;
   name: string;
   capacity: string;
-  minSpend: string;
-  zone: string;
   locationDescription: string;
 }
 
@@ -29,8 +27,6 @@ const emptyTableForm: TableFormData = {
   areaId: "",
   name: "",
   capacity: "",
-  minSpend: "",
-  zone: "",
   locationDescription: "",
 };
 
@@ -169,8 +165,6 @@ export default function ClubAreasPage() {
       areaId: table.areaId ?? "",
       name: table.name,
       capacity: String(table.capacity),
-      minSpend: priceNumberFromString(table.minSpend),
-      zone: table.zone ?? "",
       locationDescription: table.locationDescription ?? "",
     });
     setShowTableForm(true);
@@ -194,12 +188,8 @@ export default function ClubAreasPage() {
       const body: Record<string, unknown> = {
         name: tableForm.name.trim(),
         capacity: parseInt(tableForm.capacity, 10),
-        zone: tableForm.zone.trim() || undefined,
         location_description: tableForm.locationDescription.trim() || undefined,
       };
-      if (tableForm.minSpend.trim()) {
-        body.min_spend = parseFloat(tableForm.minSpend);
-      }
       if (!editingTable) {
         body.area_id = tableForm.areaId;
       }
@@ -358,8 +348,7 @@ export default function ClubAreasPage() {
                         <tr>
                           <th className={ui.tableHeader}>Nome</th>
                           <th className={ui.tableHeader}>Capienza</th>
-                          <th className={ui.tableHeader}>Min Spend</th>
-                          <th className={ui.tableHeader}>Zona</th>
+                          <th className={ui.tableHeader}>Min spend (€/p)</th>
                           <th className={ui.tableHeader}>Azioni</th>
                         </tr>
                       </thead>
@@ -370,8 +359,7 @@ export default function ClubAreasPage() {
                               {t.name}
                             </td>
                             <td className={ui.tableCell}>{t.capacity}</td>
-                            <td className={ui.tableCell}>{t.minSpend}</td>
-                            <td className={ui.tableCell}>{t.zone ?? "—"}</td>
+                            <td className={ui.tableCell + " text-gray-500"}>{area.price}</td>
                             <td className={ui.tableCell}>
                               <div className="flex items-center gap-1">
                                 <button
@@ -511,49 +499,21 @@ export default function ClubAreasPage() {
                   className={ui.input}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={ui.label}>Capienza *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={tableForm.capacity}
-                    onChange={(e) =>
-                      setTableForm({ ...tableForm, capacity: e.target.value })
-                    }
-                    required
-                    className={ui.input}
-                  />
-                </div>
-                <div>
-                  <label className={ui.label}>
-                    Min Spend (€){" "}
-                    <span className="text-gray-400 font-normal">
-                      (vuoto = prezzo area)
-                    </span>
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.50"
-                    value={tableForm.minSpend}
-                    onChange={(e) =>
-                      setTableForm({ ...tableForm, minSpend: e.target.value })
-                    }
-                    className={ui.input}
-                  />
-                </div>
-              </div>
               <div>
-                <label className={ui.label}>Zona</label>
+                <label className={ui.label}>Capienza *</label>
                 <input
-                  value={tableForm.zone}
+                  type="number"
+                  min="1"
+                  value={tableForm.capacity}
                   onChange={(e) =>
-                    setTableForm({ ...tableForm, zone: e.target.value })
+                    setTableForm({ ...tableForm, capacity: e.target.value })
                   }
-                  placeholder="es. Davanti al palco"
+                  required
                   className={ui.input}
                 />
+                <p className="mt-1 text-xs text-gray-400">
+                  Il min spend del tavolo è ereditato dal prezzo dell'area.
+                </p>
               </div>
               <div>
                 <label className={ui.label}>Descrizione posizione</label>

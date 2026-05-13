@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -11,6 +11,9 @@ import {
   FileText,
   Pencil,
   Trash2,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
@@ -98,6 +101,35 @@ function getReservationPaymentNote(reservation: OwnerReservation): string | null
   return null;
 }
 
+// Default gender split: 50/50 if even, the extra unit goes to male if odd.
+function defaultGenderSplit(total: number): { male: number; female: number } {
+  const safe = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0;
+  const male = Math.ceil(safe / 2);
+  const female = safe - male;
+  return { male, female };
+}
+
+type SortKey =
+  | 'reservationCode'
+  | 'contactName'
+  | 'table'
+  | 'numPeople'
+  | 'genderRatio'
+  | 'amountPaid'
+  | 'status'
+  | 'createdAt';
+type SortDir = 'asc' | 'desc';
+
+const SORTABLE_COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
+  { key: 'reservationCode', label: 'Codice' },
+  { key: 'contactName', label: 'Cliente' },
+  { key: 'table', label: 'Tavolo' },
+  { key: 'numPeople', label: 'Persone' },
+  { key: 'genderRatio', label: 'M/F' },
+  { key: 'amountPaid', label: 'Importo' },
+  { key: 'status', label: 'Stato' },
+];
+
 export default function EventReservationsPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { token } = useAuth();
@@ -111,6 +143,9 @@ export default function EventReservationsPage() {
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterAreaId, setFilterAreaId] = useState<string>('all');
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -121,8 +156,7 @@ export default function EventReservationsPage() {
   const [formPhone, setFormPhone] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formNumPeople, setFormNumPeople] = useState('1');
-  const [formMaleCount, setFormMaleCount] = useState('0');
-  const [formFemaleCount, setFormFemaleCount] = useState('0');
+  const [formMaleCount, setFormMaleCount] = useState(1);
   const [formNotes, setFormNotes] = useState('');
 
   const [editTableId, setEditTableId] = useState('');
@@ -130,15 +164,26 @@ export default function EventReservationsPage() {
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editNumPeople, setEditNumPeople] = useState('1');
-  const [editMaleCount, setEditMaleCount] = useState('0');
-  const [editFemaleCount, setEditFemaleCount] = useState('0');
+  const [editMaleCount, setEditMaleCount] = useState(0);
   const [editStatus, setEditStatus] = useState<'pending' | 'confirmed' | 'completed' | 'cancelled'>('pending');
   const [editNotes, setEditNotes] = useState('');
 
-  const reservations = reservationsData ?? [];
-  const tables = tablesData?.tables ?? [];
+  const reservations = useMemo(() => reservationsData ?? [], [reservationsData]);
+  const tables = useMemo(() => tablesData?.tables ?? [], [tablesData]);
 
   const getTable = (tableId: string) => tables.find(t => t.id === tableId);
+
+  const areaOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of tables) {
+      if (t.areaId && t.areaName) {
+        map.set(t.areaId, t.areaName);
+      }
+    }
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name, 'it'),
+    );
+  }, [tables]);
 
   useEffect(() => {
     if (loading || !eventId) {
@@ -151,28 +196,85 @@ export default function EventReservationsPage() {
     });
   }, [eventId, loading, reservations.length]);
 
-  const filtered = reservations.filter((reservation) => {
-    const table = getTable(reservation.tableId);
-    const tableLabel = table?.areaName ?? table?.zone ?? table?.name ?? '';
-    const matchesSearch =
-      search === '' ||
-      reservation.contactName.toLowerCase().includes(search.toLowerCase()) ||
-      reservation.reservationCode.toLowerCase().includes(search.toLowerCase()) ||
-      tableLabel.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || reservation.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return reservations.filter((reservation) => {
+      const table = getTable(reservation.tableId);
+      const tableLabel = table?.areaName ?? table?.zone ?? table?.name ?? '';
+      const matchesSearch =
+        needle === '' ||
+        reservation.contactName.toLowerCase().includes(needle) ||
+        reservation.reservationCode.toLowerCase().includes(needle) ||
+        tableLabel.toLowerCase().includes(needle);
+      const matchesStatus = filterStatus === 'all' || reservation.status === filterStatus;
+      const matchesArea = filterAreaId === 'all' || table?.areaId === filterAreaId;
+      return matchesSearch && matchesStatus && matchesArea;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservations, search, filterStatus, filterAreaId, tables]);
 
-  const validateGenderCounts = (numPeople: number, maleCount: number, femaleCount: number) => {
-    if (maleCount < 0 || femaleCount < 0) {
-      return 'I contatori M/F non possono essere negativi.';
+  const sorted = useMemo(() => {
+    if (!sortKey) return filtered;
+    const dir = sortDir === 'asc' ? 1 : -1;
+
+    const valueFor = (r: OwnerReservation): string | number => {
+      switch (sortKey) {
+        case 'reservationCode':
+          return r.reservationCode.toLowerCase();
+        case 'contactName':
+          return r.contactName.toLowerCase();
+        case 'table': {
+          const t = getTable(r.tableId);
+          const area = t?.areaName ?? t?.zone ?? '';
+          return `${area} · ${t?.name ?? ''}`.toLowerCase();
+        }
+        case 'numPeople':
+          return r.numPeople;
+        case 'genderRatio':
+          return r.maleGuestCount * 1000 + r.femaleGuestCount;
+        case 'amountPaid':
+          return parseEuroAmount(r.amountPaid);
+        case 'status':
+          return r.status;
+        case 'createdAt':
+          return r.createdAt;
+      }
+    };
+
+    return [...filtered].sort((a, b) => {
+      const va = valueFor(a);
+      const vb = valueFor(b);
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return (va - vb) * dir;
+      }
+      return String(va).localeCompare(String(vb), 'it', { numeric: true }) * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, sortKey, sortDir, tables]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir('asc');
+      return;
     }
-
-    if (maleCount + femaleCount > numPeople) {
-      return 'La somma di maschi e femmine non puo superare il totale persone.';
+    if (sortDir === 'asc') {
+      setSortDir('desc');
+      return;
     }
+    setSortKey(null);
+    setSortDir('asc');
+  };
 
-    return null;
+  const renderSortIcon = (key: SortKey) => {
+    if (sortKey !== key) {
+      return <ArrowUpDown size={12} className="text-gray-300 group-hover:text-gray-400" />;
+    }
+    return sortDir === 'asc' ? (
+      <ArrowUp size={12} className="text-gray-700" />
+    ) : (
+      <ArrowDown size={12} className="text-gray-700" />
+    );
   };
 
   const resetForm = () => {
@@ -181,8 +283,7 @@ export default function EventReservationsPage() {
     setFormPhone('');
     setFormEmail('');
     setFormNumPeople('1');
-    setFormMaleCount('0');
-    setFormFemaleCount('0');
+    setFormMaleCount(1);
     setFormNotes('');
   };
 
@@ -193,8 +294,7 @@ export default function EventReservationsPage() {
     setEditPhone(reservation.contactPhone);
     setEditEmail(reservation.contactEmail);
     setEditNumPeople(String(reservation.numPeople));
-    setEditMaleCount(String(reservation.maleGuestCount));
-    setEditFemaleCount(String(reservation.femaleGuestCount));
+    setEditMaleCount(reservation.maleGuestCount);
     setEditStatus(reservation.status);
     setEditNotes(reservation.manualNotes ?? reservation.specialRequests ?? '');
   };
@@ -218,17 +318,29 @@ export default function EventReservationsPage() {
     }
   };
 
+  const handleNumPeopleChange = (
+    raw: string,
+    setNum: (v: string) => void,
+    setMale: (v: number) => void,
+  ) => {
+    setNum(raw);
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setMale(defaultGenderSplit(parsed).male);
+    } else {
+      setMale(0);
+    }
+  };
+
   const handleCreateManual = async (e: FormEvent) => {
     e.preventDefault();
     const numPeople = parseInt(formNumPeople, 10);
-    const maleCount = parseInt(formMaleCount, 10);
-    const femaleCount = parseInt(formFemaleCount, 10);
-    const validationError = validateGenderCounts(numPeople, maleCount, femaleCount);
-
-    if (validationError) {
-      alert(validationError);
+    if (!Number.isFinite(numPeople) || numPeople < 1) {
+      alert('Inserire un numero di persone valido.');
       return;
     }
+    const maleCount = Math.max(0, Math.min(numPeople, formMaleCount));
+    const femaleCount = numPeople - maleCount;
 
     setSubmitting(true);
     trackEvent('owner_manual_reservation_create_submitted', {
@@ -246,7 +358,7 @@ export default function EventReservationsPage() {
         body: JSON.stringify({
           table_id: formTableId,
           contact_name: formName,
-          contact_phone: formPhone || undefined,
+          contact_phone: formPhone.trim() || undefined,
           contact_email: formEmail || undefined,
           num_people: numPeople,
           manual_notes: formNotes || undefined,
@@ -318,20 +430,19 @@ export default function EventReservationsPage() {
     if (!editingReservation) return;
 
     const numPeople = parseInt(editNumPeople, 10);
-    const maleCount = parseInt(editMaleCount, 10);
-    const femaleCount = parseInt(editFemaleCount, 10);
-    const validationError = validateGenderCounts(numPeople, maleCount, femaleCount);
-    if (validationError) {
-      alert(validationError);
+    if (!Number.isFinite(numPeople) || numPeople < 1) {
+      alert('Inserire un numero di persone valido.');
       return;
     }
+    const maleCount = Math.max(0, Math.min(numPeople, editMaleCount));
+    const femaleCount = numPeople - maleCount;
 
     setUpdatingId(editingReservation.id);
     try {
       await patchReservation(editingReservation.id, {
         tableId: editTableId,
         contactName: editName,
-        contactPhone: editPhone,
+        contactPhone: editPhone.trim() || undefined,
         contactEmail: editEmail || undefined,
         numPeople,
         maleGuestCount: maleCount,
@@ -371,6 +482,16 @@ export default function EventReservationsPage() {
   if (loading) {
     return <div className={ui.helperText}>Caricamento prenotazioni...</div>;
   }
+
+  const formNum = parseInt(formNumPeople, 10);
+  const formTotal = Number.isFinite(formNum) && formNum > 0 ? formNum : 0;
+  const formMale = Math.max(0, Math.min(formTotal, formMaleCount));
+  const formFemale = formTotal - formMale;
+
+  const editNum = parseInt(editNumPeople, 10);
+  const editTotal = Number.isFinite(editNum) && editNum > 0 ? editNum : 0;
+  const editMale = Math.max(0, Math.min(editTotal, editMaleCount));
+  const editFemale = editTotal - editMale;
 
   return (
     <div>
@@ -433,6 +554,16 @@ export default function EventReservationsPage() {
             />
           </div>
           <select
+            value={filterAreaId}
+            onChange={e => setFilterAreaId(e.target.value)}
+            className={ui.select}
+          >
+            <option value="all">Tutte le aree</option>
+            {areaOptions.map((area) => (
+              <option key={area.id} value={area.id}>{area.name}</option>
+            ))}
+          </select>
+          <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
             className={ui.select}
@@ -447,17 +578,17 @@ export default function EventReservationsPage() {
       </SectionCard>
 
       <div className={`mb-4 flex gap-4 text-sm text-gray-500 ${ui.tabularNums}`}>
-        <span>{filtered.length} prenotazioni</span>
-        <span>{filtered.reduce((sum, reservation) => sum + reservation.numPeople, 0)} persone totali</span>
+        <span>{sorted.length} prenotazioni</span>
+        <span>{sorted.reduce((sum, reservation) => sum + reservation.numPeople, 0)} persone totali</span>
       </div>
 
-      {!filtered.length ? (
+      {!sorted.length ? (
         <EmptyState
           title={reservations.length === 0 ? 'Nessuna prenotazione registrata' : 'Nessun risultato'}
           description={
             reservations.length === 0
               ? 'Per questa serata non ci sono ancora prenotazioni. Puoi inserirne una manualmente.'
-              : 'Nessuna prenotazione corrisponde ai filtri attivi. Prova a modificare ricerca o stato.'
+              : 'Nessuna prenotazione corrisponde ai filtri attivi. Prova a modificare ricerca, area o stato.'
           }
         />
       ) : (
@@ -466,18 +597,23 @@ export default function EventReservationsPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className={ui.tableHeader}>Codice</th>
-                  <th className={ui.tableHeader}>Cliente</th>
-                  <th className={ui.tableHeader}>Tavolo</th>
-                  <th className={ui.tableHeader}>Persone</th>
-                  <th className={ui.tableHeader}>M/F</th>
-                  <th className={ui.tableHeader}>Importo</th>
-                  <th className={ui.tableHeader}>Stato</th>
+                  {SORTABLE_COLUMNS.map((col) => (
+                    <th key={col.key} className={ui.tableHeader}>
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(col.key)}
+                        className="group inline-flex items-center gap-1 hover:text-gray-900"
+                      >
+                        {col.label}
+                        {renderSortIcon(col.key)}
+                      </button>
+                    </th>
+                  ))}
                   <th className={ui.tableHeader}></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((reservation) => {
+                {sorted.map((reservation) => {
                   const table = getTable(reservation.tableId);
                   return (
                     <tr
@@ -613,9 +749,9 @@ export default function EventReservationsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     <Phone size={14} className="inline mr-1" />
-                    Telefono *
+                    Telefono
                   </label>
-                  <input value={formPhone} onChange={e => setFormPhone(e.target.value)} required placeholder="+39 333 1234567" className={ui.input} />
+                  <input value={formPhone} onChange={e => setFormPhone(e.target.value)} placeholder="+39 333 1234567" className={ui.input} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -626,19 +762,22 @@ export default function EventReservationsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Persone *</label>
-                  <input type="number" min="1" value={formNumPeople} onChange={e => setFormNumPeople(e.target.value)} required className={ui.input} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Maschi</label>
-                  <input type="number" min="0" value={formMaleCount} onChange={e => setFormMaleCount(e.target.value)} className={ui.input} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Femmine</label>
-                  <input type="number" min="0" value={formFemaleCount} onChange={e => setFormFemaleCount(e.target.value)} className={ui.input} />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Persone *</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formNumPeople}
+                  onChange={(e) => handleNumPeopleChange(e.target.value, setFormNumPeople, setFormMaleCount)}
+                  required
+                  className={ui.input}
+                />
+                <GenderSlider
+                  total={formTotal}
+                  male={formMale}
+                  female={formFemale}
+                  onChange={setFormMaleCount}
+                />
               </div>
 
               <div>
@@ -692,7 +831,7 @@ export default function EventReservationsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Telefono</label>
-                  <input value={editPhone} onChange={e => setEditPhone(e.target.value)} required className={ui.input} />
+                  <input value={editPhone} onChange={e => setEditPhone(e.target.value)} className={ui.input} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -712,20 +851,22 @@ export default function EventReservationsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Persone</label>
-                  <input type="number" min="1" value={editNumPeople} onChange={e => setEditNumPeople(e.target.value)} className={ui.input} />
+                  <input
+                    type="number"
+                    min="1"
+                    value={editNumPeople}
+                    onChange={(e) => handleNumPeopleChange(e.target.value, setEditNumPeople, setEditMaleCount)}
+                    className={ui.input}
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Maschi</label>
-                  <input type="number" min="0" value={editMaleCount} onChange={e => setEditMaleCount(e.target.value)} className={ui.input} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Femmine</label>
-                  <input type="number" min="0" value={editFemaleCount} onChange={e => setEditFemaleCount(e.target.value)} className={ui.input} />
-                </div>
-              </div>
+              <GenderSlider
+                total={editTotal}
+                male={editMale}
+                female={editFemale}
+                onChange={setEditMaleCount}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
@@ -739,6 +880,42 @@ export default function EventReservationsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+interface GenderSliderProps {
+  total: number;
+  male: number;
+  female: number;
+  onChange: (male: number) => void;
+}
+
+function GenderSlider({ total, male, female, onChange }: GenderSliderProps) {
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-gray-600 tabular-nums whitespace-nowrap">
+          <span aria-hidden>♂</span> Maschi <strong className="text-gray-900">{male}</strong>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(0, total)}
+          step={1}
+          value={male}
+          disabled={total <= 0}
+          onChange={(e) => onChange(parseInt(e.target.value, 10))}
+          className="flex-1 accent-gray-900 disabled:opacity-50"
+          aria-label="Ripartizione maschi/femmine"
+        />
+        <span className="text-xs text-gray-600 tabular-nums whitespace-nowrap">
+          <strong className="text-gray-900">{female}</strong> Femmine <span aria-hidden>♀</span>
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] text-gray-400">
+        Lo slider regola la ripartizione M/F mantenendo sempre la somma uguale a Persone.
+      </p>
     </div>
   );
 }

@@ -1042,12 +1042,18 @@ pub async fn create_manual_reservation_handler(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    let contact_phone = payload
+        .contact_phone
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_default();
+
     let reservation = club_owner_persistence::create_manual_reservation(
         &state.db_pool,
         event_uuid,
         table_uuid,
         payload.contact_name,
-        payload.contact_phone,
+        contact_phone,
         payload.contact_email,
         payload.num_people,
         payload.manual_notes,
