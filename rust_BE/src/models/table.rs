@@ -109,6 +109,7 @@ pub struct TableReservation {
     pub user_id: Uuid,
     pub event_id: Uuid,
     pub status: String,
+    pub refusal_reason: Option<String>,
     pub num_people: i32,
     pub total_amount: Decimal,
     pub amount_paid: Decimal,
@@ -158,6 +159,7 @@ pub struct CreateReservationWithPaymentRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateTableReservationRequest {
     pub status: Option<String>,
+    pub refusal_reason: Option<String>,
     pub table_id: Option<String>,
     pub num_people: Option<i32>,
     pub contact_name: Option<String>,
@@ -177,6 +179,7 @@ pub struct TableReservationResponse {
     pub user_id: String,
     pub event_id: String,
     pub status: String,
+    pub refusal_reason: Option<String>,
     pub num_people: i32,
     pub total_amount: String,     // Formatted as "X.XX €"
     pub amount_paid: String,      // Formatted as "X.XX €"
@@ -203,6 +206,7 @@ impl From<TableReservation> for TableReservationResponse {
             user_id: reservation.user_id.to_string(),
             event_id: reservation.event_id.to_string(),
             status: reservation.status,
+            refusal_reason: reservation.refusal_reason,
             num_people: reservation.num_people,
             total_amount: format!("{:.2} €", reservation.total_amount),
             amount_paid: format!("{:.2} €", reservation.amount_paid),
@@ -228,6 +232,7 @@ pub struct TableReservationWithDetailsResponse {
     pub id: String,
     pub reservation_code: String,
     pub status: String,
+    pub refusal_reason: Option<String>,
     pub num_people: i32,
     pub total_amount: String,
     pub amount_paid: String,

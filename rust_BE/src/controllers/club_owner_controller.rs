@@ -19,7 +19,7 @@ use crate::models::table::TableReservationResponse;
 use crate::models::{
     normalize_entry_type, normalize_event_price, normalize_ticketing_mode, ApiError, AppState,
     ClubResponse, CreateClubRequest, CreateEventRequest, CreateTableRequest, EventResponse,
-    TableResponse, TablesResponse, UpdateClubRequest, UpdateEventRequest,
+    ReservationStatus, TableResponse, TablesResponse, UpdateClubRequest, UpdateEventRequest,
 };
 use crate::utils::jwt;
 use axum::{
@@ -1105,10 +1105,14 @@ pub async fn update_reservation_status_handler(
     let reservation = club_owner_persistence::update_reservation_status(
         &state.db_pool,
         reservation_uuid,
-        payload.status,
+        ReservationStatus::try_from(payload.status.as_str()).map_err(|_| StatusCode::BAD_REQUEST)?,
+        payload.refusal_reason,
     )
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|error| match error {
+        sqlx::Error::Protocol(_) => StatusCode::BAD_REQUEST,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    })?
     .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Err(error) = outbox_service::enqueue_analytics_event(
@@ -1171,10 +1175,17 @@ fn build_reservation_status_notification(
                 table_name, event_title
             ),
         ),
-        "cancelled" => (
-            "Prenotazione rifiutata".to_string(),
+        "refused" => (
+            "Accesso rifiutato".to_string(),
             format!(
-                "La tua prenotazione per {} ({}) e' stata rifiutata dal locale.",
+                "L'accesso per la tua prenotazione a {} ({}) e' stato rifiutato all'ingresso.",
+                event_title, table_name
+            ),
+        ),
+        "cancelled" => (
+            "Prenotazione cancellata".to_string(),
+            format!(
+                "La tua prenotazione per {} ({}) e' stata cancellata.",
                 event_title, table_name
             ),
         ),
@@ -1259,6 +1270,8 @@ pub async fn scan_code_handler(
                 valid: false,
                 already_used: false,
                 scan_type: "unknown".to_string(),
+                status: None,
+                refusal_reason: None,
                 guest_name: None,
                 num_people: None,
                 event_title: None,
@@ -1317,7 +1330,13 @@ pub async fn update_reservation_handler(
     let reservation = table_persistence::update_reservation(
         &state.db_pool,
         reservation_uuid,
-        payload.status,
+        payload
+            .status
+            .as_deref()
+            .map(ReservationStatus::try_from)
+            .transpose()
+            .map_err(|_| StatusCode::BAD_REQUEST)?,
+        payload.refusal_reason,
         table_id,
         payload.num_people,
         payload.contact_name,
@@ -1329,7 +1348,10 @@ pub async fn update_reservation_handler(
         payload.female_guest_count,
     )
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|error| match error {
+        sqlx::Error::Protocol(_) => StatusCode::BAD_REQUEST,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    })?;
 
     if previous_reservation.status != reservation.status {
         let table = table_persistence::get_table_by_id(&state.db_pool, reservation.table_id)
@@ -1459,15 +1481,24 @@ pub async fn checkin_handler(
     maybe_payload: Option<Json<CheckinDecisionRequest>>,
 ) -> Result<Json<ScanResult>, StatusCode> {
     let _owner_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
-    let decision = maybe_payload
-        .and_then(|Json(payload)| payload.decision)
-        .unwrap_or_else(|| "confirm".to_string());
+    let (decision, refusal_reason) = maybe_payload
+        .map(|Json(payload)| {
+            (
+                payload.decision.unwrap_or_else(|| "confirm".to_string()),
+                payload.refusal_reason,
+            )
+        })
+        .unwrap_or_else(|| ("confirm".to_string(), None));
 
     let result = match decision.as_str() {
         "confirm" => club_owner_persistence::checkin_by_code(&state.db_pool, &code)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-        "reject" => club_owner_persistence::reject_reservation_by_code(&state.db_pool, &code)
+        "reject" => club_owner_persistence::reject_reservation_by_code(
+            &state.db_pool,
+            &code,
+            refusal_reason,
+        )
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         _ => return Err(StatusCode::BAD_REQUEST),
@@ -1525,6 +1556,8 @@ pub async fn checkin_handler(
                 valid: false,
                 already_used: false,
                 scan_type: "unknown".to_string(),
+                status: None,
+                refusal_reason: None,
                 guest_name: None,
                 num_people: None,
                 event_title: None,

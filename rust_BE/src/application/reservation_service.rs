@@ -75,6 +75,7 @@ pub async fn list_user_reservations_with_details(
                     id: res_id.to_string(),
                     reservation_code: res_code,
                     status,
+                    refusal_reason: None,
                     num_people,
                     total_amount: format!("{:.2} €", total_amount),
                     amount_paid: format!("{:.2} €", amount_paid),

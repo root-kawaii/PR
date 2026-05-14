@@ -8,7 +8,7 @@ use crate::models::{
     CreatePaymentIntentResponse, CreateSplitPaymentIntentRequest, CreateSplitReservationRequest,
     CreateSplitReservationResponse, CreateTableRequest, CreateTableReservationRequest,
     EventSummary, LinkTicketToReservationRequest, PaymentCaptureMethod, PaymentLinkPreviewResponse,
-    PaymentStatus, ReservationPaymentStatusResponse, TableReservationResponse,
+    PaymentStatus, ReservationPaymentStatusResponse, ReservationStatus, TableReservationResponse,
     TableReservationWithDetailsResponse, TableReservationsResponse,
     TableReservationsWithDetailsResponse, TableResponse, TableSummary, TablesResponse,
     UpdateTableRequest, UpdateTableReservationRequest,
@@ -362,6 +362,7 @@ pub async fn get_reservation_by_code(
                 id: reservation.id.to_string(),
                 reservation_code: reservation.reservation_code,
                 status: reservation.status,
+                refusal_reason: reservation.refusal_reason,
                 num_people: reservation.num_people,
                 total_amount: format!("{:.2} €", reservation.total_amount),
                 amount_paid: format!("{:.2} €", reservation.amount_paid),
@@ -477,7 +478,12 @@ pub async fn update_reservation(
     match table_persistence::update_reservation(
         &state.db_pool,
         reservation_id,
-        req.status,
+        req.status
+            .as_deref()
+            .map(ReservationStatus::try_from)
+            .transpose()
+            .map_err(|_| StatusCode::BAD_REQUEST)?,
+        req.refusal_reason,
         req.table_id
             .as_deref()
             .map(Uuid::parse_str)
@@ -496,6 +502,7 @@ pub async fn update_reservation(
     {
         Ok(reservation) => Ok(Json(reservation.into())),
         Err(sqlx::Error::RowNotFound) => Err(StatusCode::NOT_FOUND),
+        Err(sqlx::Error::Protocol(_)) => Err(StatusCode::BAD_REQUEST),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }

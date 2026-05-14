@@ -2,9 +2,12 @@ use crate::models::club_owner::{
     ClubImageRow, ClubOwner, EventStatRow, OwnerStats, ScanResult, TableImageRow,
 };
 use crate::models::table::TableReservation;
+use crate::models::{normalize_refusal_reason, ReservationStatus};
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
+
+use super::table_repository;
 
 /// Create a new club owner
 pub async fn create_club_owner(
@@ -285,12 +288,7 @@ pub async fn create_manual_reservation(
             created_at, updated_at
         )
         VALUES ($1, $2, $3, $4, 'confirmed', $5, $6, 0, $7, $8, $9, NULL, $10, true, $11, $12, $13, NOW(), NOW())
-        RETURNING id, table_id, user_id, event_id, status, num_people,
-                  total_amount, amount_paid, contact_name, contact_email, contact_phone,
-                  special_requests, reservation_code, created_at, updated_at,
-                  guest_user_ids, payment_ids, ticket_ids, is_manual, manual_notes,
-                  male_guest_count, female_guest_count,
-                  payment_link_token
+        RETURNING *
         "#,
     )
     .bind(Uuid::new_v4())
@@ -318,22 +316,40 @@ pub async fn create_manual_reservation(
 pub async fn update_reservation_status(
     pool: &PgPool,
     reservation_id: Uuid,
-    status: String,
+    status: ReservationStatus,
+    refusal_reason: Option<String>,
 ) -> Result<Option<TableReservation>> {
+    let current = match table_repository::get_reservation_by_id(pool, reservation_id).await {
+        Ok(value) => value,
+        Err(sqlx::Error::RowNotFound) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let current_status = ReservationStatus::try_from(current.status.as_str())
+        .map_err(|_| sqlx::Error::Protocol("invalid reservation status in database".into()))?;
+
+    if !current_status.can_transition_to(status) {
+        return Err(sqlx::Error::Protocol(
+            format!(
+                "invalid reservation status transition from {} to {}",
+                current_status.as_str(),
+                status.as_str()
+            )
+            .into(),
+        ));
+    }
+
     let row = sqlx::query_as::<_, TableReservation>(
         r#"
         UPDATE table_reservations
-        SET status = $1, updated_at = NOW()
-        WHERE id = $2
-        RETURNING id, table_id, user_id, event_id, status, num_people,
-                  total_amount, amount_paid, contact_name, contact_email, contact_phone,
-                  special_requests, reservation_code, created_at, updated_at,
-                  guest_user_ids, payment_ids, ticket_ids, is_manual, manual_notes,
-                  male_guest_count, female_guest_count,
-                  payment_link_token
+        SET status = $1::reservation_status,
+            refusal_reason = $2,
+            updated_at = NOW()
+        WHERE id = $3
+        RETURNING *
         "#,
     )
-    .bind(status)
+    .bind(status.as_str())
+    .bind(normalize_refusal_reason(status, refusal_reason))
     .bind(reservation_id)
     .fetch_optional(pool)
     .await?;
@@ -366,6 +382,8 @@ pub async fn scan_code(pool: &PgPool, code: &str) -> Result<Option<ScanResult>> 
             valid: true,
             already_used: status == "used",
             scan_type: "ticket".to_string(),
+            status: Some(status),
+            refusal_reason: None,
             guest_name: row.try_get("guest_name").ok(),
             num_people: None,
             event_title: row.try_get("event_title").ok(),
@@ -377,7 +395,7 @@ pub async fn scan_code(pool: &PgPool, code: &str) -> Result<Option<ScanResult>> 
     // Try reservation
     let res_row = sqlx::query(
         r#"
-        SELECT tr.reservation_code, tr.status, tr.contact_name, tr.num_people,
+        SELECT tr.reservation_code, tr.status, tr.refusal_reason, tr.contact_name, tr.num_people,
                e.title as event_title, tbl.name as table_name
         FROM table_reservations tr
         JOIN events e ON e.id = tr.event_id
@@ -394,8 +412,10 @@ pub async fn scan_code(pool: &PgPool, code: &str) -> Result<Option<ScanResult>> 
         let status: String = row.get("status");
         return Ok(Some(ScanResult {
             valid: true,
-            already_used: matches!(status.as_str(), "completed" | "cancelled"),
+            already_used: matches!(status.as_str(), "completed" | "refused" | "cancelled"),
             scan_type: "reservation".to_string(),
+            status: Some(status),
+            refusal_reason: row.try_get("refusal_reason").ok().flatten(),
             guest_name: row.try_get("contact_name").ok(),
             num_people: row.try_get("num_people").ok(),
             event_title: row.try_get("event_title").ok(),
@@ -436,6 +456,8 @@ pub async fn checkin_by_code(pool: &PgPool, code: &str) -> Result<Option<ScanRes
                 valid: true,
                 already_used: false,
                 scan_type: "ticket".to_string(),
+                status: Some("used".to_string()),
+                refusal_reason: None,
                 guest_name: r.try_get("guest_name").ok(),
                 num_people: None,
                 event_title: r.try_get("event_title").ok(),
@@ -447,7 +469,7 @@ pub async fn checkin_by_code(pool: &PgPool, code: &str) -> Result<Option<ScanRes
 
     // Try reservation checkin
     let res_updated = sqlx::query(
-        r#"UPDATE table_reservations SET status = 'completed', updated_at = NOW() WHERE reservation_code = $1 AND status != 'completed'"#,
+        r#"UPDATE table_reservations SET status = 'completed', updated_at = NOW() WHERE reservation_code = $1 AND status = 'confirmed'"#,
     )
     .bind(code)
     .execute(pool)
@@ -456,7 +478,8 @@ pub async fn checkin_by_code(pool: &PgPool, code: &str) -> Result<Option<ScanRes
     if res_updated.rows_affected() > 0 {
         let row = sqlx::query(
             r#"
-            SELECT tr.contact_name, tr.num_people, e.title as event_title, tbl.name as table_name
+            SELECT tr.contact_name, tr.num_people, tr.refusal_reason,
+                   e.title as event_title, tbl.name as table_name
             FROM table_reservations tr
             JOIN events e ON e.id = tr.event_id
             JOIN tables tbl ON tbl.id = tr.table_id
@@ -473,6 +496,8 @@ pub async fn checkin_by_code(pool: &PgPool, code: &str) -> Result<Option<ScanRes
                 valid: true,
                 already_used: false,
                 scan_type: "reservation".to_string(),
+                status: Some("completed".to_string()),
+                refusal_reason: None,
                 guest_name: r.try_get("contact_name").ok(),
                 num_people: r.try_get("num_people").ok(),
                 event_title: r.try_get("event_title").ok(),
@@ -482,31 +507,37 @@ pub async fn checkin_by_code(pool: &PgPool, code: &str) -> Result<Option<ScanRes
         }
     }
 
-    // Code was valid but already used
-    let existing = scan_code(pool, code).await?;
-    Ok(existing.map(|mut r| {
-        r.already_used = true;
-        r
-    }))
+    scan_code(pool, code).await
 }
 
-pub async fn reject_reservation_by_code(pool: &PgPool, code: &str) -> Result<Option<ScanResult>> {
+pub async fn reject_reservation_by_code(
+    pool: &PgPool,
+    code: &str,
+    refusal_reason: Option<String>,
+) -> Result<Option<ScanResult>> {
     let res_updated = sqlx::query(
         r#"
         UPDATE table_reservations
-        SET status = 'cancelled', updated_at = NOW()
+        SET status = 'refused',
+            refusal_reason = $2,
+            updated_at = NOW()
         WHERE reservation_code = $1
-          AND status NOT IN ('completed', 'cancelled')
+          AND status IN ('pending', 'confirmed')
         "#,
     )
     .bind(code)
+    .bind(normalize_refusal_reason(
+        ReservationStatus::Refused,
+        refusal_reason,
+    ))
     .execute(pool)
     .await?;
 
     if res_updated.rows_affected() > 0 {
         let row = sqlx::query(
             r#"
-            SELECT tr.contact_name, tr.num_people, e.title as event_title, tbl.name as table_name
+            SELECT tr.contact_name, tr.num_people, tr.refusal_reason,
+                   e.title as event_title, tbl.name as table_name
             FROM table_reservations tr
             JOIN events e ON e.id = tr.event_id
             JOIN tables tbl ON tbl.id = tr.table_id
@@ -523,6 +554,8 @@ pub async fn reject_reservation_by_code(pool: &PgPool, code: &str) -> Result<Opt
                 valid: true,
                 already_used: true,
                 scan_type: "reservation".to_string(),
+                status: Some("refused".to_string()),
+                refusal_reason: r.try_get("refusal_reason").ok(),
                 guest_name: r.try_get("contact_name").ok(),
                 num_people: r.try_get("num_people").ok(),
                 event_title: r.try_get("event_title").ok(),
@@ -532,11 +565,7 @@ pub async fn reject_reservation_by_code(pool: &PgPool, code: &str) -> Result<Opt
         }
     }
 
-    let existing = scan_code(pool, code).await?;
-    Ok(existing.map(|mut r| {
-        r.already_used = true;
-        r
-    }))
+    scan_code(pool, code).await
 }
 
 // ============================================================================

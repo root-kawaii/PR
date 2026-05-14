@@ -661,7 +661,7 @@ async fn handle_checkout_session_completed(
     if let Err(e) = sqlx::query(
         r#"UPDATE table_reservations SET status = 'confirmed', updated_at = NOW()
            WHERE id = $1
-             AND status != 'confirmed'
+             AND status = 'pending'
              AND amount_paid >= total_amount"#,
     )
     .bind(share.reservation_id)
