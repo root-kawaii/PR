@@ -346,6 +346,11 @@ export default function EventReservationsPage() {
       alert('Inserire un numero di persone valido.');
       return;
     }
+    const tableCap = getTable(formTableId)?.capacity;
+    if (tableCap !== undefined && numPeople > tableCap) {
+      alert(`Il tavolo ha capienza ${tableCap}. Riduci il numero di persone o scegli un altro tavolo.`);
+      return;
+    }
     const maleCount = Math.max(0, Math.min(numPeople, formMaleCount));
     const femaleCount = numPeople - maleCount;
 
@@ -441,6 +446,11 @@ export default function EventReservationsPage() {
       alert('Inserire un numero di persone valido.');
       return;
     }
+    const tableCap = getTable(editTableId)?.capacity;
+    if (tableCap !== undefined && numPeople > tableCap) {
+      alert(`Il tavolo ha capienza ${tableCap}. Riduci il numero di persone o scegli un altro tavolo.`);
+      return;
+    }
     const maleCount = Math.max(0, Math.min(numPeople, editMaleCount));
     const femaleCount = numPeople - maleCount;
 
@@ -490,15 +500,41 @@ export default function EventReservationsPage() {
     return <div className={ui.helperText}>Caricamento prenotazioni...</div>;
   }
 
+  const formTableCapacity = getTable(formTableId)?.capacity;
   const formNum = parseInt(formNumPeople, 10);
   const formTotal = Number.isFinite(formNum) && formNum > 0 ? formNum : 0;
   const formMale = Math.max(0, Math.min(formTotal, formMaleCount));
   const formFemale = formTotal - formMale;
 
+  const editTableCapacity = getTable(editTableId)?.capacity;
   const editNum = parseInt(editNumPeople, 10);
   const editTotal = Number.isFinite(editNum) && editNum > 0 ? editNum : 0;
   const editMale = Math.max(0, Math.min(editTotal, editMaleCount));
   const editFemale = editTotal - editMale;
+
+  const handleFormTableChange = (tableId: string) => {
+    setFormTableId(tableId);
+    const cap = tables.find(t => t.id === tableId)?.capacity;
+    if (cap !== undefined) {
+      const current = parseInt(formNumPeople, 10);
+      if (Number.isFinite(current) && current > cap) {
+        setFormNumPeople(String(cap));
+        setFormMaleCount(defaultGenderSplit(cap).male);
+      }
+    }
+  };
+
+  const handleEditTableChange = (tableId: string) => {
+    setEditTableId(tableId);
+    const cap = tables.find(t => t.id === tableId)?.capacity;
+    if (cap !== undefined) {
+      const current = parseInt(editNumPeople, 10);
+      if (Number.isFinite(current) && current > cap) {
+        setEditNumPeople(String(cap));
+        setEditMaleCount(defaultGenderSplit(cap).male);
+      }
+    }
+  };
 
   return (
     <div>
@@ -525,7 +561,7 @@ export default function EventReservationsPage() {
       </div>
 
       {statsData && (
-        <div className="mb-4 grid gap-3 sm:grid-cols-4">
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <SectionCard className="p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide">Prenotazioni</p>
             <p className="mt-1 text-2xl font-semibold text-gray-900">{statsData.totalReservations}</p>
@@ -538,6 +574,12 @@ export default function EventReservationsPage() {
             <p className="text-xs text-gray-500 uppercase tracking-wide">M/F</p>
             <p className="mt-1 text-2xl font-semibold text-gray-900">
               {statsData.maleGuests} / {statsData.femaleGuests}
+            </p>
+          </SectionCard>
+          <SectionCard className="p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Incasso previsto</p>
+            <p className="mt-1 text-2xl font-semibold text-gray-900">
+              {parseEuroAmount(statsData.totalAmount).toFixed(2)} €
             </p>
           </SectionCard>
           <SectionCard className="p-4">
@@ -621,7 +663,6 @@ export default function EventReservationsPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {sorted.map((reservation) => {
-                  const table = getTable(reservation.tableId);
                   return (
                     <tr
                       key={reservation.id}
@@ -654,13 +695,10 @@ export default function EventReservationsPage() {
                         >
                           {tables.map((item) => (
                             <option key={item.id} value={item.id}>
-                              {item.areaName ?? item.name} · {item.name}
+                              {item.areaName ?? item.name} · {item.name} — cap. {item.capacity}
                             </option>
                           ))}
                         </select>
-                        {table?.areaName && (
-                          <p className="mt-1 text-xs text-gray-400">{table.areaName}</p>
-                        )}
                       </td>
                       <td className={`${ui.tableCell} ${ui.tabularNums}`}>{reservation.numPeople}</td>
                       <td className={`${ui.tableCell} ${ui.tabularNums}`}>
@@ -684,16 +722,19 @@ export default function EventReservationsPage() {
                           disabled={updatingId === reservation.id}
                           value={reservation.status}
                           onChange={e => handleStatusChange(reservation.id, e.target.value)}
-                          className={`${ui.select} min-h-8 py-1.5 text-xs`}
+                          className={`${ui.select} min-h-8 py-1.5 text-xs font-medium ${STATUS_COLORS[reservation.status] ?? 'bg-gray-100 text-gray-600'}`}
+                          title={getReservationStatusLabel(reservation)}
                         >
                           <option value="pending">In attesa</option>
                           <option value="confirmed">Prenotato</option>
                           <option value="completed">Accesso effettuato</option>
                           <option value="cancelled">Rifiutato</option>
                         </select>
-                        <span className={`mt-1 inline-block px-2 py-1 text-xs rounded-full font-medium ${STATUS_COLORS[reservation.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {getReservationStatusLabel(reservation)}
-                        </span>
+                        {getReservationStatusLabel(reservation) !== STATUS_LABELS[reservation.status] && (
+                          <span className="mt-1 inline-block text-xs text-amber-600">
+                            {getReservationStatusLabel(reservation)}
+                          </span>
+                        )}
                       </td>
                       <td className={ui.tableCell}>
                         <div className="flex items-center justify-end gap-2">
@@ -734,7 +775,7 @@ export default function EventReservationsPage() {
             <form onSubmit={handleCreateManual} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tavolo *</label>
-                <select value={formTableId} onChange={e => setFormTableId(e.target.value)} required className={ui.select}>
+                <select value={formTableId} onChange={e => handleFormTableChange(e.target.value)} required className={ui.select}>
                   <option value="">Seleziona tavolo</option>
                   {tables.map((table) => (
                     <option key={table.id} value={table.id}>
@@ -770,10 +811,16 @@ export default function EventReservationsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Persone *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Persone *
+                  {formTableCapacity !== undefined && (
+                    <span className="ml-1 text-xs text-gray-400 font-normal">(max {formTableCapacity})</span>
+                  )}
+                </label>
                 <input
                   type="number"
                   min="1"
+                  max={formTableCapacity}
                   value={formNumPeople}
                   onChange={(e) => handleNumPeopleChange(e.target.value, setFormNumPeople, setFormMaleCount)}
                   required
@@ -821,10 +868,10 @@ export default function EventReservationsPage() {
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tavolo</label>
-                <select value={editTableId} onChange={e => setEditTableId(e.target.value)} className={ui.select}>
+                <select value={editTableId} onChange={e => handleEditTableChange(e.target.value)} className={ui.select}>
                   {tables.map((table) => (
                     <option key={table.id} value={table.id}>
-                      {table.areaName ?? table.name} · {table.name}
+                      {table.areaName ?? table.name} · {table.name} — cap. {table.capacity}
                     </option>
                   ))}
                 </select>
@@ -857,10 +904,16 @@ export default function EventReservationsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Persone</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Persone
+                    {editTableCapacity !== undefined && (
+                      <span className="ml-1 text-xs text-gray-400 font-normal">(max {editTableCapacity})</span>
+                    )}
+                  </label>
                   <input
                     type="number"
                     min="1"
+                    max={editTableCapacity}
                     value={editNumPeople}
                     onChange={(e) => handleNumPeopleChange(e.target.value, setEditNumPeople, setEditMaleCount)}
                     className={ui.input}
