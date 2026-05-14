@@ -417,17 +417,17 @@ pub async fn get_my_club_tables(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    // `get_tables_by_event_id` already returns both event-bound tables
+    // (`event_id = $1`) and club-level tables of the event's club
+    // (`event_id IS NULL` + area belongs to the club). Calling
+    // `get_tables_by_club_id` on top would re-add every club-level table
+    // and produce duplicates in the dropdown.
     let event_tables = table_persistence::get_tables_by_event_id(&state.db_pool, event_uuid)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let club_tables = table_persistence::get_tables_by_club_id(&state.db_pool, club.id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let table_responses: Vec<TableResponse> = event_tables
         .into_iter()
-        .chain(club_tables.into_iter())
         .map(|t| t.into())
         .collect();
     Ok(Json(TablesResponse {

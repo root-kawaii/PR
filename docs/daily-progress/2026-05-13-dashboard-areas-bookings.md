@@ -83,6 +83,26 @@ incoherent-state bug.
 - `controllers/club_owner_controller.rs`: trims/normalizes the optional
   phone and stores an empty string when missing.
 
+### Bug fix — duplicate tables in event tables endpoint
+
+`GET /owner/events/:event_id/tables` was returning every club-level table
+twice. The handler called both `get_tables_by_event_id` (which already
+returns event-bound tables AND club-level tables whose area belongs to
+the event's club) and `get_tables_by_club_id` (which returns the same
+club-level set), then concatenated the two without deduping. Removed
+the redundant second call. Surfaced as duplicates in the table picker
+of the manual reservation modal during review.
+
+### Two-tone gender slider
+
+The slider in the manual reservation form is now coloured: the left
+side (male) is blue, the right side (pink) is female. Implementation
+uses a CSS variable `--gender-pct` set inline by the React component
+and a `linear-gradient` on the `.gender-slider` track defined in
+`pierre_dashboard/src/index.css`. M/F count labels are tinted to match
+(blue / pink). Custom `::-webkit-slider-thumb` and `::-moz-range-thumb`
+keep the thumb a clean white circle on both browsers.
+
 ### Mobile (`pierre_two`) — zone removal
 
 `tables.zone` was a free-text label that predated `areas`. Every read
@@ -133,6 +153,7 @@ keeps it in sync when the area price changes.
 | Dashboard | `pierre_dashboard/src/types/index.ts` |
 | Backend | `rust_BE/src/models/table.rs` |
 | Backend | `rust_BE/src/models/club_owner.rs` |
+| Dashboard | `pierre_dashboard/src/index.css` |
 | Backend | `rust_BE/src/controllers/area_controller.rs` |
 | Backend | `rust_BE/src/controllers/table_controller.rs` |
 | Backend | `rust_BE/src/controllers/club_owner_controller.rs` |

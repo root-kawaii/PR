@@ -892,11 +892,12 @@ interface GenderSliderProps {
 }
 
 function GenderSlider({ total, male, female, onChange }: GenderSliderProps) {
+  const pct = total > 0 ? (male / total) * 100 : 50;
   return (
     <div className="mt-2">
       <div className="flex items-center gap-3">
-        <span className="text-xs text-gray-600 tabular-nums whitespace-nowrap">
-          <span aria-hidden>♂</span> Maschi <strong className="text-gray-900">{male}</strong>
+        <span className="text-xs text-blue-600 tabular-nums whitespace-nowrap">
+          <span aria-hidden>♂</span> Maschi <strong>{male}</strong>
         </span>
         <input
           type="range"
@@ -906,11 +907,12 @@ function GenderSlider({ total, male, female, onChange }: GenderSliderProps) {
           value={male}
           disabled={total <= 0}
           onChange={(e) => onChange(parseInt(e.target.value, 10))}
-          className="flex-1 accent-gray-900 disabled:opacity-50"
+          className="gender-slider flex-1 disabled:opacity-50"
+          style={{ ['--gender-pct' as string]: `${pct}%` }}
           aria-label="Ripartizione maschi/femmine"
         />
-        <span className="text-xs text-gray-600 tabular-nums whitespace-nowrap">
-          <strong className="text-gray-900">{female}</strong> Femmine <span aria-hidden>♀</span>
+        <span className="text-xs text-pink-600 tabular-nums whitespace-nowrap">
+          <strong>{female}</strong> Femmine <span aria-hidden>♀</span>
         </span>
       </div>
       <p className="mt-1 text-[11px] text-gray-400">
