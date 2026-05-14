@@ -237,7 +237,13 @@ pub async fn get_table_by_id(pool: &PgPool, table_id: Uuid) -> Result<Table, sql
     Ok(table)
 }
 
-/// Find the first available table in a given area and event (no lock — for pricing preview only)
+/// Find the first available table in a given area for an event (no lock — for pricing preview only).
+///
+/// Matches both event-bound tables (`tables.event_id = $2`) and club-level
+/// tables (`tables.event_id IS NULL` whose area belongs to the event's club),
+/// mirroring `get_available_tables_by_event_id`. Without the club-level branch,
+/// area-based booking returns RowNotFound whenever the club configured tables
+/// at club scope (migration 044) instead of per-event.
 pub async fn find_first_available_table_by_area(
     pool: &PgPool,
     area_id: Uuid,
@@ -248,9 +254,17 @@ pub async fn find_first_available_table_by_area(
         SELECT t.*, a.name AS area_name
         FROM tables t
         LEFT JOIN areas a ON a.id = t.area_id
+        JOIN events e ON e.id = $2
         WHERE t.area_id = $1
-          AND t.event_id = $2
           AND t.available = true
+          AND (
+                t.event_id = $2
+                OR (
+                    t.event_id IS NULL
+                    AND e.club_id IS NOT NULL
+                    AND a.club_id = e.club_id
+                )
+          )
         ORDER BY t.name ASC
         LIMIT 1
         "#,
