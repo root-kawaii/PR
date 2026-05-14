@@ -8,7 +8,7 @@ import {
   StyleSheet,
   Share,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -35,6 +35,7 @@ export const TableReservationDetailModal = ({
   onClose,
 }: TableReservationDetailModalProps) => {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [paymentShares, setPaymentShares] = useState<PaymentShare[]>([]);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [slotsFilled, setSlotsFilled] = useState(0);
@@ -188,10 +189,10 @@ export const TableReservationDetailModal = ({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={["top"]}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={[styles.container, { backgroundColor: theme.background }]}>
           {/* Header */}
-          <View style={[styles.header, { borderBottomColor: theme.backgroundSurface }]}>
+          <View style={[styles.header, { borderBottomColor: theme.backgroundSurface, paddingTop: insets.top + 8 }]}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
               <IconSymbol name="chevron.left" size={24} color={theme.text} />
             </TouchableOpacity>
@@ -515,7 +516,7 @@ export const TableReservationDetailModal = ({
             <View style={{ height: 30 }} />
           </ScrollView>
         </View>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 };
@@ -527,7 +528,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 28,
     paddingBottom: 18,
     borderBottomWidth: 1,
     borderBottomColor: "#1f2937",
