@@ -85,13 +85,21 @@ incoherent-state bug.
 
 ### Bug fix — duplicate tables in event tables endpoint
 
-`GET /owner/events/:event_id/tables` was returning every club-level table
-twice. The handler called both `get_tables_by_event_id` (which already
-returns event-bound tables AND club-level tables whose area belongs to
-the event's club) and `get_tables_by_club_id` (which returns the same
-club-level set), then concatenated the two without deduping. Removed
-the redundant second call. Surfaced as duplicates in the table picker
-of the manual reservation modal during review.
+`GET /owner/events/:event_id/tables` was returning every table twice.
+Two distinct sources of duplication:
+
+1. The handler called both `get_tables_by_event_id` and
+   `get_tables_by_club_id` and concatenated them without deduping —
+   removed the redundant second call.
+2. The query itself was a `UNION`-like OR between event-level
+   (`event_id = $1`) and club-level (`event_id IS NULL`) tables. Pre-044
+   tables that were later re-created as club-level rows now exist in
+   both forms in the DB, so the OR surfaced both. Tightened
+   `get_tables_by_event_id` and `get_available_tables_by_event_id`:
+   when at least one club-level table exists for the event's club,
+   return only those (post-044 model); otherwise fall back to legacy
+   event-level tables. This is a defensive query change — no data
+   touched.
 
 ### Two-tone gender slider
 

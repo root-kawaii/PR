@@ -41,7 +41,14 @@ pub async fn get_all_tables(pool: &PgPool) -> Result<Vec<Table>, sqlx::Error> {
     Ok(tables)
 }
 
-/// Get all tables for a specific event
+/// Get all tables for a specific event.
+///
+/// Returns the club-level tables (`event_id IS NULL`) of the event's club
+/// when at least one exists — that's the post-044 model. Falls back to the
+/// legacy event-level tables (`event_id = $1`) only for events that never
+/// got migrated. This avoids surfacing duplicates when a table was first
+/// created event-bound (pre-044) and then re-created as a club-level row
+/// after migration 044.
 pub async fn get_tables_by_event_id(
     pool: &PgPool,
     event_id: Uuid,
@@ -54,12 +61,22 @@ pub async fn get_tables_by_event_id(
         FROM tables t
         LEFT JOIN areas a ON a.id = t.area_id
         JOIN events e ON e.id = $1
-        WHERE t.event_id = $1
-           OR (
+        WHERE
+            (
                 t.event_id IS NULL
                 AND e.club_id IS NOT NULL
                 AND a.club_id = e.club_id
-           )
+            )
+            OR (
+                t.event_id = $1
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM tables t2
+                    JOIN areas a2 ON a2.id = t2.area_id
+                    WHERE t2.event_id IS NULL
+                      AND a2.club_id = e.club_id
+                )
+            )
         ORDER BY COALESCE(a.name, 'A') ASC, t.name ASC
         "#,
     )
@@ -70,7 +87,9 @@ pub async fn get_tables_by_event_id(
     Ok(tables)
 }
 
-/// Get available tables for an event
+/// Get available tables for an event. Club-level tables of the event's
+/// club take precedence over legacy event-level tables (see
+/// `get_tables_by_event_id` for rationale).
 pub async fn get_available_tables_by_event_id(
     pool: &PgPool,
     event_id: Uuid,
@@ -83,13 +102,24 @@ pub async fn get_available_tables_by_event_id(
         FROM tables t
         LEFT JOIN areas a ON a.id = t.area_id
         JOIN events e ON e.id = $1
-        WHERE (t.event_id = $1 AND t.available = true)
-           OR (
-                t.event_id IS NULL
-                AND t.available = true
-                AND e.club_id IS NOT NULL
-                AND a.club_id = e.club_id
-           )
+        WHERE t.available = true
+          AND (
+                (
+                    t.event_id IS NULL
+                    AND e.club_id IS NOT NULL
+                    AND a.club_id = e.club_id
+                )
+                OR (
+                    t.event_id = $1
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM tables t2
+                        JOIN areas a2 ON a2.id = t2.area_id
+                        WHERE t2.event_id IS NULL
+                          AND a2.club_id = e.club_id
+                    )
+                )
+          )
         ORDER BY COALESCE(a.name, 'A') ASC, t.name ASC
         "#,
     )
