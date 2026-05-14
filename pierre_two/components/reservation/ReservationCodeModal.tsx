@@ -13,6 +13,7 @@ import {
   TouchableWithoutFeedback,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTheme } from "@/context/ThemeContext";
@@ -67,7 +68,7 @@ export const ReservationCodeModal = ({
       onRequestClose={handleClose}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={[styles.overlay, { backgroundColor: theme.overlay }]}>
+        <SafeAreaView style={[styles.overlay, { backgroundColor: theme.overlay }]} edges={["top", "bottom", "left", "right"]}>
           <View style={[styles.modal, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <View>
@@ -157,7 +158,7 @@ export const ReservationCodeModal = ({
               </View>
             </TouchableWithoutFeedback>
           </View>
-        </View>
+        </SafeAreaView>
       </TouchableWithoutFeedback>
     </Modal>
   );

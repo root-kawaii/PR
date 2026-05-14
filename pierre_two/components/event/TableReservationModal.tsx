@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedView } from "@/components/themed-view";
 import { ThemedText } from "@/components/themed-text";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -31,6 +32,7 @@ export const TableReservationModal = ({
   onReservationCreated,
 }: TableReservationModalProps) => {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [tables, setTables] = useState<Table[]>([]);
   const [hasFetchedTables, setHasFetchedTables] = useState(false);
   const marzipanoViewerRef = useRef<MarzipanoViewerRef>(null);
@@ -147,7 +149,7 @@ export const TableReservationModal = ({
 
         {/* Scene Indicator Overlay */}
         {currentSceneName && (
-          <View style={[styles.sceneIndicator, { backgroundColor: theme.overlay }]}>
+          <View style={[styles.sceneIndicator, { top: insets.top + 12, backgroundColor: theme.overlay }]}>
             <ThemedText style={[styles.sceneText, { color: theme.text }]}>
               📍 {currentSceneName}
             </ThemedText>
@@ -155,7 +157,7 @@ export const TableReservationModal = ({
         )}
 
         {/* Floating Back Button */}
-        <TouchableOpacity onPress={onClose} style={[styles.backButton, { backgroundColor: theme.overlay }]}>
+        <TouchableOpacity onPress={onClose} style={[styles.backButton, { top: insets.top + 12, backgroundColor: theme.overlay }]}>
           <IconSymbol name="chevron.left" size={24} color={theme.text} />
         </TouchableOpacity>
 
@@ -229,7 +231,6 @@ const styles = StyleSheet.create({
   },
   sceneIndicator: {
     position: "absolute",
-    top: 60,
     right: 16,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
     paddingHorizontal: 12,
@@ -244,7 +245,6 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: "absolute",
-    top: 60,
     left: 16,
     width: 48,
     height: 48,

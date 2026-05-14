@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 
@@ -7,7 +8,7 @@ export default function NotFoundScreen() {
   const { theme } = useTheme();
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <Text style={styles.icon}>🔍</Text>
       <Text style={[styles.title, { color: theme.text }]}>Pagina non trovata</Text>
       <Text style={[styles.subtitle, { color: theme.textTertiary }]}>
@@ -19,7 +20,7 @@ export default function NotFoundScreen() {
       >
         <Text style={styles.buttonText}>Torna alla Home</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
