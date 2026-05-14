@@ -45,13 +45,14 @@ SELECT ps.id                          AS share_id,
        ps.stripe_checkout_session_id,
        ps.created_at,
        r.event_id,
-       r.club_id,
+       e.club_id,
        r.status                       AS reservation_status,
        r.num_people,
        r.amount_paid,
        r.total_amount
 FROM   reservation_payment_shares ps
 JOIN   table_reservations r ON r.id = ps.reservation_id
+JOIN   events e             ON e.id = r.event_id
 WHERE  ps.status = 'checkout_pending'
   AND  ps.is_owner = false
   AND  ps.created_at < NOW() - INTERVAL '15 minutes';
