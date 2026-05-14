@@ -26,7 +26,8 @@ import { ui } from '../components/ui-classes';
 interface OwnerReservation {
   id: string;
   reservationCode: string;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'completed' | 'refused' | 'cancelled';
+  refusalReason?: string;
   numPeople: number;
   totalAmount: string;
   amountPaid: string;
@@ -52,14 +53,16 @@ const STATUS_LABELS: Record<string, string> = {
   pending: 'In attesa',
   confirmed: 'Prenotato',
   completed: 'Accesso effettuato',
-  cancelled: 'Rifiutato',
+  refused: 'Accesso rifiutato',
+  cancelled: 'Cancellato',
 };
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-700',
   confirmed: 'bg-blue-100 text-blue-700',
   completed: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
+  refused: 'bg-red-100 text-red-700',
+  cancelled: 'bg-gray-100 text-gray-600',
 };
 
 const parseEuroAmount = (value: string | number) =>
@@ -172,7 +175,8 @@ export default function EventReservationsPage() {
   const [editEmail, setEditEmail] = useState('');
   const [editNumPeople, setEditNumPeople] = useState('1');
   const [editMaleCount, setEditMaleCount] = useState(0);
-  const [editStatus, setEditStatus] = useState<'pending' | 'confirmed' | 'completed' | 'cancelled'>('pending');
+  const [editStatus, setEditStatus] = useState<'pending' | 'confirmed' | 'completed' | 'refused' | 'cancelled'>('pending');
+  const [editRefusalReason, setEditRefusalReason] = useState('');
   const [editNotes, setEditNotes] = useState('');
 
   const reservations = useMemo(() => reservationsData ?? [], [reservationsData]);
@@ -303,11 +307,22 @@ export default function EventReservationsPage() {
     setEditNumPeople(String(reservation.numPeople));
     setEditMaleCount(reservation.maleGuestCount);
     setEditStatus(reservation.status);
+    setEditRefusalReason(reservation.refusalReason ?? '');
     setEditNotes(reservation.manualNotes ?? reservation.specialRequests ?? '');
   };
 
   const closeEditModal = () => {
     setEditingReservation(null);
+    setEditRefusalReason('');
+  };
+
+  const promptRefusalReason = (initialValue = '') => {
+    const value = window.prompt('Motivo rifiuto (opzionale)', initialValue);
+    if (value === null) {
+      return { cancelled: true as const, value: undefined };
+    }
+    const trimmed = value.trim();
+    return { cancelled: false as const, value: trimmed || undefined };
   };
 
   const patchReservation = async (reservationId: string, payload: Record<string, unknown>) => {
@@ -398,6 +413,15 @@ export default function EventReservationsPage() {
   };
 
   const handleStatusChange = async (reservationId: string, newStatus: string) => {
+    let refusalReason: string | undefined;
+    if (newStatus === 'refused') {
+      const answer = promptRefusalReason();
+      if (answer.cancelled) {
+        return;
+      }
+      refusalReason = answer.value;
+    }
+
     setUpdatingId(reservationId);
     trackEvent('owner_reservation_status_update_submitted', {
       reservation_id: reservationId,
@@ -410,7 +434,7 @@ export default function EventReservationsPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, refusalReason }),
       });
       if (!res.ok) throw new Error('Errore aggiornamento');
       refreshAll();
@@ -465,6 +489,7 @@ export default function EventReservationsPage() {
         maleGuestCount: maleCount,
         femaleGuestCount: femaleCount,
         status: editStatus,
+        refusalReason: editStatus === 'refused' ? editRefusalReason.trim() || undefined : undefined,
         manualNotes: editNotes || undefined,
       });
       closeEditModal();
@@ -621,7 +646,8 @@ export default function EventReservationsPage() {
             <option value="pending">In attesa</option>
             <option value="confirmed">Prenotato</option>
             <option value="completed">Accesso effettuato</option>
-            <option value="cancelled">Rifiutato</option>
+            <option value="refused">Accesso rifiutato</option>
+            <option value="cancelled">Cancellato</option>
           </select>
         </div>
       </SectionCard>
@@ -728,11 +754,17 @@ export default function EventReservationsPage() {
                           <option value="pending">In attesa</option>
                           <option value="confirmed">Prenotato</option>
                           <option value="completed">Accesso effettuato</option>
-                          <option value="cancelled">Rifiutato</option>
+                          <option value="refused">Accesso rifiutato</option>
+                          <option value="cancelled">Cancellato</option>
                         </select>
                         {getReservationStatusLabel(reservation) !== STATUS_LABELS[reservation.status] && (
                           <span className="mt-1 inline-block text-xs text-amber-600">
                             {getReservationStatusLabel(reservation)}
+                          </span>
+                        )}
+                        {reservation.status === 'refused' && reservation.refusalReason && (
+                          <span className="mt-1 block text-xs text-red-600">
+                            Motivo: {reservation.refusalReason}
                           </span>
                         )}
                       </td>
@@ -900,7 +932,8 @@ export default function EventReservationsPage() {
                     <option value="pending">In attesa</option>
                     <option value="confirmed">Prenotato</option>
                     <option value="completed">Accesso effettuato</option>
-                    <option value="cancelled">Rifiutato</option>
+                    <option value="refused">Accesso rifiutato</option>
+                    <option value="cancelled">Cancellato</option>
                   </select>
                 </div>
                 <div>
@@ -932,6 +965,19 @@ export default function EventReservationsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
                 <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3} className={`${ui.textarea} resize-none`} />
               </div>
+
+              {editStatus === 'refused' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Motivo rifiuto</label>
+                  <textarea
+                    value={editRefusalReason}
+                    onChange={e => setEditRefusalReason(e.target.value)}
+                    rows={2}
+                    className={`${ui.textarea} resize-none`}
+                    placeholder="Opzionale"
+                  />
+                </div>
+              )}
 
               <button type="submit" disabled={updatingId === editingReservation.id} className={`${ui.primaryButton} w-full`}>
                 {updatingId === editingReservation.id ? 'Salvataggio...' : 'Salva modifiche'}

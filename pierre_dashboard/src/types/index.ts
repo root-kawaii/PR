@@ -67,7 +67,8 @@ export interface TableImage {
 export interface TableReservation {
   id: string;
   reservationCode: string;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'completed' | 'refused' | 'cancelled';
+  refusalReason?: string;
   numPeople: number;
   totalAmount: string;
   amountPaid: string;
@@ -89,6 +90,8 @@ export interface ScanResult {
   valid: boolean;
   alreadyUsed: boolean;
   scanType: 'ticket' | 'reservation' | 'unknown';
+  status?: string;
+  refusalReason?: string;
   guestName?: string;
   numPeople?: number;
   eventTitle?: string;
@@ -110,6 +113,7 @@ export interface EventReservationStats {
   pendingReservations: number;
   confirmedReservations: number;
   completedReservations: number;
+  refusedReservations: number;
   cancelledReservations: number;
   totalPeople: number;
   maleGuests: number;

@@ -66,6 +66,13 @@ export default function QRScannerPage() {
 
   const handleCheckin = async (decision: 'confirm' | 'reject' = 'confirm') => {
     if (!result) return;
+    let refusalReason: string | undefined;
+    if (decision === 'reject') {
+      const value = window.prompt('Motivo rifiuto (opzionale)');
+      if (value === null) return;
+      const trimmed = value.trim();
+      refusalReason = trimmed || undefined;
+    }
     setCheckinLoading(true);
     const eventName =
       decision === 'reject' ? 'owner_reservation_rejection_submitted' : 'owner_checkin_submitted';
@@ -81,7 +88,7 @@ export default function QRScannerPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ decision }),
+        body: JSON.stringify({ decision, refusalReason }),
       });
       if (!res.ok) throw new Error('Errore check-in');
       const completionEventName =
@@ -393,6 +400,12 @@ function ScanResultDetails({ result }: { result: ScanResult }) {
         <span className="text-gray-500 w-28 shrink-0">Codice</span>
         <span className="font-mono text-gray-700">{result.code}</span>
       </div>
+      {result.refusalReason && (
+        <div className="flex gap-2">
+          <span className="text-gray-500 w-28 shrink-0">Motivo</span>
+          <span className="text-gray-700">{result.refusalReason}</span>
+        </div>
+      )}
     </div>
   );
 }
