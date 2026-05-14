@@ -101,6 +101,7 @@ export default function BookingsScreen() {
       case 'confirmed': return theme.success;
       case 'completed': return theme.info;
       case 'pending': return theme.warning;
+      case 'refused': return theme.error;
       case 'cancelled': return theme.error;
       default: return theme.textTertiary;
     }
@@ -120,8 +121,10 @@ export default function BookingsScreen() {
           : 'In attesa';
       case 'confirmed':
         return 'Prenotata';
+      case 'refused':
+        return 'Accesso rifiutato';
       case 'cancelled':
-        return 'Rifiutata';
+        return 'Cancellata';
       case 'completed':
         return 'Accesso effettuato';
       default:
