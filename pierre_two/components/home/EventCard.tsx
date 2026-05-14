@@ -5,6 +5,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { Event } from '@/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { formatEventDateLabel, getEventVenueLabel } from '@/utils/eventDisplay';
 
 type EventCardProps = {
   event: Event;
@@ -25,17 +26,6 @@ const formatEventTime = (event: Event) => {
   }
 };
 
-const formatEventDate = (dateStr: string) => {
-  const days = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
-  const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-  try {
-    const date = new Date(dateStr);
-    return `${days[date.getDay()]} ${date.getDate()} ${months[date.getMonth()]}`;
-  } catch (e) {
-    return dateStr;
-  }
-};
-
 const withAlpha = (hexColor: string, alpha: string) =>
   /^#([0-9a-f]{6})$/i.test(hexColor) ? `${hexColor}${alpha}` : hexColor;
 
@@ -48,6 +38,7 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
     theme.statusBarStyle === 'dark'
       ? withAlpha(theme.modalBackground, 'CC')
       : withAlpha(theme.modalBackground, 'F0');
+  const venueLabel = getEventVenueLabel(event);
 
   return (
     <TouchableOpacity
@@ -131,11 +122,11 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
             </ThemedText>
           </View>
 
-          {event.venue ? (
+          {venueLabel ? (
             <View style={styles.metaRow}>
               <IconSymbol name="mappin" size={13} color={theme.textSecondary} />
               <ThemedText style={[styles.metaText, { color: theme.textSecondary }]} numberOfLines={1}>
-                {event.venue}
+                {venueLabel}
               </ThemedText>
             </View>
           ) : null}
@@ -143,7 +134,7 @@ export const EventCard = ({ event, onPress }: EventCardProps) => {
           <View style={styles.metaRow}>
             <IconSymbol name="calendar" size={13} color={theme.textTertiary} />
             <ThemedText style={[styles.metaText, { color: theme.textTertiary }]} numberOfLines={1}>
-              {formatEventDate(event.date)}
+              {formatEventDateLabel(event.date)}
             </ThemedText>
           </View>
         </View>

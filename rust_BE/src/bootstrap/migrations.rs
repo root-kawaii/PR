@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 
@@ -47,6 +48,15 @@ pub async fn run_startup_migrations(pool: &PgPool) -> Result<usize, String> {
         .map(|row| row.get::<String, _>("filename"))
         .collect::<HashSet<_>>();
 
+    let migration_filter = env::var("STARTUP_MIGRATION_FILES").ok().map(|value| {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<HashSet<_>>()
+    });
+
     let mut applied_count = 0;
 
     for path in migration_paths {
@@ -55,6 +65,12 @@ pub async fn run_startup_migrations(pool: &PgPool) -> Result<usize, String> {
             .and_then(|name| name.to_str())
             .ok_or_else(|| format!("migration path is not valid UTF-8: {:?}", path))?
             .to_string();
+
+        if let Some(filter) = migration_filter.as_ref() {
+            if !filter.contains(&filename) {
+                continue;
+            }
+        }
 
         if applied_filenames.contains(&filename) {
             continue;

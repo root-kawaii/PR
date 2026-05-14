@@ -84,7 +84,7 @@ pub async fn update_area(
     price: Option<Decimal>,
     description: Option<String>,
 ) -> Result<Area, sqlx::Error> {
-    sqlx::query_as::<_, Area>(
+    let updated = sqlx::query_as::<_, Area>(
         r#"
         UPDATE areas
         SET name        = COALESCE($1, name),
@@ -100,7 +100,28 @@ pub async fn update_area(
     .bind(description)
     .bind(area_id)
     .fetch_one(pool)
-    .await
+    .await?;
+
+    // When the area price changes, sync the denormalized min_spend / total_cost
+    // on every table that belongs to this area, so the per-person price stays
+    // the single source of truth at area level.
+    if price.is_some() {
+        sqlx::query(
+            r#"
+            UPDATE tables
+            SET min_spend  = $1,
+                total_cost = $1 * capacity,
+                updated_at = NOW()
+            WHERE area_id = $2
+            "#,
+        )
+        .bind(updated.price)
+        .bind(area_id)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(updated)
 }
 
 pub async fn delete_area(pool: &PgPool, area_id: Uuid) -> Result<bool, sqlx::Error> {

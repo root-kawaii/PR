@@ -172,7 +172,6 @@ pub async fn create_table(
         &state.db_pool,
         event_id,
         req.name,
-        req.zone,
         req.capacity,
         min_spend,
         req.location_description,
@@ -194,19 +193,12 @@ pub async fn update_table(
 ) -> Result<Json<TableResponse>, StatusCode> {
     let table_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let min_spend = if let Some(ms) = req.min_spend {
-        Some(Decimal::from_f64_retain(ms).ok_or(StatusCode::BAD_REQUEST)?)
-    } else {
-        None
-    };
-
     match table_persistence::update_table(
         &state.db_pool,
         table_id,
         req.name,
-        req.zone,
         req.capacity,
-        min_spend,
+        None,
         req.available,
         req.location_description,
         req.features,
@@ -336,7 +328,19 @@ pub async fn get_reservation_by_code(
     Path(code): Path<String>,
 ) -> Result<Json<TableReservationWithDetailsResponse>, StatusCode> {
     match table_persistence::get_reservation_with_details_by_code(&state.db_pool, &code).await {
-        Ok((reservation, table, (event_id, event_title, event_venue, event_date, event_image))) => {
+        Ok((
+            reservation,
+            table,
+            (
+                event_id,
+                event_title,
+                event_venue,
+                event_club_name,
+                event_club_address,
+                event_date,
+                event_image,
+            ),
+        )) => {
             let amount_remaining = reservation.total_amount - reservation.amount_paid;
             let _ = outbox_service::enqueue_analytics_event(
                 &state.db_pool,
@@ -373,7 +377,6 @@ pub async fn get_reservation_by_code(
                 table: TableSummary {
                     id: table.id.to_string(),
                     name: table.name,
-                    zone: table.zone,
                     area_name: table.area_name,
                     capacity: table.capacity,
                     min_spend: format!("{:.2} €", table.min_spend),
@@ -384,6 +387,8 @@ pub async fn get_reservation_by_code(
                     id: event_id.to_string(),
                     title: event_title,
                     venue: event_venue,
+                    club_name: event_club_name,
+                    club_address: event_club_address,
                     date: event_date,
                     image: event_image,
                     status: None,

@@ -18,3 +18,56 @@ select,
 textarea {
   font: inherit;
 }
+
+/* Two-tone slider used in the manual reservation form to split a fixed
+   "Persone" total between male (blue) and female (pink). The gradient is
+   driven by the --gender-pct CSS variable set inline by the React component. */
+.gender-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    #3b82f6 0%,
+    #3b82f6 var(--gender-pct, 50%),
+    #ec4899 var(--gender-pct, 50%),
+    #ec4899 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+.gender-slider:disabled {
+  cursor: not-allowed;
+  background: #e5e7eb;
+}
+.gender-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: transparent;
+}
+.gender-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: transparent;
+}
+.gender-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #111827;
+  margin-top: -5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.gender-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}

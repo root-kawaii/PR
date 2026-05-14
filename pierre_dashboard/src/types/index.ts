@@ -78,7 +78,7 @@ export interface TableReservation {
   specialRequests?: string;
   isManual: boolean;
   manualNotes?: string;
-  table: { id: string; name: string; zone?: string };
+  table: { id: string; name: string; areaName?: string };
   event: { id: string; title: string; date: string };
   createdAt: string;
   maleGuestCount: number;
@@ -135,6 +135,8 @@ export interface EventResponse {
   id: string;
   title: string;
   venue?: string;
+  clubName?: string;
+  clubAddress?: string;
   date: string;
   image: string;
   status?: string;
@@ -142,6 +144,9 @@ export interface EventResponse {
   ageLimit?: string;
   endTime?: string;
   price?: string;
+  entryType?: 'free' | 'ticketed';
+  ticketingMode?: 'none' | 'free' | 'paid';
+  hasReservableAreas?: boolean;
   description?: string;
   tourProvider?: string;
   marzipanoScenes?: MarzipanoScene[] | null;
@@ -152,7 +157,6 @@ export interface TableResponse {
   id: string;
   eventId?: string;
   name: string;
-  zone?: string;
   areaId?: string;
   areaName?: string;
   capacity: number;

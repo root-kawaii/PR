@@ -1,7 +1,8 @@
 // src/models.rs
 pub mod event;
 pub use event::{
-    is_valid_event_image_url, CreateEventRequest, Event, EventResponse, UpdateEventRequest,
+    is_valid_event_image_url, normalize_entry_type, normalize_event_price,
+    normalize_ticketing_mode, CreateEventRequest, Event, EventResponse, UpdateEventRequest,
 };
 
 pub mod payment;
@@ -23,8 +24,9 @@ pub mod club_owner;
 
 pub mod ticket;
 pub use ticket::{
-    CreateTicketRequest, EventSummary, Ticket, TicketResponse, TicketWithEventResponse,
-    UpdateTicketRequest,
+    ClaimFreeTicketRequest, ConfirmTicketPurchaseRequest, CreateTicketPurchaseIntentRequest,
+    CreateTicketRequest, EventSummary, Ticket, TicketPurchaseIntentResponse, TicketResponse,
+    TicketWithEventResponse, UpdateTicketRequest,
 };
 
 pub mod table;

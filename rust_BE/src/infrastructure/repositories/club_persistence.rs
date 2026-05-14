@@ -9,6 +9,13 @@ const CLUB_COLUMNS: &str = "id, name, subtitle, image, address, phone_number, we
      stripe_payouts_enabled, platform_commission_percent, platform_commission_fixed_fee, \
      marzipano_config, created_at, updated_at";
 
+#[derive(Clone, Debug)]
+pub struct ClubEventFallbackData {
+    pub name: String,
+    pub address: Option<String>,
+    pub marzipano_config: Option<JsonValue>,
+}
+
 /// Get all clubs
 pub async fn get_all_clubs(pool: &PgPool) -> Result<Vec<Club>> {
     let query = format!("SELECT {CLUB_COLUMNS} FROM clubs ORDER BY name ASC");
@@ -123,25 +130,33 @@ pub async fn update_club(
     Ok(club)
 }
 
-/// Batch-fetch `marzipano_config` for the given club ids.
-/// Returns only entries whose `marzipano_config` is non-null, so the caller can
-/// detect "missing tour" via map lookup. Empty input returns an empty map without
-/// hitting the DB.
-pub async fn get_marzipano_configs_for_clubs(
+pub async fn get_event_fallback_data_for_clubs(
     pool: &PgPool,
     club_ids: &[Uuid],
-) -> Result<HashMap<Uuid, JsonValue>> {
+) -> Result<HashMap<Uuid, ClubEventFallbackData>> {
     if club_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows: Vec<(Uuid, JsonValue)> = sqlx::query_as(
-        "SELECT id, marzipano_config FROM clubs \
-         WHERE id = ANY($1) AND marzipano_config IS NOT NULL",
-    )
-    .bind(club_ids)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().collect())
+
+    let rows: Vec<(Uuid, String, Option<String>, Option<JsonValue>)> =
+        sqlx::query_as("SELECT id, name, address, marzipano_config FROM clubs WHERE id = ANY($1)")
+            .bind(club_ids)
+            .fetch_all(pool)
+            .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, name, address, marzipano_config)| {
+            (
+                id,
+                ClubEventFallbackData {
+                    name,
+                    address,
+                    marzipano_config,
+                },
+            )
+        })
+        .collect())
 }
 
 /// Overwrite the club's `marzipano_config`.

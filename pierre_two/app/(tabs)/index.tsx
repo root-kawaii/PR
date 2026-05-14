@@ -17,11 +17,12 @@ import { Calendar } from "react-native-calendars";
 import { EventCard } from "@/components/home/EventCard";
 import { EventDetailModal } from "@/components/event/EventDetailModal";
 import { TableReservationModal } from "@/components/reservation/TableReservationModal";
+import { TableReservationDetailModal } from "@/components/reservation/TableReservationDetailModal";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useEvents } from "@/hooks/useEvents";
 import { useModal } from "@/hooks/useModal";
 import { useTheme } from "@/context/ThemeContext";
-import { Event, Table } from "@/types";
+import { Event, Table, TableReservation } from "@/types";
 import { getEventDateKey } from "@/utils/events";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { trackEvent } from "@/config/analytics";
@@ -31,20 +32,10 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [selectedReservation, setSelectedReservation] = useState<TableReservation | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
-  const {
-    events,
-    loading,
-    refetch: refetchEvents,
-    loadMore,
-    loadingMore,
-    hasMore,
-  } = useEvents();
-  const eventModal = useModal();
-  const reservationModal = useModal();
-  const params = useLocalSearchParams();
 
   const toDateKey = (date: Date) => {
     const year = date.getFullYear();
@@ -52,6 +43,19 @@ export default function HomeScreen() {
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
+
+  const selectedDateKey = toDateKey(selectedDate);
+  const {
+    events,
+    loading,
+    refetch: refetchEvents,
+    loadMore,
+    loadingMore,
+    hasMore,
+  } = useEvents(selectedDateKey);
+  const eventModal = useModal();
+  const reservationModal = useModal();
+  const params = useLocalSearchParams();
 
   const parseDateKey = (dateStr: string) => {
     const [year, month, day] = dateStr.split("-").map(Number);
@@ -80,14 +84,14 @@ export default function HomeScreen() {
 
     trackEvent("home_events_loaded", {
       result_count: events.length,
-      selected_date: toDateKey(selectedDate),
+      selected_date: selectedDateKey,
       has_more: hasMore,
     });
-  }, [events.length, hasMore, loading, selectedDate]);
+  }, [events.length, hasMore, loading, selectedDateKey]);
 
   const onRefresh = async () => {
     trackEvent("home_events_refresh_requested", {
-      selected_date: toDateKey(selectedDate),
+      selected_date: selectedDateKey,
     });
     setRefreshing(true);
     await refetchEvents(true);
@@ -99,7 +103,7 @@ export default function HomeScreen() {
     trackEvent("event_card_selected", {
       event_id: event.id,
       event_title: event.title,
-      venue: event.venue,
+      venue: event.venue ?? null,
     });
     setSelectedEvent(event);
     eventModal.open();
@@ -438,6 +442,9 @@ export default function HomeScreen() {
         event={selectedEvent}
         onClose={eventModal.close}
         onReserveTable={handleReserveTable}
+        onReservationCreated={(reservation) => {
+          setSelectedReservation(reservation);
+        }}
       />
 
       <TableReservationModal
@@ -445,6 +452,12 @@ export default function HomeScreen() {
         table={selectedTable}
         event={selectedEvent}
         onClose={reservationModal.close}
+      />
+
+      <TableReservationDetailModal
+        visible={Boolean(selectedReservation)}
+        reservation={selectedReservation}
+        onClose={() => setSelectedReservation(null)}
       />
     </SafeAreaView>
   );

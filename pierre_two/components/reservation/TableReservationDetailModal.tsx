@@ -16,6 +16,12 @@ import { useTheme } from "@/context/ThemeContext";
 import { TableReservation, PaymentShare } from "@/types";
 import { API_URL } from "@/config/api";
 import { trackEvent } from "@/config/analytics";
+import {
+  formatEventDateTimeLabel,
+  getEventAddressLabel,
+  getEventVenueLabel,
+  parseCurrencyAmount,
+} from "@/utils/eventDisplay";
 
 type TableReservationDetailModalProps = {
   visible: boolean;
@@ -33,6 +39,9 @@ export const TableReservationDetailModal = ({
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [slotsFilled, setSlotsFilled] = useState(0);
   const [slotsTotal, setSlotsTotal] = useState(0);
+  const [totalCost, setTotalCost] = useState<string | null>(null);
+  const [amountPaid, setAmountPaid] = useState<string | null>(null);
+  const [amountRemaining, setAmountRemaining] = useState<string | null>(null);
   const [showReservationDetails, setShowReservationDetails] = useState(false);
   const [showPaymentSummary, setShowPaymentSummary] = useState(false);
 
@@ -51,18 +60,29 @@ export const TableReservationDetailModal = ({
     if (visible) {
       setShowReservationDetails(false);
       setShowPaymentSummary(false);
+      setPaymentShares([]);
+      setShareLink(null);
+      setSlotsFilled(0);
+      setSlotsTotal(0);
+      setTotalCost(null);
+      setAmountPaid(null);
+      setAmountRemaining(null);
     }
   }, [visible, reservation?.id]);
 
   if (!reservation) return null;
 
-  const totalAmount = parseFloat(reservation.totalAmount.replace(/[^0-9.]/g, ""));
-  const amountPaid = parseFloat(reservation.amountPaid.replace(/[^0-9.]/g, ""));
+  const resolvedTotalAmount = totalCost || reservation.totalAmount;
+  const resolvedAmountPaid = amountPaid || reservation.amountPaid;
+  const resolvedAmountRemaining = amountRemaining || reservation.amountRemaining;
+  const totalAmountValue = parseCurrencyAmount(resolvedTotalAmount);
+  const amountPaidValue = parseCurrencyAmount(resolvedAmountPaid);
   const tableAreaLabel =
     reservation.table?.areaName?.trim() ||
-    reservation.table?.zone?.trim() ||
     reservation.table?.name?.trim() ||
     "area riservata";
+  const eventVenueLabel = reservation.event ? getEventVenueLabel(reservation.event) : "";
+  const eventAddressLabel = reservation.event ? getEventAddressLabel(reservation.event) : undefined;
 
   const fetchPaymentStatus = async () => {
     try {
@@ -75,6 +95,9 @@ export const TableReservationDetailModal = ({
         setShareLink(data.shareLink || null);
         setSlotsFilled(data.slotsFilled ?? 0);
         setSlotsTotal(data.slotsTotal ?? 0);
+        setTotalCost(data.totalCost || null);
+        setAmountPaid(data.amountPaid || null);
+        setAmountRemaining(data.amountRemaining || null);
         trackEvent("reservation_payment_status_loaded", {
           reservation_id: reservation!.id,
           payment_share_count: (data.paymentShares || []).length,
@@ -157,7 +180,7 @@ export const TableReservationDetailModal = ({
   const guestShares = paymentShares.filter((s) => !s.isOwner);
   const paidGuestShares = guestShares.filter((s) => s.status === "paid");
   const reservationStatusHint =
-    reservation.status.toLowerCase() === "pending" && amountPaid > 0 && amountPaid < totalAmount
+    reservation.status.toLowerCase() === "pending" && amountPaidValue > 0 && amountPaidValue < totalAmountValue
       ? "La tua quota iniziale e' stata ricevuta. Mancano ancora le quote degli ospiti."
       : reservation.status.toLowerCase() === "confirmed" && guestShares.length > 0
         ? "Tutte le quote dell'area risultano pagate."
@@ -197,13 +220,23 @@ export const TableReservationDetailModal = ({
                   <ThemedText style={[styles.eventTitle, { color: theme.text }]}>
                     {reservation.event.title}
                   </ThemedText>
-                  <View style={styles.eventMeta}>
-                    <IconSymbol name="mappin" size={14} color={theme.textTertiary} />
-                    <ThemedText style={styles.eventVenue}>{reservation.event.venue}</ThemedText>
-                  </View>
+                  {eventVenueLabel ? (
+                    <View style={styles.eventMeta}>
+                      <IconSymbol name="mappin" size={14} color={theme.textTertiary} />
+                      <ThemedText style={styles.eventVenue}>{eventVenueLabel}</ThemedText>
+                    </View>
+                  ) : null}
+                  {eventAddressLabel ? (
+                    <View style={styles.eventMeta}>
+                      <IconSymbol name="location.fill" size={14} color={theme.textTertiary} />
+                      <ThemedText style={styles.eventVenue}>{eventAddressLabel}</ThemedText>
+                    </View>
+                  ) : null}
                   <View style={styles.eventMeta}>
                     <IconSymbol name="calendar" size={14} color={theme.textTertiary} />
-                    <ThemedText style={styles.eventDate}>{reservation.event.date}</ThemedText>
+                    <ThemedText style={styles.eventDate}>
+                      {formatEventDateTimeLabel(reservation.event)}
+                    </ThemedText>
                   </View>
                 </View>
               </View>
@@ -247,7 +280,7 @@ export const TableReservationDetailModal = ({
                   <View style={[styles.summaryTile, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
                     <ThemedText style={[styles.summaryTileLabel, { color: theme.textTertiary }]}>Rimanente</ThemedText>
                     <ThemedText style={[styles.summaryTileValue, { color: theme.primary }]}>
-                      {reservation.amountRemaining}
+                      {resolvedAmountRemaining}
                     </ThemedText>
                   </View>
                 </View>
@@ -289,17 +322,9 @@ export const TableReservationDetailModal = ({
                   <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
                     <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Tavolo</ThemedText>
                     <ThemedText style={[styles.infoValue, { color: theme.text }]}>
-                      {reservation.table.name}
+                      {tableAreaLabel}
                     </ThemedText>
                   </View>
-                  {reservation.table.zone && (
-                    <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
-                      <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Zona</ThemedText>
-                      <ThemedText style={[styles.infoValue, { color: theme.text }]}>
-                        {reservation.table.zone}
-                      </ThemedText>
-                    </View>
-                  )}
                   <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
                     <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Capacità</ThemedText>
                     <ThemedText style={[styles.infoValue, { color: theme.text }]}>
@@ -455,16 +480,16 @@ export const TableReservationDetailModal = ({
                 <View style={[styles.card, styles.accordionCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}>
                   <View style={styles.paymentRow}>
                     <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Importo totale</ThemedText>
-                    <ThemedText style={[styles.paymentValue, { color: theme.text }]}>{reservation.totalAmount}</ThemedText>
+                    <ThemedText style={[styles.paymentValue, { color: theme.text }]}>{resolvedTotalAmount}</ThemedText>
                   </View>
                   <View style={styles.paymentRow}>
-                    <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Già pagato</ThemedText>
-                    <ThemedText style={[styles.paymentValue, { color: theme.success }]}>{reservation.amountPaid}</ThemedText>
+                    <ThemedText style={[styles.paymentLabel, { color: theme.textTertiary }]}>Gia pagato</ThemedText>
+                    <ThemedText style={[styles.paymentValue, { color: theme.success }]}>{resolvedAmountPaid}</ThemedText>
                   </View>
                   <View style={[styles.divider, { backgroundColor: theme.border }]} />
                   <View style={styles.paymentRow}>
                     <ThemedText style={[styles.paymentLabelTotal, { color: theme.text }]}>Rimanente</ThemedText>
-                    <ThemedText style={[styles.paymentValueTotal, { color: theme.primary }]}>{reservation.amountRemaining}</ThemedText>
+                    <ThemedText style={[styles.paymentValueTotal, { color: theme.primary }]}>{resolvedAmountRemaining}</ThemedText>
                   </View>
 
                   <View style={styles.progressContainer}>
@@ -473,14 +498,14 @@ export const TableReservationDetailModal = ({
                         style={[
                           styles.progressFill,
                           {
-                            width: `${totalAmount > 0 ? Math.min((amountPaid / totalAmount) * 100, 100) : 0}%`,
+                            width: `${totalAmountValue > 0 ? Math.min((amountPaidValue / totalAmountValue) * 100, 100) : 0}%`,
                             backgroundColor: theme.success,
                           },
                         ]}
                       />
                     </View>
                     <ThemedText style={[styles.progressText, { color: theme.textTertiary }]}>
-                      {totalAmount > 0 ? Math.round((amountPaid / totalAmount) * 100) : 0}% pagato
+                      {totalAmountValue > 0 ? Math.round((amountPaidValue / totalAmountValue) * 100) : 0}% pagato
                     </ThemedText>
                   </View>
                 </View>
