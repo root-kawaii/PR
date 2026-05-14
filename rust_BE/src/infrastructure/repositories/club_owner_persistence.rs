@@ -183,14 +183,6 @@ pub async fn add_table_image(
     Ok(row)
 }
 
-pub async fn delete_table_image(pool: &PgPool, image_id: Uuid) -> Result<bool> {
-    let result = sqlx::query(r#"DELETE FROM table_images WHERE id = $1"#)
-        .bind(image_id)
-        .execute(pool)
-        .await?;
-    Ok(result.rows_affected() > 0)
-}
-
 /// Delete a table image only if it belongs to a table whose event belongs to `club_id`.
 pub async fn delete_table_image_for_club(
     pool: &PgPool,

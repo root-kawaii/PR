@@ -44,6 +44,7 @@ pub struct AnalyticsConfig {
 #[derive(Clone, Debug)]
 pub struct FeatureFlagsConfig {
     pub provider: String,
+    #[allow(dead_code)]
     pub bootstrap_flags_from_env: bool,
 }
 

@@ -19,7 +19,10 @@ pub fn router() -> Router<Arc<AppState>> {
             "/tickets/purchase/confirm",
             axum::routing::post(confirm_ticket_purchase),
         )
-        .route("/tickets/claim-free", axum::routing::post(claim_free_ticket))
+        .route(
+            "/tickets/claim-free",
+            axum::routing::post(claim_free_ticket),
+        )
         .route("/tickets", get(get_all_tickets).post(create_ticket))
         .route(
             "/tickets/:id",

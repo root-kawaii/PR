@@ -109,8 +109,7 @@ pub async fn get_all_events(
                     .await
                     .unwrap_or_default();
 
-            let mut responses =
-                event_responses_with_club_fallback(&state, events).await;
+            let mut responses = event_responses_with_club_fallback(&state, events).await;
             for r in responses.iter_mut() {
                 if let Ok(id) = Uuid::parse_str(&r.id) {
                     r.genres = genres_map.get(&id).cloned().unwrap_or_default();
@@ -221,18 +220,19 @@ pub async fn create_event(
 
     match event_persistence::create_event(&state.db_pool, payload).await {
         Ok(event) => {
-            let event = if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, event.id)
-                .await
-                .is_ok()
-            {
-                event_persistence::get_event_by_id(&state.db_pool, event.id)
+            let event =
+                if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, event.id)
                     .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or(event)
-            } else {
-                event
-            };
+                    .is_ok()
+                {
+                    event_persistence::get_event_by_id(&state.db_pool, event.id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or(event)
+                } else {
+                    event
+                };
             if !genre_ids.is_empty() {
                 let _ =
                     event_persistence::set_event_genres(&state.db_pool, event.id, &genre_ids).await;
@@ -279,18 +279,19 @@ pub async fn update_event(
 
     match event_persistence::update_event(&state.db_pool, event_id, payload).await {
         Ok(Some(event)) => {
-            let event = if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, event.id)
-                .await
-                .is_ok()
-            {
-                event_persistence::get_event_by_id(&state.db_pool, event.id)
+            let event =
+                if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, event.id)
                     .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or(event)
-            } else {
-                event
-            };
+                    .is_ok()
+                {
+                    event_persistence::get_event_by_id(&state.db_pool, event.id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or(event)
+                } else {
+                    event
+                };
             if let Some(ids) = genre_ids {
                 let _ = event_persistence::set_event_genres(&state.db_pool, event_id, &ids).await;
             }
@@ -357,11 +358,8 @@ pub(crate) async fn event_responses_with_club_fallback(
     let club_data = if club_ids.is_empty() {
         std::collections::HashMap::new()
     } else {
-        match club_persistence::get_event_fallback_data_for_clubs(
-            &state.read_db_pool,
-            &club_ids,
-        )
-        .await
+        match club_persistence::get_event_fallback_data_for_clubs(&state.read_db_pool, &club_ids)
+            .await
         {
             Ok(map) => map,
             Err(error) => {

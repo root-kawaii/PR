@@ -3,6 +3,7 @@ use sqlx::{PgPool, Result};
 use uuid::Uuid;
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 pub struct TicketWithEventRow {
     pub id: Uuid,
     pub event_id: Uuid,
@@ -36,23 +37,6 @@ pub async fn get_all_tickets(pool: &PgPool, limit: i64, offset: i64) -> Result<V
     )
     .bind(limit)
     .bind(offset)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(tickets)
-}
-
-/// Get tickets for a specific user
-pub async fn get_tickets_by_user_id(pool: &PgPool, user_id: Uuid) -> Result<Vec<Ticket>> {
-    let tickets = sqlx::query_as::<_, Ticket>(
-        r#"
-        SELECT id, event_id, user_id, ticket_code, ticket_type, price, status, purchase_date, qr_code, created_at, updated_at
-        FROM tickets
-        WHERE user_id = $1
-        ORDER BY purchase_date DESC
-        "#,
-    )
-    .bind(user_id)
     .fetch_all(pool)
     .await?;
 

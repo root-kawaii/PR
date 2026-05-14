@@ -130,27 +130,6 @@ pub async fn update_club(
     Ok(club)
 }
 
-/// Batch-fetch `marzipano_config` for the given club ids.
-/// Returns only entries whose `marzipano_config` is non-null, so the caller can
-/// detect "missing tour" via map lookup. Empty input returns an empty map without
-/// hitting the DB.
-pub async fn get_marzipano_configs_for_clubs(
-    pool: &PgPool,
-    club_ids: &[Uuid],
-) -> Result<HashMap<Uuid, JsonValue>> {
-    if club_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let rows: Vec<(Uuid, JsonValue)> = sqlx::query_as(
-        "SELECT id, marzipano_config FROM clubs \
-         WHERE id = ANY($1) AND marzipano_config IS NOT NULL",
-    )
-    .bind(club_ids)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().collect())
-}
-
 pub async fn get_event_fallback_data_for_clubs(
     pool: &PgPool,
     club_ids: &[Uuid],
@@ -159,12 +138,11 @@ pub async fn get_event_fallback_data_for_clubs(
         return Ok(HashMap::new());
     }
 
-    let rows: Vec<(Uuid, String, Option<String>, Option<JsonValue>)> = sqlx::query_as(
-        "SELECT id, name, address, marzipano_config FROM clubs WHERE id = ANY($1)",
-    )
-    .bind(club_ids)
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<(Uuid, String, Option<String>, Option<JsonValue>)> =
+        sqlx::query_as("SELECT id, name, address, marzipano_config FROM clubs WHERE id = ANY($1)")
+            .bind(club_ids)
+            .fetch_all(pool)
+            .await?;
 
     Ok(rows
         .into_iter()

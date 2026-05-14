@@ -18,14 +18,27 @@ pub async fn list_user_reservations_with_details(
     let event_results =
         table_repository::get_event_details_by_reservation_ids(pool, reservation_ids).await?;
 
-    let event_map: HashMap<Uuid, (Uuid, String, String, Option<String>, Option<String>, String, String)> = event_results
+    let event_map: HashMap<
+        Uuid,
+        (
+            Uuid,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            String,
+        ),
+    > = event_results
         .into_iter()
-        .map(|(res_id, event_id, title, venue, club_name, club_address, date, image)| {
-            (
-                res_id,
-                (event_id, title, venue, club_name, club_address, date, image),
-            )
-        })
+        .map(
+            |(res_id, event_id, title, venue, club_name, club_address, date, image)| {
+                (
+                    res_id,
+                    (event_id, title, venue, club_name, club_address, date, image),
+                )
+            },
+        )
         .collect();
 
     Ok(reservation_results
@@ -58,18 +71,17 @@ pub async fn list_user_reservations_with_details(
                     event_club_address,
                     event_date,
                     event_image,
-                ) =
-                    event_map.get(&res_id).cloned().unwrap_or_else(|| {
-                        (
-                            Uuid::nil(),
-                            String::from("Unknown Event"),
-                            String::new(),
-                            None,
-                            None,
-                            String::new(),
-                            String::new(),
-                        )
-                    });
+                ) = event_map.get(&res_id).cloned().unwrap_or_else(|| {
+                    (
+                        Uuid::nil(),
+                        String::from("Unknown Event"),
+                        String::new(),
+                        None,
+                        None,
+                        String::new(),
+                        String::new(),
+                    )
+                });
 
                 TableReservationWithDetailsResponse {
                     id: res_id.to_string(),

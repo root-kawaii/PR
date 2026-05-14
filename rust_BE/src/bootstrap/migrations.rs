@@ -26,7 +26,12 @@ pub async fn run_startup_migrations(pool: &PgPool) -> Result<usize, String> {
 
     let migrations_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../DB/migrations");
     let mut migration_paths = fs::read_dir(&migrations_dir)
-        .map_err(|error| format!("failed to read migrations directory {:?}: {error}", migrations_dir))?
+        .map_err(|error| {
+            format!(
+                "failed to read migrations directory {:?}: {error}",
+                migrations_dir
+            )
+        })?
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
         .filter(|path| path.extension().is_some_and(|ext| ext == "sql"))
         .collect::<Vec<_>>();
@@ -43,16 +48,14 @@ pub async fn run_startup_migrations(pool: &PgPool) -> Result<usize, String> {
         .map(|row| row.get::<String, _>("filename"))
         .collect::<HashSet<_>>();
 
-    let migration_filter = env::var("STARTUP_MIGRATION_FILES")
-        .ok()
-        .map(|value| {
-            value
-                .split(',')
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToOwned::to_owned)
-                .collect::<HashSet<_>>()
-        });
+    let migration_filter = env::var("STARTUP_MIGRATION_FILES").ok().map(|value| {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<HashSet<_>>()
+    });
 
     let mut applied_count = 0;
 

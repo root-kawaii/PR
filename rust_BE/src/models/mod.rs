@@ -33,13 +33,12 @@ pub mod table;
 pub use table::{
     AddPaymentToReservationRequest, CreateCheckoutRequest, CreateCheckoutResponse,
     CreateClubTableRequest, CreatePaymentIntentResponse, CreateSplitPaymentIntentRequest,
-    CreateTableReservationRequest, LinkTicketToReservationRequest, PaymentLinkPreviewResponse,
     CreateSplitReservationRequest, CreateSplitReservationResponse, CreateTableRequest,
-    PaymentShareResponse,
-    ReservationGuest, ReservationPaymentShare, ReservationPaymentStatusResponse, Table,
-    TableReservation, TableReservationResponse, TableReservationWithDetailsResponse,
-    TableReservationsResponse, TableReservationsWithDetailsResponse, TableResponse, TableSummary,
-    TablesResponse, UpdateTableRequest, UpdateTableReservationRequest,
+    CreateTableReservationRequest, LinkTicketToReservationRequest, PaymentLinkPreviewResponse,
+    ReservationPaymentShare, ReservationPaymentStatusResponse, Table, TableReservation,
+    TableReservationResponse, TableReservationWithDetailsResponse, TableReservationsResponse,
+    TableReservationsWithDetailsResponse, TableResponse, TableSummary, TablesResponse,
+    UpdateTableRequest, UpdateTableReservationRequest,
 };
 
 pub mod area;
@@ -48,7 +47,7 @@ pub use area::{Area, AreaResponse, AssignAreaRequest, CreateAreaRequest, UpdateA
 use serde::Deserialize;
 
 #[allow(unused_imports)]
-pub use crate::api::errors::{ApiError, AppError, AppResult};
+pub use crate::api::errors::ApiError;
 #[allow(unused_imports)]
 pub use crate::bootstrap::state::AppState;
 

@@ -140,21 +140,6 @@ pub struct CreateTableReservationRequest {
     pub special_requests: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, Serialize)]
-pub struct CreateReservationWithPaymentRequest {
-    pub table_id: String,
-    pub event_id: String,
-    pub owner_user_id: String,
-    pub guest_phone_numbers: Vec<String>,
-    pub payment_amount: f64,
-    pub stripe_payment_intent_id: String,
-    pub contact_name: String,
-    pub contact_email: String,
-    pub contact_phone: String,
-    pub special_requests: Option<String>,
-    pub idempotency_key: Option<Uuid>,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct UpdateTableReservationRequest {
     pub status: Option<String>,
@@ -270,15 +255,6 @@ pub struct TableReservationsWithDetailsResponse {
 // Payment tracking
 // ============================================================================
 
-#[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
-pub struct TableReservationPayment {
-    pub id: Uuid,
-    pub reservation_id: Uuid,
-    pub payment_id: Uuid,
-    pub amount: Decimal,
-    pub created_at: DateTime<Utc>,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct AddPaymentToReservationRequest {
     pub payment_id: String,
@@ -289,14 +265,6 @@ pub struct AddPaymentToReservationRequest {
 // Ticket linking
 // ============================================================================
 
-#[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
-pub struct TableReservationTicket {
-    pub id: Uuid,
-    pub reservation_id: Uuid,
-    pub ticket_id: Uuid,
-    pub created_at: DateTime<Utc>,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct LinkTicketToReservationRequest {
     pub ticket_id: String,
@@ -305,15 +273,6 @@ pub struct LinkTicketToReservationRequest {
 // ============================================================================
 // Payment Intent Creation (for Stripe)
 // ============================================================================
-
-#[derive(Debug, Deserialize, Clone, Serialize)]
-pub struct CreatePaymentIntentRequest {
-    pub table_id: String,
-    pub event_id: String,
-    pub owner_user_id: String,
-    pub guest_phone_numbers: Vec<String>,
-    pub idempotency_key: Option<Uuid>,
-}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -348,19 +307,6 @@ pub struct ReservationPaymentShare {
     pub stripe_checkout_session_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, FromRow)]
-pub struct ReservationGuest {
-    pub id: Uuid,
-    pub reservation_id: Uuid,
-    pub user_id: Option<Uuid>,
-    pub phone_number: String,
-    pub email: Option<String>,
-    pub name: Option<String>,
-    pub added_by: Uuid,
-    pub ticket_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
 }
 
 // ============================================================================

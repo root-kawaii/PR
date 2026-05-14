@@ -426,10 +426,7 @@ pub async fn get_my_club_tables(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let table_responses: Vec<TableResponse> = event_tables
-        .into_iter()
-        .map(|t| t.into())
-        .collect();
+    let table_responses: Vec<TableResponse> = event_tables.into_iter().map(|t| t.into()).collect();
     Ok(Json(TablesResponse {
         tables: table_responses,
     }))
@@ -1573,8 +1570,7 @@ pub async fn update_club_event(
             payload.price.as_deref(),
         ));
     }
-    if payload.price.is_some() || payload.entry_type.is_some() || payload.ticketing_mode.is_some()
-    {
+    if payload.price.is_some() || payload.entry_type.is_some() || payload.ticketing_mode.is_some() {
         payload.ticketing_mode = Some(normalize_ticketing_mode(
             payload.ticketing_mode.clone(),
             payload.entry_type.as_deref(),
@@ -1587,17 +1583,18 @@ pub async fn update_club_event(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let updated = if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, updated.id)
-        .await
-        .is_ok()
-    {
-        event_persistence::get_event_by_id(&state.db_pool, updated.id)
+    let updated =
+        if event_persistence::refresh_event_has_reservable_areas(&state.db_pool, updated.id)
             .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-            .unwrap_or(updated)
-    } else {
-        updated
-    };
+            .is_ok()
+        {
+            event_persistence::get_event_by_id(&state.db_pool, updated.id)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .unwrap_or(updated)
+        } else {
+            updated
+        };
 
     if let Some(ids) = genre_ids {
         event_persistence::set_event_genres(&state.db_pool, event_uuid, &ids)
@@ -1747,7 +1744,11 @@ pub async fn upload_panorama_handler(
     let mut content_type = String::from("image/jpeg");
     let mut file_bytes: Vec<u8> = Vec::new();
 
-    while let Some(field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+    {
         let field_name = field.name().unwrap_or("").to_string();
         if field_name == "file" {
             if let Some(name) = field.file_name() {
@@ -1756,7 +1757,11 @@ pub async fn upload_panorama_handler(
             if let Some(ct) = field.content_type() {
                 content_type = ct.to_string();
             }
-            file_bytes = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?.to_vec();
+            file_bytes = field
+                .bytes()
+                .await
+                .map_err(|_| StatusCode::BAD_REQUEST)?
+                .to_vec();
         }
     }
 

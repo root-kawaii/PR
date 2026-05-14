@@ -13,8 +13,8 @@ use axum::{
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 use stripe::{CreatePaymentIntent, Currency, PaymentIntent, PaymentIntentStatus};
 use tracing::warn;
 use uuid::Uuid;
@@ -110,14 +110,23 @@ pub async fn create_ticket_purchase_intent(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateTicketPurchaseIntentRequest>,
 ) -> Result<Json<TicketPurchaseIntentResponse>, (StatusCode, String)> {
-    let user_id = Uuid::parse_str(&claims.sub)
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Utente non autorizzato".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Utente non autorizzato".to_string(),
+        )
+    })?;
     let event_id = Uuid::parse_str(&payload.event_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
 
     let event = crate::application::event_service::get_event_by_id(&state.read_db_pool, event_id)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string()))?
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore del database".to_string(),
+            )
+        })?
         .ok_or((StatusCode::NOT_FOUND, "Evento non trovato".to_string()))?;
 
     let ticketing_mode = resolve_event_ticketing_mode(&event);
@@ -128,8 +137,10 @@ pub async fn create_ticket_purchase_intent(
         ));
     }
 
-    let ticket_price = parse_ticket_price(event.price.as_deref())
-        .ok_or((StatusCode::BAD_REQUEST, "Prezzo ticket non configurato".to_string()))?;
+    let ticket_price = parse_ticket_price(event.price.as_deref()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Prezzo ticket non configurato".to_string(),
+    ))?;
 
     let has_active_ticket: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM tickets WHERE event_id = $1 AND user_id = $2 AND status = 'active')",
@@ -141,12 +152,18 @@ pub async fn create_ticket_purchase_intent(
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string()))?;
 
     if has_active_ticket {
-        return Err((StatusCode::CONFLICT, "Hai gia un ticket attivo per questo evento".to_string()));
+        return Err((
+            StatusCode::CONFLICT,
+            "Hai gia un ticket attivo per questo evento".to_string(),
+        ));
     }
 
     let amount_cents = ((ticket_price.to_f64().unwrap_or(0.0) * 100.0).round()) as i64;
     if amount_cents <= 0 {
-        return Err((StatusCode::BAD_REQUEST, "Prezzo ticket non valido".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Prezzo ticket non valido".to_string(),
+        ));
     }
 
     let mut params = CreatePaymentIntent::new(amount_cents, Currency::EUR);
@@ -163,7 +180,12 @@ pub async fn create_ticket_purchase_intent(
 
     let club_connect_config = get_club_connect_config_for_event(&state.db_pool, event_id)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string()))?;
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore del database".to_string(),
+            )
+        })?;
     let connect_destination_for_on_behalf_of = club_connect_config
         .as_ref()
         .filter(|cfg| can_route_funds_to_connected_account(cfg))
@@ -218,14 +240,23 @@ pub async fn claim_free_ticket(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ClaimFreeTicketRequest>,
 ) -> Result<(StatusCode, Json<TicketResponse>), (StatusCode, String)> {
-    let user_id = Uuid::parse_str(&claims.sub)
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Utente non autorizzato".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Utente non autorizzato".to_string(),
+        )
+    })?;
     let event_id = Uuid::parse_str(&payload.event_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
 
     let event = crate::application::event_service::get_event_by_id(&state.read_db_pool, event_id)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string()))?
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore del database".to_string(),
+            )
+        })?
         .ok_or((StatusCode::NOT_FOUND, "Evento non trovato".to_string()))?;
 
     let ticketing_mode = resolve_event_ticketing_mode(&event);
@@ -264,7 +295,12 @@ pub async fn claim_free_ticket(
         },
     )
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Errore creazione ticket".to_string()))?;
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Errore creazione ticket".to_string(),
+        )
+    })?;
 
     Ok((StatusCode::CREATED, Json(ticket.into())))
 }
@@ -275,14 +311,23 @@ pub async fn confirm_ticket_purchase(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ConfirmTicketPurchaseRequest>,
 ) -> Result<(StatusCode, Json<TicketResponse>), (StatusCode, String)> {
-    let user_id = Uuid::parse_str(&claims.sub)
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Utente non autorizzato".to_string()))?;
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Utente non autorizzato".to_string(),
+        )
+    })?;
     let event_id = Uuid::parse_str(&payload.event_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "ID evento non valido".to_string()))?;
 
     let event = crate::application::event_service::get_event_by_id(&state.read_db_pool, event_id)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string()))?
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Errore del database".to_string(),
+            )
+        })?
         .ok_or((StatusCode::NOT_FOUND, "Evento non trovato".to_string()))?;
 
     let ticketing_mode = resolve_event_ticketing_mode(&event);
@@ -293,25 +338,41 @@ pub async fn confirm_ticket_purchase(
         ));
     }
 
-    let ticket_price = parse_ticket_price(event.price.as_deref())
-        .ok_or((StatusCode::BAD_REQUEST, "Prezzo ticket non configurato".to_string()))?;
+    let ticket_price = parse_ticket_price(event.price.as_deref()).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Prezzo ticket non configurato".to_string(),
+    ))?;
 
     let expected_amount = ((ticket_price.to_f64().unwrap_or(0.0) * 100.0).round()) as i64;
-    let payment_intent_id: stripe::PaymentIntentId = payload
-        .stripe_payment_intent_id
-        .parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "PaymentIntent non valido".to_string()))?;
+    let payment_intent_id: stripe::PaymentIntentId =
+        payload.stripe_payment_intent_id.parse().map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "PaymentIntent non valido".to_string(),
+            )
+        })?;
 
     let payment_intent = PaymentIntent::retrieve(&state.stripe_client, &payment_intent_id, &[])
         .await
-        .map_err(|_| (StatusCode::BAD_GATEWAY, "Errore del servizio di pagamento".to_string()))?;
+        .map_err(|_| {
+            (
+                StatusCode::BAD_GATEWAY,
+                "Errore del servizio di pagamento".to_string(),
+            )
+        })?;
 
     if payment_intent.status != PaymentIntentStatus::Succeeded {
-        return Err((StatusCode::BAD_REQUEST, "Pagamento non completato".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Pagamento non completato".to_string(),
+        ));
     }
 
     if payment_intent.amount != expected_amount {
-        return Err((StatusCode::BAD_REQUEST, "Importo ticket non corrispondente".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Importo ticket non corrispondente".to_string(),
+        ));
     }
 
     let has_active_ticket: bool = sqlx::query_scalar(
@@ -324,7 +385,10 @@ pub async fn confirm_ticket_purchase(
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Errore del database".to_string()))?;
 
     if has_active_ticket {
-        return Err((StatusCode::CONFLICT, "Hai gia un ticket attivo per questo evento".to_string()));
+        return Err((
+            StatusCode::CONFLICT,
+            "Hai gia un ticket attivo per questo evento".to_string(),
+        ));
     }
 
     let ticket = ticket_persistence::create_ticket(
@@ -339,7 +403,12 @@ pub async fn confirm_ticket_purchase(
         },
     )
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Errore creazione ticket".to_string()))?;
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Errore creazione ticket".to_string(),
+        )
+    })?;
 
     Ok((StatusCode::CREATED, Json(ticket.into())))
 }

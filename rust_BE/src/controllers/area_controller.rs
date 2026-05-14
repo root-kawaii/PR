@@ -66,15 +66,10 @@ pub async fn create_area(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let price = Decimal::from_f64_retain(req.price).ok_or(StatusCode::BAD_REQUEST)?;
-    let area = area_persistence::create_area(
-        &state.db_pool,
-        club.id,
-        req.name,
-        price,
-        req.description,
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let area =
+        area_persistence::create_area(&state.db_pool, club.id, req.name, price, req.description)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok((StatusCode::CREATED, Json(AreaResponse::from(area))))
 }
@@ -107,15 +102,10 @@ pub async fn update_area(
         .map(|p| Decimal::from_f64_retain(p).ok_or(StatusCode::BAD_REQUEST))
         .transpose()?;
 
-    let area = area_persistence::update_area(
-        &state.db_pool,
-        area_uuid,
-        req.name,
-        price,
-        req.description,
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let area =
+        area_persistence::update_area(&state.db_pool, area_uuid, req.name, price, req.description)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(AreaResponse::from(area)))
 }
