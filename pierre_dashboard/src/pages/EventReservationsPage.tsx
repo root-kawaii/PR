@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -11,6 +11,9 @@ import {
   FileText,
   Pencil,
   Trash2,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../context/AuthContext';
@@ -98,6 +101,35 @@ function getReservationPaymentNote(reservation: OwnerReservation): string | null
   return null;
 }
 
+// Default gender split: 50/50 if even, the extra unit goes to male if odd.
+function defaultGenderSplit(total: number): { male: number; female: number } {
+  const safe = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0;
+  const male = Math.ceil(safe / 2);
+  const female = safe - male;
+  return { male, female };
+}
+
+type SortKey =
+  | 'reservationCode'
+  | 'contactName'
+  | 'table'
+  | 'numPeople'
+  | 'genderRatio'
+  | 'amountPaid'
+  | 'status'
+  | 'createdAt';
+type SortDir = 'asc' | 'desc';
+
+const SORTABLE_COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
+  { key: 'reservationCode', label: 'Codice' },
+  { key: 'contactName', label: 'Cliente' },
+  { key: 'table', label: 'Tavolo' },
+  { key: 'numPeople', label: 'Persone' },
+  { key: 'genderRatio', label: 'M/F' },
+  { key: 'amountPaid', label: 'Importo' },
+  { key: 'status', label: 'Stato' },
+];
+
 export default function EventReservationsPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { token } = useAuth();
@@ -106,11 +138,21 @@ export default function EventReservationsPage() {
     `/owner/events/${eventId}/reservations`,
   );
   const { data: tablesData } = useFetch<TablesData>(`/owner/events/${eventId}/tables`);
-  const { data: statsData } = useFetch<EventReservationStats>(`/owner/events/${eventId}/stats`);
+  const { data: statsData, refetch: refetchStats } = useFetch<EventReservationStats>(
+    `/owner/events/${eventId}/stats`,
+  );
   const { data: eventData } = useFetch<EventResponse>(`/events/${eventId}`);
+
+  const refreshAll = () => {
+    refetch();
+    refetchStats();
+  };
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterAreaId, setFilterAreaId] = useState<string>('all');
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -121,8 +163,7 @@ export default function EventReservationsPage() {
   const [formPhone, setFormPhone] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formNumPeople, setFormNumPeople] = useState('1');
-  const [formMaleCount, setFormMaleCount] = useState('0');
-  const [formFemaleCount, setFormFemaleCount] = useState('0');
+  const [formMaleCount, setFormMaleCount] = useState(1);
   const [formNotes, setFormNotes] = useState('');
 
   const [editTableId, setEditTableId] = useState('');
@@ -130,15 +171,26 @@ export default function EventReservationsPage() {
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editNumPeople, setEditNumPeople] = useState('1');
-  const [editMaleCount, setEditMaleCount] = useState('0');
-  const [editFemaleCount, setEditFemaleCount] = useState('0');
+  const [editMaleCount, setEditMaleCount] = useState(0);
   const [editStatus, setEditStatus] = useState<'pending' | 'confirmed' | 'completed' | 'cancelled'>('pending');
   const [editNotes, setEditNotes] = useState('');
 
-  const reservations = reservationsData ?? [];
-  const tables = tablesData?.tables ?? [];
+  const reservations = useMemo(() => reservationsData ?? [], [reservationsData]);
+  const tables = useMemo(() => tablesData?.tables ?? [], [tablesData]);
 
   const getTable = (tableId: string) => tables.find(t => t.id === tableId);
+
+  const areaOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of tables) {
+      if (t.areaId && t.areaName) {
+        map.set(t.areaId, t.areaName);
+      }
+    }
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name, 'it'),
+    );
+  }, [tables]);
 
   useEffect(() => {
     if (loading || !eventId) {
@@ -151,28 +203,85 @@ export default function EventReservationsPage() {
     });
   }, [eventId, loading, reservations.length]);
 
-  const filtered = reservations.filter((reservation) => {
-    const table = getTable(reservation.tableId);
-    const tableLabel = table?.areaName ?? table?.zone ?? table?.name ?? '';
-    const matchesSearch =
-      search === '' ||
-      reservation.contactName.toLowerCase().includes(search.toLowerCase()) ||
-      reservation.reservationCode.toLowerCase().includes(search.toLowerCase()) ||
-      tableLabel.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || reservation.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return reservations.filter((reservation) => {
+      const table = getTable(reservation.tableId);
+      const tableLabel = table?.areaName ?? table?.name ?? '';
+      const matchesSearch =
+        needle === '' ||
+        reservation.contactName.toLowerCase().includes(needle) ||
+        reservation.reservationCode.toLowerCase().includes(needle) ||
+        tableLabel.toLowerCase().includes(needle);
+      const matchesStatus = filterStatus === 'all' || reservation.status === filterStatus;
+      const matchesArea = filterAreaId === 'all' || table?.areaId === filterAreaId;
+      return matchesSearch && matchesStatus && matchesArea;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservations, search, filterStatus, filterAreaId, tables]);
 
-  const validateGenderCounts = (numPeople: number, maleCount: number, femaleCount: number) => {
-    if (maleCount < 0 || femaleCount < 0) {
-      return 'I contatori M/F non possono essere negativi.';
+  const sorted = useMemo(() => {
+    if (!sortKey) return filtered;
+    const dir = sortDir === 'asc' ? 1 : -1;
+
+    const valueFor = (r: OwnerReservation): string | number => {
+      switch (sortKey) {
+        case 'reservationCode':
+          return r.reservationCode.toLowerCase();
+        case 'contactName':
+          return r.contactName.toLowerCase();
+        case 'table': {
+          const t = getTable(r.tableId);
+          const area = t?.areaName ?? '';
+          return `${area} · ${t?.name ?? ''}`.toLowerCase();
+        }
+        case 'numPeople':
+          return r.numPeople;
+        case 'genderRatio':
+          return r.maleGuestCount * 1000 + r.femaleGuestCount;
+        case 'amountPaid':
+          return parseEuroAmount(r.amountPaid);
+        case 'status':
+          return r.status;
+        case 'createdAt':
+          return r.createdAt;
+      }
+    };
+
+    return [...filtered].sort((a, b) => {
+      const va = valueFor(a);
+      const vb = valueFor(b);
+      if (typeof va === 'number' && typeof vb === 'number') {
+        return (va - vb) * dir;
+      }
+      return String(va).localeCompare(String(vb), 'it', { numeric: true }) * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, sortKey, sortDir, tables]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir('asc');
+      return;
     }
-
-    if (maleCount + femaleCount > numPeople) {
-      return 'La somma di maschi e femmine non puo superare il totale persone.';
+    if (sortDir === 'asc') {
+      setSortDir('desc');
+      return;
     }
+    setSortKey(null);
+    setSortDir('asc');
+  };
 
-    return null;
+  const renderSortIcon = (key: SortKey) => {
+    if (sortKey !== key) {
+      return <ArrowUpDown size={12} className="text-gray-300 group-hover:text-gray-400" />;
+    }
+    return sortDir === 'asc' ? (
+      <ArrowUp size={12} className="text-gray-700" />
+    ) : (
+      <ArrowDown size={12} className="text-gray-700" />
+    );
   };
 
   const resetForm = () => {
@@ -181,8 +290,7 @@ export default function EventReservationsPage() {
     setFormPhone('');
     setFormEmail('');
     setFormNumPeople('1');
-    setFormMaleCount('0');
-    setFormFemaleCount('0');
+    setFormMaleCount(1);
     setFormNotes('');
   };
 
@@ -193,8 +301,7 @@ export default function EventReservationsPage() {
     setEditPhone(reservation.contactPhone);
     setEditEmail(reservation.contactEmail);
     setEditNumPeople(String(reservation.numPeople));
-    setEditMaleCount(String(reservation.maleGuestCount));
-    setEditFemaleCount(String(reservation.femaleGuestCount));
+    setEditMaleCount(reservation.maleGuestCount);
     setEditStatus(reservation.status);
     setEditNotes(reservation.manualNotes ?? reservation.specialRequests ?? '');
   };
@@ -218,17 +325,34 @@ export default function EventReservationsPage() {
     }
   };
 
+  const handleNumPeopleChange = (
+    raw: string,
+    setNum: (v: string) => void,
+    setMale: (v: number) => void,
+  ) => {
+    setNum(raw);
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setMale(defaultGenderSplit(parsed).male);
+    } else {
+      setMale(0);
+    }
+  };
+
   const handleCreateManual = async (e: FormEvent) => {
     e.preventDefault();
     const numPeople = parseInt(formNumPeople, 10);
-    const maleCount = parseInt(formMaleCount, 10);
-    const femaleCount = parseInt(formFemaleCount, 10);
-    const validationError = validateGenderCounts(numPeople, maleCount, femaleCount);
-
-    if (validationError) {
-      alert(validationError);
+    if (!Number.isFinite(numPeople) || numPeople < 1) {
+      alert('Inserire un numero di persone valido.');
       return;
     }
+    const tableCap = getTable(formTableId)?.capacity;
+    if (tableCap !== undefined && numPeople > tableCap) {
+      alert(`Il tavolo ha capienza ${tableCap}. Riduci il numero di persone o scegli un altro tavolo.`);
+      return;
+    }
+    const maleCount = Math.max(0, Math.min(numPeople, formMaleCount));
+    const femaleCount = numPeople - maleCount;
 
     setSubmitting(true);
     trackEvent('owner_manual_reservation_create_submitted', {
@@ -246,7 +370,7 @@ export default function EventReservationsPage() {
         body: JSON.stringify({
           table_id: formTableId,
           contact_name: formName,
-          contact_phone: formPhone || undefined,
+          contact_phone: formPhone.trim() || undefined,
           contact_email: formEmail || undefined,
           num_people: numPeople,
           manual_notes: formNotes || undefined,
@@ -261,7 +385,7 @@ export default function EventReservationsPage() {
       });
       resetForm();
       setShowForm(false);
-      refetch();
+      refreshAll();
     } catch (err) {
       trackEvent('owner_manual_reservation_create_failed', {
         event_id: eventId ?? null,
@@ -289,7 +413,7 @@ export default function EventReservationsPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error('Errore aggiornamento');
-      refetch();
+      refreshAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
@@ -305,7 +429,7 @@ export default function EventReservationsPage() {
     });
     try {
       await patchReservation(reservationId, { tableId });
-      refetch();
+      refreshAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
@@ -318,20 +442,24 @@ export default function EventReservationsPage() {
     if (!editingReservation) return;
 
     const numPeople = parseInt(editNumPeople, 10);
-    const maleCount = parseInt(editMaleCount, 10);
-    const femaleCount = parseInt(editFemaleCount, 10);
-    const validationError = validateGenderCounts(numPeople, maleCount, femaleCount);
-    if (validationError) {
-      alert(validationError);
+    if (!Number.isFinite(numPeople) || numPeople < 1) {
+      alert('Inserire un numero di persone valido.');
       return;
     }
+    const tableCap = getTable(editTableId)?.capacity;
+    if (tableCap !== undefined && numPeople > tableCap) {
+      alert(`Il tavolo ha capienza ${tableCap}. Riduci il numero di persone o scegli un altro tavolo.`);
+      return;
+    }
+    const maleCount = Math.max(0, Math.min(numPeople, editMaleCount));
+    const femaleCount = numPeople - maleCount;
 
     setUpdatingId(editingReservation.id);
     try {
       await patchReservation(editingReservation.id, {
         tableId: editTableId,
         contactName: editName,
-        contactPhone: editPhone,
+        contactPhone: editPhone.trim() || undefined,
         contactEmail: editEmail || undefined,
         numPeople,
         maleGuestCount: maleCount,
@@ -340,7 +468,7 @@ export default function EventReservationsPage() {
         manualNotes: editNotes || undefined,
       });
       closeEditModal();
-      refetch();
+      refreshAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
@@ -360,7 +488,7 @@ export default function EventReservationsPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Errore eliminazione');
-      refetch();
+      refreshAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
@@ -371,6 +499,42 @@ export default function EventReservationsPage() {
   if (loading) {
     return <div className={ui.helperText}>Caricamento prenotazioni...</div>;
   }
+
+  const formTableCapacity = getTable(formTableId)?.capacity;
+  const formNum = parseInt(formNumPeople, 10);
+  const formTotal = Number.isFinite(formNum) && formNum > 0 ? formNum : 0;
+  const formMale = Math.max(0, Math.min(formTotal, formMaleCount));
+  const formFemale = formTotal - formMale;
+
+  const editTableCapacity = getTable(editTableId)?.capacity;
+  const editNum = parseInt(editNumPeople, 10);
+  const editTotal = Number.isFinite(editNum) && editNum > 0 ? editNum : 0;
+  const editMale = Math.max(0, Math.min(editTotal, editMaleCount));
+  const editFemale = editTotal - editMale;
+
+  const handleFormTableChange = (tableId: string) => {
+    setFormTableId(tableId);
+    const cap = tables.find(t => t.id === tableId)?.capacity;
+    if (cap !== undefined) {
+      const current = parseInt(formNumPeople, 10);
+      if (Number.isFinite(current) && current > cap) {
+        setFormNumPeople(String(cap));
+        setFormMaleCount(defaultGenderSplit(cap).male);
+      }
+    }
+  };
+
+  const handleEditTableChange = (tableId: string) => {
+    setEditTableId(tableId);
+    const cap = tables.find(t => t.id === tableId)?.capacity;
+    if (cap !== undefined) {
+      const current = parseInt(editNumPeople, 10);
+      if (Number.isFinite(current) && current > cap) {
+        setEditNumPeople(String(cap));
+        setEditMaleCount(defaultGenderSplit(cap).male);
+      }
+    }
+  };
 
   return (
     <div>
@@ -397,7 +561,7 @@ export default function EventReservationsPage() {
       </div>
 
       {statsData && (
-        <div className="mb-4 grid gap-3 sm:grid-cols-4">
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <SectionCard className="p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide">Prenotazioni</p>
             <p className="mt-1 text-2xl font-semibold text-gray-900">{statsData.totalReservations}</p>
@@ -410,6 +574,12 @@ export default function EventReservationsPage() {
             <p className="text-xs text-gray-500 uppercase tracking-wide">M/F</p>
             <p className="mt-1 text-2xl font-semibold text-gray-900">
               {statsData.maleGuests} / {statsData.femaleGuests}
+            </p>
+          </SectionCard>
+          <SectionCard className="p-4">
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Incasso previsto</p>
+            <p className="mt-1 text-2xl font-semibold text-gray-900">
+              {parseEuroAmount(statsData.totalAmount).toFixed(2)} €
             </p>
           </SectionCard>
           <SectionCard className="p-4">
@@ -433,6 +603,16 @@ export default function EventReservationsPage() {
             />
           </div>
           <select
+            value={filterAreaId}
+            onChange={e => setFilterAreaId(e.target.value)}
+            className={ui.select}
+          >
+            <option value="all">Tutte le aree</option>
+            {areaOptions.map((area) => (
+              <option key={area.id} value={area.id}>{area.name}</option>
+            ))}
+          </select>
+          <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
             className={ui.select}
@@ -447,17 +627,17 @@ export default function EventReservationsPage() {
       </SectionCard>
 
       <div className={`mb-4 flex gap-4 text-sm text-gray-500 ${ui.tabularNums}`}>
-        <span>{filtered.length} prenotazioni</span>
-        <span>{filtered.reduce((sum, reservation) => sum + reservation.numPeople, 0)} persone totali</span>
+        <span>{sorted.length} prenotazioni</span>
+        <span>{sorted.reduce((sum, reservation) => sum + reservation.numPeople, 0)} persone totali</span>
       </div>
 
-      {!filtered.length ? (
+      {!sorted.length ? (
         <EmptyState
           title={reservations.length === 0 ? 'Nessuna prenotazione registrata' : 'Nessun risultato'}
           description={
             reservations.length === 0
               ? 'Per questa serata non ci sono ancora prenotazioni. Puoi inserirne una manualmente.'
-              : 'Nessuna prenotazione corrisponde ai filtri attivi. Prova a modificare ricerca o stato.'
+              : 'Nessuna prenotazione corrisponde ai filtri attivi. Prova a modificare ricerca, area o stato.'
           }
         />
       ) : (
@@ -466,19 +646,23 @@ export default function EventReservationsPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className={ui.tableHeader}>Codice</th>
-                  <th className={ui.tableHeader}>Cliente</th>
-                  <th className={ui.tableHeader}>Tavolo</th>
-                  <th className={ui.tableHeader}>Persone</th>
-                  <th className={ui.tableHeader}>M/F</th>
-                  <th className={ui.tableHeader}>Importo</th>
-                  <th className={ui.tableHeader}>Stato</th>
+                  {SORTABLE_COLUMNS.map((col) => (
+                    <th key={col.key} className={ui.tableHeader}>
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(col.key)}
+                        className="group inline-flex items-center gap-1 hover:text-gray-900"
+                      >
+                        {col.label}
+                        {renderSortIcon(col.key)}
+                      </button>
+                    </th>
+                  ))}
                   <th className={ui.tableHeader}></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((reservation) => {
-                  const table = getTable(reservation.tableId);
+                {sorted.map((reservation) => {
                   return (
                     <tr
                       key={reservation.id}
@@ -511,13 +695,10 @@ export default function EventReservationsPage() {
                         >
                           {tables.map((item) => (
                             <option key={item.id} value={item.id}>
-                              {item.areaName ?? item.zone ?? item.name} · {item.name}
+                              {item.areaName ?? item.name} · {item.name} — cap. {item.capacity}
                             </option>
                           ))}
                         </select>
-                        {table?.areaName && (
-                          <p className="mt-1 text-xs text-gray-400">{table.areaName}</p>
-                        )}
                       </td>
                       <td className={`${ui.tableCell} ${ui.tabularNums}`}>{reservation.numPeople}</td>
                       <td className={`${ui.tableCell} ${ui.tabularNums}`}>
@@ -541,16 +722,19 @@ export default function EventReservationsPage() {
                           disabled={updatingId === reservation.id}
                           value={reservation.status}
                           onChange={e => handleStatusChange(reservation.id, e.target.value)}
-                          className={`${ui.select} min-h-8 py-1.5 text-xs`}
+                          className={`${ui.select} min-h-8 py-1.5 text-xs font-medium ${STATUS_COLORS[reservation.status] ?? 'bg-gray-100 text-gray-600'}`}
+                          title={getReservationStatusLabel(reservation)}
                         >
                           <option value="pending">In attesa</option>
                           <option value="confirmed">Prenotato</option>
                           <option value="completed">Accesso effettuato</option>
                           <option value="cancelled">Rifiutato</option>
                         </select>
-                        <span className={`mt-1 inline-block px-2 py-1 text-xs rounded-full font-medium ${STATUS_COLORS[reservation.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {getReservationStatusLabel(reservation)}
-                        </span>
+                        {getReservationStatusLabel(reservation) !== STATUS_LABELS[reservation.status] && (
+                          <span className="mt-1 inline-block text-xs text-amber-600">
+                            {getReservationStatusLabel(reservation)}
+                          </span>
+                        )}
                       </td>
                       <td className={ui.tableCell}>
                         <div className="flex items-center justify-end gap-2">
@@ -591,11 +775,11 @@ export default function EventReservationsPage() {
             <form onSubmit={handleCreateManual} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tavolo *</label>
-                <select value={formTableId} onChange={e => setFormTableId(e.target.value)} required className={ui.select}>
+                <select value={formTableId} onChange={e => handleFormTableChange(e.target.value)} required className={ui.select}>
                   <option value="">Seleziona tavolo</option>
                   {tables.map((table) => (
                     <option key={table.id} value={table.id}>
-                      {table.areaName ?? table.zone ?? table.name} · {table.name} — cap. {table.capacity}
+                      {table.areaName ?? table.name} · {table.name} — cap. {table.capacity}
                     </option>
                   ))}
                 </select>
@@ -613,9 +797,9 @@ export default function EventReservationsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     <Phone size={14} className="inline mr-1" />
-                    Telefono *
+                    Telefono
                   </label>
-                  <input value={formPhone} onChange={e => setFormPhone(e.target.value)} required placeholder="+39 333 1234567" className={ui.input} />
+                  <input value={formPhone} onChange={e => setFormPhone(e.target.value)} placeholder="+39 333 1234567" className={ui.input} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -626,19 +810,28 @@ export default function EventReservationsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Persone *</label>
-                  <input type="number" min="1" value={formNumPeople} onChange={e => setFormNumPeople(e.target.value)} required className={ui.input} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Maschi</label>
-                  <input type="number" min="0" value={formMaleCount} onChange={e => setFormMaleCount(e.target.value)} className={ui.input} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Femmine</label>
-                  <input type="number" min="0" value={formFemaleCount} onChange={e => setFormFemaleCount(e.target.value)} className={ui.input} />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Persone *
+                  {formTableCapacity !== undefined && (
+                    <span className="ml-1 text-xs text-gray-400 font-normal">(max {formTableCapacity})</span>
+                  )}
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={formTableCapacity}
+                  value={formNumPeople}
+                  onChange={(e) => handleNumPeopleChange(e.target.value, setFormNumPeople, setFormMaleCount)}
+                  required
+                  className={ui.input}
+                />
+                <GenderSlider
+                  total={formTotal}
+                  male={formMale}
+                  female={formFemale}
+                  onChange={setFormMaleCount}
+                />
               </div>
 
               <div>
@@ -675,10 +868,10 @@ export default function EventReservationsPage() {
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tavolo</label>
-                <select value={editTableId} onChange={e => setEditTableId(e.target.value)} className={ui.select}>
+                <select value={editTableId} onChange={e => handleEditTableChange(e.target.value)} className={ui.select}>
                   {tables.map((table) => (
                     <option key={table.id} value={table.id}>
-                      {table.areaName ?? table.zone ?? table.name} · {table.name}
+                      {table.areaName ?? table.name} · {table.name} — cap. {table.capacity}
                     </option>
                   ))}
                 </select>
@@ -692,7 +885,7 @@ export default function EventReservationsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Telefono</label>
-                  <input value={editPhone} onChange={e => setEditPhone(e.target.value)} required className={ui.input} />
+                  <input value={editPhone} onChange={e => setEditPhone(e.target.value)} className={ui.input} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -711,21 +904,29 @@ export default function EventReservationsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Persone</label>
-                  <input type="number" min="1" value={editNumPeople} onChange={e => setEditNumPeople(e.target.value)} className={ui.input} />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Persone
+                    {editTableCapacity !== undefined && (
+                      <span className="ml-1 text-xs text-gray-400 font-normal">(max {editTableCapacity})</span>
+                    )}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={editTableCapacity}
+                    value={editNumPeople}
+                    onChange={(e) => handleNumPeopleChange(e.target.value, setEditNumPeople, setEditMaleCount)}
+                    className={ui.input}
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Maschi</label>
-                  <input type="number" min="0" value={editMaleCount} onChange={e => setEditMaleCount(e.target.value)} className={ui.input} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Femmine</label>
-                  <input type="number" min="0" value={editFemaleCount} onChange={e => setEditFemaleCount(e.target.value)} className={ui.input} />
-                </div>
-              </div>
+              <GenderSlider
+                total={editTotal}
+                male={editMale}
+                female={editFemale}
+                onChange={setEditMaleCount}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
@@ -739,6 +940,44 @@ export default function EventReservationsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+interface GenderSliderProps {
+  total: number;
+  male: number;
+  female: number;
+  onChange: (male: number) => void;
+}
+
+function GenderSlider({ total, male, female, onChange }: GenderSliderProps) {
+  const pct = total > 0 ? (male / total) * 100 : 50;
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-blue-600 tabular-nums whitespace-nowrap">
+          <span aria-hidden>♂</span> Maschi <strong>{male}</strong>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(0, total)}
+          step={1}
+          value={male}
+          disabled={total <= 0}
+          onChange={(e) => onChange(parseInt(e.target.value, 10))}
+          className="gender-slider flex-1 disabled:opacity-50"
+          style={{ ['--gender-pct' as string]: `${pct}%` }}
+          aria-label="Ripartizione maschi/femmine"
+        />
+        <span className="text-xs text-pink-600 tabular-nums whitespace-nowrap">
+          <strong>{female}</strong> Femmine <span aria-hidden>♀</span>
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] text-gray-400">
+        Lo slider regola la ripartizione M/F mantenendo sempre la somma uguale a Persone.
+      </p>
     </div>
   );
 }

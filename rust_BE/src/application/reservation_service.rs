@@ -45,7 +45,7 @@ pub async fn list_user_reservations_with_details(
                 created_at,
                 table_id,
                 table_name,
-                table_zone,
+                area_name,
                 capacity,
                 min_spend,
             )| {
@@ -90,8 +90,7 @@ pub async fn list_user_reservations_with_details(
                     table: TableSummary {
                         id: table_id.to_string(),
                         name: table_name,
-                        zone: table_zone,
-                        area_name: None,
+                        area_name,
                         capacity,
                         min_spend: format!("{:.2} €", min_spend),
                         location_description: None,

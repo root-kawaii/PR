@@ -78,7 +78,7 @@ export interface TableReservation {
   specialRequests?: string;
   isManual: boolean;
   manualNotes?: string;
-  table: { id: string; name: string; zone?: string };
+  table: { id: string; name: string; areaName?: string };
   event: { id: string; title: string; date: string };
   createdAt: string;
   maleGuestCount: number;
@@ -157,7 +157,6 @@ export interface TableResponse {
   id: string;
   eventId?: string;
   name: string;
-  zone?: string;
   areaId?: string;
   areaName?: string;
   capacity: number;

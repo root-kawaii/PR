@@ -41,7 +41,14 @@ pub async fn get_all_tables(pool: &PgPool) -> Result<Vec<Table>, sqlx::Error> {
     Ok(tables)
 }
 
-/// Get all tables for a specific event
+/// Get all tables for a specific event.
+///
+/// Returns the club-level tables (`event_id IS NULL`) of the event's club
+/// when at least one exists — that's the post-044 model. Falls back to the
+/// legacy event-level tables (`event_id = $1`) only for events that never
+/// got migrated. This avoids surfacing duplicates when a table was first
+/// created event-bound (pre-044) and then re-created as a club-level row
+/// after migration 044.
 pub async fn get_tables_by_event_id(
     pool: &PgPool,
     event_id: Uuid,
@@ -54,13 +61,23 @@ pub async fn get_tables_by_event_id(
         FROM tables t
         LEFT JOIN areas a ON a.id = t.area_id
         JOIN events e ON e.id = $1
-        WHERE t.event_id = $1
-           OR (
+        WHERE
+            (
                 t.event_id IS NULL
                 AND e.club_id IS NOT NULL
                 AND a.club_id = e.club_id
-           )
-        ORDER BY COALESCE(a.name, t.zone, 'A') ASC, t.name ASC
+            )
+            OR (
+                t.event_id = $1
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM tables t2
+                    JOIN areas a2 ON a2.id = t2.area_id
+                    WHERE t2.event_id IS NULL
+                      AND a2.club_id = e.club_id
+                )
+            )
+        ORDER BY COALESCE(a.name, 'A') ASC, t.name ASC
         "#,
     )
     .bind(event_id)
@@ -70,7 +87,9 @@ pub async fn get_tables_by_event_id(
     Ok(tables)
 }
 
-/// Get available tables for an event
+/// Get available tables for an event. Club-level tables of the event's
+/// club take precedence over legacy event-level tables (see
+/// `get_tables_by_event_id` for rationale).
 pub async fn get_available_tables_by_event_id(
     pool: &PgPool,
     event_id: Uuid,
@@ -83,14 +102,25 @@ pub async fn get_available_tables_by_event_id(
         FROM tables t
         LEFT JOIN areas a ON a.id = t.area_id
         JOIN events e ON e.id = $1
-        WHERE (t.event_id = $1 AND t.available = true)
-           OR (
-                t.event_id IS NULL
-                AND t.available = true
-                AND e.club_id IS NOT NULL
-                AND a.club_id = e.club_id
-           )
-        ORDER BY COALESCE(a.name, t.zone, 'A') ASC, t.name ASC
+        WHERE t.available = true
+          AND (
+                (
+                    t.event_id IS NULL
+                    AND e.club_id IS NOT NULL
+                    AND a.club_id = e.club_id
+                )
+                OR (
+                    t.event_id = $1
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM tables t2
+                        JOIN areas a2 ON a2.id = t2.area_id
+                        WHERE t2.event_id IS NULL
+                          AND a2.club_id = e.club_id
+                    )
+                )
+          )
+        ORDER BY COALESCE(a.name, 'A') ASC, t.name ASC
         "#,
     )
     .bind(event_id)
@@ -131,7 +161,6 @@ pub async fn create_club_table(
     pool: &PgPool,
     area_id: Uuid,
     name: String,
-    zone: Option<String>,
     capacity: i32,
     min_spend: Decimal,
     location_description: Option<String>,
@@ -146,16 +175,15 @@ pub async fn create_club_table(
     let table_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO tables (
-            event_id, area_id, name, zone, capacity, min_spend, total_cost,
+            event_id, area_id, name, capacity, min_spend, total_cost,
             location_description, features
         )
-        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
     )
     .bind(area_id)
     .bind(name)
-    .bind(zone)
     .bind(capacity)
     .bind(min_spend)
     .bind(total_cost)
@@ -238,7 +266,6 @@ pub async fn create_table(
     pool: &PgPool,
     event_id: Uuid,
     name: String,
-    zone: Option<String>,
     capacity: i32,
     min_spend: Decimal,
     location_description: Option<String>,
@@ -254,14 +281,13 @@ pub async fn create_table(
 
     let table_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO tables (event_id, name, zone, capacity, min_spend, total_cost, location_description, features, area_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO tables (event_id, name, capacity, min_spend, total_cost, location_description, features, area_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id
         "#,
     )
     .bind(event_id)
     .bind(name)
-    .bind(zone)
     .bind(capacity)
     .bind(min_spend)
     .bind(total_cost)
@@ -291,16 +317,15 @@ pub async fn duplicate_tables_between_events(
         let new_table = sqlx::query_scalar::<_, Uuid>(
             r#"
             INSERT INTO tables (
-                event_id, name, zone, capacity, min_spend, total_cost, available,
+                event_id, name, capacity, min_spend, total_cost, available,
                 location_description, features, area_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
             RETURNING id
             "#,
         )
         .bind(target_event_id)
         .bind(source_table.name)
-        .bind(source_table.zone)
         .bind(source_table.capacity)
         .bind(source_table.min_spend)
         .bind(source_table.total_cost)
@@ -327,7 +352,6 @@ pub async fn update_table(
     pool: &PgPool,
     table_id: Uuid,
     name: Option<String>,
-    zone: Option<String>,
     capacity: Option<i32>,
     min_spend: Option<Decimal>,
     available: Option<bool>,
@@ -347,20 +371,18 @@ pub async fn update_table(
         r#"
         UPDATE tables
         SET name = COALESCE($1, name),
-            zone = COALESCE($2, zone),
-            capacity = COALESCE($3, capacity),
-            min_spend = COALESCE($4, min_spend),
-            total_cost = $5,
-            available = COALESCE($6, available),
-            location_description = COALESCE($7, location_description),
-            features = COALESCE($8, features),
+            capacity = COALESCE($2, capacity),
+            min_spend = COALESCE($3, min_spend),
+            total_cost = $4,
+            available = COALESCE($5, available),
+            location_description = COALESCE($6, location_description),
+            features = COALESCE($7, features),
             updated_at = NOW()
-        WHERE id = $9
+        WHERE id = $8
         RETURNING id
         "#,
     )
     .bind(name)
-    .bind(zone)
     .bind(capacity)
     .bind(min_spend)
     .bind(total_cost)
@@ -617,9 +639,10 @@ pub async fn get_reservations_with_details_by_user_id(
         SELECT
             r.id, r.reservation_code, r.status, r.num_people, r.total_amount, r.amount_paid,
             r.contact_name, r.contact_email, r.contact_phone, r.special_requests, r.created_at,
-            t.id as table_id, t.name as table_name, t.zone as table_zone, t.capacity, t.min_spend
+            t.id as table_id, t.name as table_name, a.name as area_name, t.capacity, t.min_spend
         FROM table_reservations r
         INNER JOIN tables t ON r.table_id = t.id
+        LEFT JOIN areas a ON a.id = t.area_id
         WHERE r.user_id = $1
         ORDER BY r.created_at DESC
         "#,

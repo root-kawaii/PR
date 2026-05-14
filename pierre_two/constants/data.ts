@@ -12,12 +12,12 @@ export const GENRES: Genre[] = [
 ];
 
 export const MOCK_TABLES: Table[] = [
-  { id: 't1', eventId: '1', name: 'TAVOLO A1', zone: 'A', capacity: 6, minSpend: '80.00 €', totalCost: '480.00 €', available: true },
-  { id: 't2', eventId: '1', name: 'TAVOLO A2', zone: 'A', capacity: 4, minSpend: '80.00 €', totalCost: '320.00 €', available: true },
-  { id: 't3', eventId: '1', name: 'TAVOLO A3', zone: 'A', capacity: 8, minSpend: '80.00 €', totalCost: '640.00 €', available: false },
-  { id: 't4', eventId: '1', name: 'TAVOLO B1', zone: 'B', capacity: 4, minSpend: '25.00 €', totalCost: '100.00 €', available: true },
-  { id: 't5', eventId: '1', name: 'TAVOLO B2', zone: 'B', capacity: 6, minSpend: '25.00 €', totalCost: '150.00 €', available: true },
-  { id: 't6', eventId: '1', name: 'TAVOLO B3', zone: 'B', capacity: 4, minSpend: '25.00 €', totalCost: '100.00 €', available: false },
+  { id: 't1', eventId: '1', name: 'TAVOLO A1', areaName: 'A', capacity: 6, minSpend: '80.00 €', totalCost: '480.00 €', available: true },
+  { id: 't2', eventId: '1', name: 'TAVOLO A2', areaName: 'A', capacity: 4, minSpend: '80.00 €', totalCost: '320.00 €', available: true },
+  { id: 't3', eventId: '1', name: 'TAVOLO A3', areaName: 'A', capacity: 8, minSpend: '80.00 €', totalCost: '640.00 €', available: false },
+  { id: 't4', eventId: '1', name: 'TAVOLO B1', areaName: 'B', capacity: 4, minSpend: '25.00 €', totalCost: '100.00 €', available: true },
+  { id: 't5', eventId: '1', name: 'TAVOLO B2', areaName: 'B', capacity: 6, minSpend: '25.00 €', totalCost: '150.00 €', available: true },
+  { id: 't6', eventId: '1', name: 'TAVOLO B3', areaName: 'B', capacity: 4, minSpend: '25.00 €', totalCost: '100.00 €', available: false },
 ];
 
 export const getMockEvents = (): Event[] => [

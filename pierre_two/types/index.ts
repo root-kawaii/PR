@@ -34,7 +34,6 @@ export type Table = {
   id: string;
   eventId: string;
   name: string;
-  zone?: string;
   areaId?: string;
   areaName?: string;
   capacity: number;
@@ -95,7 +94,6 @@ export type TableReservation = {
   table?: {
     id: string;
     name: string;
-    zone?: string;
     areaName?: string;
     capacity: number;
     minSpend: string;

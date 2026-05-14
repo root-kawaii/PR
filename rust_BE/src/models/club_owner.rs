@@ -134,7 +134,7 @@ pub struct TableImageRow {
 pub struct CreateManualReservationRequest {
     pub table_id: String,
     pub contact_name: String,
-    pub contact_phone: String,
+    pub contact_phone: Option<String>,
     pub contact_email: Option<String>,
     pub num_people: i32,
     pub manual_notes: Option<String>,

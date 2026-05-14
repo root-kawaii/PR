@@ -79,7 +79,6 @@ export const TableReservationDetailModal = ({
   const amountPaidValue = parseCurrencyAmount(resolvedAmountPaid);
   const tableAreaLabel =
     reservation.table?.areaName?.trim() ||
-    reservation.table?.zone?.trim() ||
     reservation.table?.name?.trim() ||
     "area riservata";
   const eventVenueLabel = reservation.event ? getEventVenueLabel(reservation.event) : "";
@@ -326,14 +325,6 @@ export const TableReservationDetailModal = ({
                       {tableAreaLabel}
                     </ThemedText>
                   </View>
-                  {reservation.table.zone && reservation.table.zone !== tableAreaLabel && (
-                    <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
-                      <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Zona</ThemedText>
-                      <ThemedText style={[styles.infoValue, { color: theme.text }]}>
-                        {reservation.table.zone}
-                      </ThemedText>
-                    </View>
-                  )}
                   <View style={[styles.infoRow, { borderBottomColor: theme.border }]}>
                     <ThemedText style={[styles.infoLabel, { color: theme.textTertiary }]}>Capacità</ThemedText>
                     <ThemedText style={[styles.infoValue, { color: theme.text }]}>

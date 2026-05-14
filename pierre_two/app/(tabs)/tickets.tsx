@@ -344,9 +344,9 @@ export default function BookingsScreen() {
                           <Text style={[s.cardSub, { color: theme.primary }]}>
                             {reservation.table?.name || 'Tavolo'}
                           </Text>
-                          {reservation.table?.zone ? (
-                            <View style={[s.zonePill, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
-                              <Text style={[s.zoneText, { color: theme.textSecondary }]}>{reservation.table.zone}</Text>
+                          {reservation.table?.areaName ? (
+                            <View style={[s.areaPill, { backgroundColor: theme.backgroundSurface, borderColor: theme.border }]}>
+                              <Text style={[s.areaText, { color: theme.textSecondary }]}>{reservation.table.areaName}</Text>
                             </View>
                           ) : null}
                         </View>
@@ -577,8 +577,8 @@ const s = StyleSheet.create({
   cardTitle: { fontSize: 17, fontWeight: '600', marginBottom: 3 },
   cardSub: { fontSize: 13 },
   tableRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  zonePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
-  zoneText: { fontSize: 11, fontWeight: '600' },
+  areaPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
+  areaText: { fontSize: 11, fontWeight: '600' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' },
   metaText: { fontSize: 13, marginRight: 6 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },

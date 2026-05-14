@@ -417,17 +417,17 @@ pub async fn get_my_club_tables(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    // `get_tables_by_event_id` already returns both event-bound tables
+    // (`event_id = $1`) and club-level tables of the event's club
+    // (`event_id IS NULL` + area belongs to the club). Calling
+    // `get_tables_by_club_id` on top would re-add every club-level table
+    // and produce duplicates in the dropdown.
     let event_tables = table_persistence::get_tables_by_event_id(&state.db_pool, event_uuid)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let club_tables = table_persistence::get_tables_by_club_id(&state.db_pool, club.id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let table_responses: Vec<TableResponse> = event_tables
         .into_iter()
-        .chain(club_tables.into_iter())
         .map(|t| t.into())
         .collect();
     Ok(Json(TablesResponse {
@@ -466,7 +466,6 @@ pub async fn create_club_table(
         &state.db_pool,
         event_uuid,
         req.name,
-        req.zone,
         req.capacity,
         min_spend,
         req.location_description,
@@ -1042,12 +1041,18 @@ pub async fn create_manual_reservation_handler(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    let contact_phone = payload
+        .contact_phone
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_default();
+
     let reservation = club_owner_persistence::create_manual_reservation(
         &state.db_pool,
         event_uuid,
         table_uuid,
         payload.contact_name,
-        payload.contact_phone,
+        contact_phone,
         payload.contact_email,
         payload.num_people,
         payload.manual_notes,
