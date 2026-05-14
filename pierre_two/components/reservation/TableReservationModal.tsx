@@ -333,8 +333,17 @@ export const TableReservationModal = ({
         },
       };
 
-      onReservationCreated?.(reservationForDetail);
+      // Serialize the cascading modal dismissal: close THIS modal first,
+      // then bubble up after iOS has finished its dismiss animation.
+      // Without the gap, the 3 nested <Modal>s (EventDetailModal →
+      // event/TableReservationModal fullScreen → this one) all flip to
+      // visible=false in the same render tick and iOS leaves one of the
+      // view controllers stuck on screen — the user lands on a blank
+      // page after the Stripe sheet returns.
       onClose();
+      setTimeout(() => {
+        onReservationCreated?.(reservationForDetail);
+      }, 350);
     } catch (error) {
       if (!failureTracked) {
         trackReservationFailure(
