@@ -290,7 +290,12 @@ export const EventDetailModal = ({
         onReservationCreated={(reservation) => {
           setShowTableReservation(false);
           onClose();
-          onReservationCreated?.(reservation);
+          // Wait for THIS modal's dismiss animation before bubbling up to
+          // the home screen (which navigates to /reservations) — see the
+          // comment in reservation/TableReservationModal.tsx.
+          setTimeout(() => {
+            onReservationCreated?.(reservation);
+          }, 350);
         }}
       />
 

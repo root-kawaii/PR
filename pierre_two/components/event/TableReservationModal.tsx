@@ -178,9 +178,13 @@ export const TableReservationModal = ({
           setSelectedTable(null);
           setSelectedAreaId(null);
           onClose();
-          if (reservation) {
-            onReservationCreated?.(reservation);
-          }
+          // Wait for THIS modal's dismiss animation before bubbling up —
+          // see the comment in reservation/TableReservationModal.tsx.
+          setTimeout(() => {
+            if (reservation) {
+              onReservationCreated?.(reservation);
+            }
+          }, 350);
         }}
       />
     </Modal>
