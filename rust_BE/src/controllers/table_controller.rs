@@ -1156,8 +1156,10 @@ pub async fn get_payment_link_preview(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Count slots already claimed (paid or in-flight checkout)
-    let slots_filled: i64 = sqlx::query_scalar(
+    // Count guest slots already claimed (paid or in-flight checkout).
+    // The shared page displays occupied seats including the owner, while
+    // capacity enforcement still treats guest slots separately.
+    let guest_slots_filled: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM reservation_payment_shares WHERE reservation_id = $1 AND status IN ('paid', 'checkout_pending') AND is_owner = false"
     )
     .bind(reservation.id)
@@ -1165,9 +1167,10 @@ pub async fn get_payment_link_preview(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let slots_total = table.capacity.saturating_sub(1);
+    let slots_filled = guest_slots_filled.saturating_add(1);
+    let slots_total = table.capacity;
     let per_person = (table.total_cost / Decimal::from(table.capacity)).round_dp(2);
-    let status = if slots_filled >= slots_total as i64 {
+    let status = if guest_slots_filled >= table.capacity.saturating_sub(1) as i64 {
         "full"
     } else {
         "open"
@@ -1543,11 +1546,12 @@ pub async fn get_reservation_payment_status(
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let slots_filled = shares
+    let guest_slots_filled = shares
         .iter()
         .filter(|s| !s.is_owner && (s.status == "paid" || s.status == "checkout_pending"))
         .count() as i32;
-    let slots_total = table.capacity.saturating_sub(1);
+    let slots_filled = guest_slots_filled.saturating_add(1);
+    let slots_total = table.capacity;
 
     let amount_remaining = reservation.total_amount - reservation.amount_paid;
 
@@ -1656,7 +1660,6 @@ pub async fn guest_payment_page(
   <!-- Preview (hidden until loaded) -->
   <div id="preview" style="display:none">
     <h1>Pagamento tavolo</h1>
-    <p class="sub" id="event-sub"></p>
     <div class="detail">
       <div class="detail-row"><span class="label">Evento</span><span class="value" id="ev-name"></span></div>
       <div class="detail-row"><span class="label">Tavolo</span><span class="value" id="tbl-name"></span></div>
@@ -1715,7 +1718,6 @@ pub async fn guest_payment_page(
       document.getElementById('ev-name').textContent = data.eventName || data.event_name || '';
       document.getElementById('tbl-name').textContent = data.tableName || data.table_name || '';
       document.getElementById('amount').textContent = data.amount || '';
-      document.getElementById('event-sub').textContent = (data.tableName || data.table_name || '') + ' · ' + (data.amount || '');
       const sf = data.slotsFilled ?? data.slots_filled ?? 0;
       const st = data.slotsTotal ?? data.slots_total ?? 0;
       document.getElementById('slots').textContent = sf + '/' + st + ' occupati';
