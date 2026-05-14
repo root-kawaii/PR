@@ -138,8 +138,15 @@ export default function EventReservationsPage() {
     `/owner/events/${eventId}/reservations`,
   );
   const { data: tablesData } = useFetch<TablesData>(`/owner/events/${eventId}/tables`);
-  const { data: statsData } = useFetch<EventReservationStats>(`/owner/events/${eventId}/stats`);
+  const { data: statsData, refetch: refetchStats } = useFetch<EventReservationStats>(
+    `/owner/events/${eventId}/stats`,
+  );
   const { data: eventData } = useFetch<EventResponse>(`/events/${eventId}`);
+
+  const refreshAll = () => {
+    refetch();
+    refetchStats();
+  };
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -373,7 +380,7 @@ export default function EventReservationsPage() {
       });
       resetForm();
       setShowForm(false);
-      refetch();
+      refreshAll();
     } catch (err) {
       trackEvent('owner_manual_reservation_create_failed', {
         event_id: eventId ?? null,
@@ -401,7 +408,7 @@ export default function EventReservationsPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error('Errore aggiornamento');
-      refetch();
+      refreshAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
@@ -417,7 +424,7 @@ export default function EventReservationsPage() {
     });
     try {
       await patchReservation(reservationId, { tableId });
-      refetch();
+      refreshAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
@@ -451,7 +458,7 @@ export default function EventReservationsPage() {
         manualNotes: editNotes || undefined,
       });
       closeEditModal();
-      refetch();
+      refreshAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
@@ -471,7 +478,7 @@ export default function EventReservationsPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Errore eliminazione');
-      refetch();
+      refreshAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
