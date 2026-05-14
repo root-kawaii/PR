@@ -103,28 +103,10 @@ export default function ReservationsScreen() {
         return theme.info;
       case 'pending':
         return theme.warning;
-      case 'refused':
       case 'cancelled':
         return theme.error;
       default:
         return theme.textTertiary;
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'In attesa';
-      case 'confirmed':
-        return 'Prenotata';
-      case 'completed':
-        return 'Accesso effettuato';
-      case 'refused':
-        return 'Accesso rifiutato';
-      case 'cancelled':
-        return 'Cancellata';
-      default:
-        return status;
     }
   };
 
@@ -259,7 +241,7 @@ export default function ReservationsScreen() {
                       </View>
                       <View style={[styles.statusBadge, { backgroundColor: statusColor + '33' }]}>
                         <Text style={[styles.statusText, { color: statusColor }]}>
-                          {getStatusLabel(reservation.status)}
+                          {reservation.status}
                         </Text>
                       </View>
                     </View>

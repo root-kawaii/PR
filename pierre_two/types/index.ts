@@ -69,7 +69,6 @@ export type TableReservation = {
   id: string;
   reservationCode: string;
   status: string;
-  refusalReason?: string;
   numPeople: number;
   totalAmount: string;
   amountPaid: string;
