@@ -15,7 +15,7 @@ import { API_URL } from '@/config/api';
 import { useApiFetch } from '@/config/apiFetch';
 import { TableReservation } from '@/types';
 import { useAuth } from '@/context/AuthContext';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { TableReservationDetailModal } from '@/components/reservation/TableReservationDetailModal';
 import * as Clipboard from 'expo-clipboard';
@@ -34,6 +34,7 @@ export default function ReservationsScreen() {
   const { user } = useAuth();
   const { theme } = useTheme();
   const apiFetch = useApiFetch();
+  const params = useLocalSearchParams<{ reservation_id?: string }>();
 
   const fetchReservations = async (silent = false) => {
     if (!user?.id) return;
@@ -73,6 +74,19 @@ export default function ReservationsScreen() {
       if (user?.id) fetchReservations(true);
     }, [user]),
   );
+
+  // Coming back from a successful booking the home screen pushes us here
+  // with `?reservation_id=…`. Open the detail modal as soon as that
+  // reservation appears in the list, then clear the param so navigating
+  // back to this tab later doesn't re-trigger.
+  useEffect(() => {
+    if (!params.reservation_id || reservations.length === 0) return;
+    const target = reservations.find((r) => r.id === params.reservation_id);
+    if (!target) return;
+    setSelectedReservation(target);
+    setShowDetailModal(true);
+    router.setParams({ reservation_id: '' });
+  }, [params.reservation_id, reservations]);
 
   const onRefresh = async () => {
     setRefreshing(true);
