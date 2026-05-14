@@ -55,9 +55,10 @@ incoherent-state bug.
   - Removed the **Min Spend** and **Zona** inputs from the table form. The
     table inherits its min spend from the area; a helper line under the
     capacity field makes this explicit.
-  - In the per-area tables list, the "Min Spend" cell now shows the
-    area's price (the single source of truth) and the "Zona" column is
-    gone.
+  - Each area card now shows a high-contrast **price pill** next to its
+    name (`<area.price> / persona`) instead of a plain helper line. The
+    per-table list dropped the "Min Spend" column entirely — the area
+    pill is the single source of truth.
 
 ### Backend (`rust_BE`)
 
@@ -82,9 +83,31 @@ incoherent-state bug.
 - `controllers/club_owner_controller.rs`: trims/normalizes the optional
   phone and stores an empty string when missing.
 
+### Mobile (`pierre_two`) — zone removal
+
+`tables.zone` was a free-text label that predated `areas`. Every read
+site in the app has been migrated to `areaName`:
+
+- `app/(tabs)/tickets.tsx`: the small pill next to the table name now
+  shows `areaName` instead of `zone`; styles renamed `zonePill` →
+  `areaPill`, `zoneText` → `areaText`.
+- `components/reservation/TableReservationDetailModal.tsx`: dropped the
+  separate "Zona" row (it duplicated the area label already shown on
+  "Tavolo"); fallback chains simplified to `areaName || name`.
+- `components/reservation/TableReservationModal.tsx`: same fallback
+  cleanup; the client-side `reservationForDetail.table` payload no
+  longer carries `zone`.
+- `components/event/TableFilterMenu.tsx`: `getAreaLabel` simplified to
+  `areaName || 'A'`.
+- `types/index.ts` and `constants/data.ts`: `zone` removed from the
+  `Table` type and from the mock fixtures (mocks now use `areaName`).
+
 ### Database
 
-No destructive migration in this PR.
+`tables.zone` is **dropped** in migration
+`DB/migrations/049_drop_tables_zone.sql`. Both the dashboard and the
+mobile no longer read it, and the backend struct/SQL no longer reference
+it.
 
 `table_reservations.contact_phone` stays `NOT NULL`; the backend writes an
 empty string when no phone is provided, since the dashboard already treats
@@ -94,14 +117,10 @@ the SQLx model (`pub contact_phone: String`) and avoids cascading
 `NULL` semantics (e.g. for analytics filtering), a follow-up migration
 can flip the column to nullable.
 
-`tables.min_spend` and `tables.zone` are still on the schema:
-
-- `min_spend` continues to act as a denormalized cache of `area.price`,
-  read by reservation pricing in `table_persistence::create_reservation`
-  and `update_reservation`. Backend keeps it in sync.
-- `zone` is still selected by `pierre_two` (table filtering, listings).
-  Dropping it is out of scope for this PR but is a candidate for a
-  follow-up that updates the mobile client first.
+`tables.min_spend` is still on the schema as a denormalized cache of
+`area.price`, read by reservation pricing in
+`table_persistence::create_reservation` / `update_reservation`. Backend
+keeps it in sync when the area price changes.
 
 ---
 
@@ -111,11 +130,21 @@ can flip the column to nullable.
 |---|---|
 | Dashboard | `pierre_dashboard/src/pages/EventReservationsPage.tsx` |
 | Dashboard | `pierre_dashboard/src/pages/ClubAreasPage.tsx` |
+| Dashboard | `pierre_dashboard/src/types/index.ts` |
 | Backend | `rust_BE/src/models/table.rs` |
 | Backend | `rust_BE/src/models/club_owner.rs` |
 | Backend | `rust_BE/src/controllers/area_controller.rs` |
 | Backend | `rust_BE/src/controllers/table_controller.rs` |
 | Backend | `rust_BE/src/controllers/club_owner_controller.rs` |
+| Backend | `rust_BE/src/application/reservation_service.rs` |
 | Backend | `rust_BE/src/infrastructure/repositories/area_persistence.rs` |
 | Backend | `rust_BE/src/infrastructure/repositories/club_owner_persistence.rs` |
+| Backend | `rust_BE/src/infrastructure/repositories/table_persistence.rs` |
+| Mobile | `pierre_two/types/index.ts` |
+| Mobile | `pierre_two/constants/data.ts` |
+| Mobile | `pierre_two/app/(tabs)/tickets.tsx` |
+| Mobile | `pierre_two/components/reservation/TableReservationDetailModal.tsx` |
+| Mobile | `pierre_two/components/reservation/TableReservationModal.tsx` |
+| Mobile | `pierre_two/components/event/TableFilterMenu.tsx` |
+| Database | `DB/migrations/049_drop_tables_zone.sql` |
 | Docs | `docs/daily-progress/2026-05-13-dashboard-areas-bookings.md` |

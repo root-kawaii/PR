@@ -200,7 +200,7 @@ export default function EventReservationsPage() {
     const needle = search.trim().toLowerCase();
     return reservations.filter((reservation) => {
       const table = getTable(reservation.tableId);
-      const tableLabel = table?.areaName ?? table?.zone ?? table?.name ?? '';
+      const tableLabel = table?.areaName ?? table?.name ?? '';
       const matchesSearch =
         needle === '' ||
         reservation.contactName.toLowerCase().includes(needle) ||
@@ -225,7 +225,7 @@ export default function EventReservationsPage() {
           return r.contactName.toLowerCase();
         case 'table': {
           const t = getTable(r.tableId);
-          const area = t?.areaName ?? t?.zone ?? '';
+          const area = t?.areaName ?? '';
           return `${area} · ${t?.name ?? ''}`.toLowerCase();
         }
         case 'numPeople':
@@ -647,7 +647,7 @@ export default function EventReservationsPage() {
                         >
                           {tables.map((item) => (
                             <option key={item.id} value={item.id}>
-                              {item.areaName ?? item.zone ?? item.name} · {item.name}
+                              {item.areaName ?? item.name} · {item.name}
                             </option>
                           ))}
                         </select>
@@ -731,7 +731,7 @@ export default function EventReservationsPage() {
                   <option value="">Seleziona tavolo</option>
                   {tables.map((table) => (
                     <option key={table.id} value={table.id}>
-                      {table.areaName ?? table.zone ?? table.name} · {table.name} — cap. {table.capacity}
+                      {table.areaName ?? table.name} · {table.name} — cap. {table.capacity}
                     </option>
                   ))}
                 </select>
@@ -817,7 +817,7 @@ export default function EventReservationsPage() {
                 <select value={editTableId} onChange={e => setEditTableId(e.target.value)} className={ui.select}>
                   {tables.map((table) => (
                     <option key={table.id} value={table.id}>
-                      {table.areaName ?? table.zone ?? table.name} · {table.name}
+                      {table.areaName ?? table.name} · {table.name}
                     </option>
                   ))}
                 </select>

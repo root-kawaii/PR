@@ -466,7 +466,6 @@ pub async fn create_club_table(
         &state.db_pool,
         event_uuid,
         req.name,
-        req.zone,
         req.capacity,
         min_spend,
         req.location_description,

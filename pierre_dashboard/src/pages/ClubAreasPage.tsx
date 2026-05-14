@@ -303,12 +303,17 @@ export default function ClubAreasPage() {
               <SectionCard key={area.id} className="p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      {area.name}
-                    </h2>
-                    <p className={ui.helperText}>
-                      Prezzo a persona: {area.price}
-                    </p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-semibold text-gray-900">
+                        {area.name}
+                      </h2>
+                      <span
+                        className="inline-flex items-center rounded-full bg-gray-900 px-2.5 py-0.5 text-xs font-semibold text-white"
+                        title="Min spend per persona ereditato da tutti i tavoli di questa area"
+                      >
+                        {area.price} / persona
+                      </span>
+                    </div>
                     {area.description && (
                       <p className="text-sm text-gray-500 mt-1">
                         {area.description}
@@ -348,7 +353,6 @@ export default function ClubAreasPage() {
                         <tr>
                           <th className={ui.tableHeader}>Nome</th>
                           <th className={ui.tableHeader}>Capienza</th>
-                          <th className={ui.tableHeader}>Min spend (€/p)</th>
                           <th className={ui.tableHeader}>Azioni</th>
                         </tr>
                       </thead>
@@ -359,7 +363,6 @@ export default function ClubAreasPage() {
                               {t.name}
                             </td>
                             <td className={ui.tableCell}>{t.capacity}</td>
-                            <td className={ui.tableCell + " text-gray-500"}>{area.price}</td>
                             <td className={ui.tableCell}>
                               <div className="flex items-center gap-1">
                                 <button

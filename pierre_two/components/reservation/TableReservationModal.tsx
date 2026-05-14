@@ -73,7 +73,7 @@ export const TableReservationModal = ({
   const ownerShare = table?.capacity
     ? Math.round((tableTotalCost / table.capacity) * 100) / 100
     : 0;
-  const tableAreaLabel = table?.areaName?.trim() || table?.zone?.trim() || table?.name?.trim() || null;
+  const tableAreaLabel = table?.areaName?.trim() || table?.name?.trim() || null;
   const eventVenueLabel = event ? getEventVenueLabel(event) : "";
   const eventAddressLabel = event ? getEventAddressLabel(event) : undefined;
 
@@ -315,7 +315,6 @@ export const TableReservationModal = ({
         table: {
           id: table.id,
           name: table.name,
-          zone: table.zone,
           areaName: table.areaName,
           capacity: table.capacity,
           minSpend: table.minSpend,

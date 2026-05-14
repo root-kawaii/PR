@@ -172,7 +172,6 @@ pub async fn create_table(
         &state.db_pool,
         event_id,
         req.name,
-        req.zone,
         req.capacity,
         min_spend,
         req.location_description,
@@ -198,7 +197,6 @@ pub async fn update_table(
         &state.db_pool,
         table_id,
         req.name,
-        None,
         req.capacity,
         None,
         req.available,
@@ -379,7 +377,6 @@ pub async fn get_reservation_by_code(
                 table: TableSummary {
                     id: table.id.to_string(),
                     name: table.name,
-                    zone: table.zone,
                     area_name: table.area_name,
                     capacity: table.capacity,
                     min_spend: format!("{:.2} €", table.min_spend),

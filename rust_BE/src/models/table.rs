@@ -14,7 +14,6 @@ pub struct Table {
     pub id: Uuid,
     pub event_id: Option<Uuid>,
     pub name: String,
-    pub zone: Option<String>,
     pub capacity: i32,
     pub min_spend: Decimal,
     pub total_cost: Decimal,
@@ -32,7 +31,6 @@ pub struct Table {
 pub struct CreateTableRequest {
     pub event_id: String,
     pub name: String,
-    pub zone: Option<String>,
     pub capacity: i32,
     pub min_spend: f64, // Frontend sends as number
     pub location_description: Option<String>,
@@ -67,7 +65,6 @@ pub struct TableResponse {
     pub id: String,
     pub event_id: Option<String>,
     pub name: String,
-    pub zone: Option<String>,
     pub capacity: i32,
     pub min_spend: String,  // Formatted as "X.XX €"
     pub total_cost: String, // Formatted as "X.XX €"
@@ -84,7 +81,6 @@ impl From<Table> for TableResponse {
             id: table.id.to_string(),
             event_id: table.event_id.map(|id| id.to_string()),
             name: table.name,
-            zone: table.zone,
             capacity: table.capacity,
             min_spend: format!("{:.2} €", table.min_spend),
             total_cost: format!("{:.2} €", table.total_cost),
@@ -253,7 +249,6 @@ pub struct TableReservationWithDetailsResponse {
 pub struct TableSummary {
     pub id: String,
     pub name: String,
-    pub zone: Option<String>,
     pub area_name: Option<String>,
     pub capacity: i32,
     pub min_spend: String,

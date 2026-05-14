@@ -112,13 +112,7 @@ export const TableFilterMenu: React.FC<TableFilterMenuProps> = ({
   }, [visible, slideAnim, backdropAnim]);
 
   const getAreaLabel = (table: Table): string => {
-    const areaName = table.areaName?.trim();
-    if (areaName) return areaName;
-
-    const zoneName = table.zone?.trim();
-    if (zoneName) return zoneName;
-
-    return "A";
+    return table.areaName?.trim() || "A";
   };
 
   const filteredAreas = useMemo(() => {
