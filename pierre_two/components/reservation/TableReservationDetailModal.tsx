@@ -137,6 +137,7 @@ export const TableReservationDetailModal = ({
         return theme.warning;
       case "completed":
         return theme.info;
+      case "refused":
       case "cancelled":
       case "expired":
         return theme.error;
@@ -152,7 +153,8 @@ export const TableReservationDetailModal = ({
       case "checkout_pending": return "In pagamento";
       case "paid": return "Pagato";
       case "completed": return "Accesso effettuato";
-      case "cancelled": return "Rifiutata";
+      case "refused": return "Accesso rifiutato";
+      case "cancelled": return "Cancellata";
       case "expired": return "Scaduto";
       default: return status;
     }
@@ -258,12 +260,17 @@ export const TableReservationDetailModal = ({
                       {reservation.reservationCode}
                     </ThemedText>
                   </View>
-                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(reservation.status) }]}>
+                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(reservation.status) }]}>
                     <ThemedText style={[styles.statusText, { color: theme.textInverse }]}>
                       {getStatusText(reservation.status)}
                     </ThemedText>
                   </View>
                 </View>
+                {reservation.refusalReason ? (
+                  <ThemedText style={[styles.statusHint, { color: theme.error }]}>
+                    Motivo: {reservation.refusalReason}
+                  </ThemedText>
+                ) : null}
                 {reservationStatusHint && (
                   <ThemedText style={[styles.statusHint, { color: theme.textTertiary }]}>
                     {reservationStatusHint}
