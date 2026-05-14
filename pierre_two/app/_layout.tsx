@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { View, ActivityIndicator, Platform } from 'react-native';
 import 'react-native-reanimated';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PostHogProvider } from 'posthog-react-native';
 import { StripeProvider } from '@/components/payments/StripeProvider';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
@@ -146,14 +147,16 @@ function AnalyticsProvider({ children }: { children: ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <StripeProvider>
-      <AnalyticsProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <RootLayoutNav />
-          </AuthProvider>
-        </ThemeProvider>
-      </AnalyticsProvider>
-    </StripeProvider>
+    <SafeAreaProvider>
+      <StripeProvider>
+        <AnalyticsProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <RootLayoutNav />
+            </AuthProvider>
+          </ThemeProvider>
+        </AnalyticsProvider>
+      </StripeProvider>
+    </SafeAreaProvider>
   );
 }

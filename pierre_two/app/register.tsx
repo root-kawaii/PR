@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { trackEvent } from "../config/analytics";
@@ -293,11 +294,15 @@ export default function RegisterScreen() {
   // Render different UI based on step
   if (step === "phone-verification") {
     return (
-      <KeyboardAvoidingView
+      <SafeAreaView
         style={[styles.container, { backgroundColor: theme.background }]}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        edges={["top", "bottom"]}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView contentContainerStyle={styles.scrollContent}>
           <View
             style={[
               styles.content,
@@ -431,18 +436,23 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     );
   }
 
   // Step 1: Basic Info
   return (
-    <KeyboardAvoidingView
+    <SafeAreaView
       style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      edges={["top", "bottom"]}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent}>
         <View
           style={[
             styles.content,
@@ -633,8 +643,9 @@ export default function RegisterScreen() {
             </View>
           </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
