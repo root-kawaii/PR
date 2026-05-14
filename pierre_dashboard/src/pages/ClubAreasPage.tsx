@@ -351,7 +351,7 @@ export default function ClubAreasPage() {
                     <table className="w-full">
                       <thead>
                         <tr>
-                          <th className={ui.tableHeader}>Nome</th>
+                          <th className={ui.tableHeader}>Tavolo</th>
                           <th className={ui.tableHeader}>Capienza</th>
                           <th className={ui.tableHeader}>Azioni</th>
                         </tr>
