@@ -78,6 +78,12 @@ function isZeroLikePrice(value?: string | null): boolean {
   return Number.isFinite(amount) && amount === 0;
 }
 
+// Provvisoriamente nascosta: il comportamento di biglietteria/CTA va chiarito
+// prima di riabilitarla. I default ("Ingresso libero" / "Nessun ticket") restano
+// applicati lato stato, quindi gli eventi creati ora hanno la configurazione
+// di base. Reimpostare a `true` per ripristinare la sezione.
+const SHOW_BIGLIETTERIA_SECTION = false;
+
 interface EventFormData {
   title: string;
   venue: string; // hidden from UI — preserved on edit, "" for new events
@@ -469,6 +475,7 @@ export default function EventsPage() {
               </div>
             </FormSection>
 
+            {SHOW_BIGLIETTERIA_SECTION && (
             <FormSection title="Biglietteria">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -558,6 +565,7 @@ export default function EventsPage() {
                     : "l'app mostrerà Acquista biglietto. Se esistono aree prenotabili, Prenota area resterà come azione secondaria."}
               </p>
             </FormSection>
+            )}
           </div>
         </form>
       </Modal>
