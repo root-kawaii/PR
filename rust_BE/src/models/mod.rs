@@ -22,6 +22,9 @@ pub use club::{Club, ClubResponse, CreateClubRequest, UpdateClubRequest};
 
 pub mod club_owner;
 
+pub mod reservation_status;
+pub use reservation_status::{normalize_refusal_reason, ReservationStatus};
+
 pub mod ticket;
 pub use ticket::{
     ClaimFreeTicketRequest, ConfirmTicketPurchaseRequest, CreateTicketPurchaseIntentRequest,

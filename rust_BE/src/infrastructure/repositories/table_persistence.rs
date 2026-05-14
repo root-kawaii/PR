@@ -1,5 +1,8 @@
-use crate::models::{ReservationGuest, ReservationPaymentShare, Table, TableReservation};
 use crate::models::club_owner::EventReservationStatsResponse;
+use crate::models::{
+    normalize_refusal_reason, ReservationGuest, ReservationPaymentShare, ReservationStatus, Table,
+    TableReservation,
+};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -731,10 +734,10 @@ pub async fn create_reservation(
     let reservation = sqlx::query_as::<_, TableReservation>(
         r#"
         INSERT INTO table_reservations (
-            table_id, user_id, event_id, num_people, total_amount,
+            table_id, user_id, event_id, status, num_people, total_amount,
             contact_name, contact_email, contact_phone, special_requests, reservation_code
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
         "#,
     )
@@ -758,7 +761,8 @@ pub async fn create_reservation(
 pub async fn update_reservation(
     pool: &PgPool,
     reservation_id: Uuid,
-    status: Option<String>,
+    status: Option<ReservationStatus>,
+    refusal_reason: Option<String>,
     table_id: Option<Uuid>,
     num_people: Option<i32>,
     contact_name: Option<String>,
@@ -770,6 +774,20 @@ pub async fn update_reservation(
     female_guest_count: Option<i32>,
 ) -> Result<TableReservation, sqlx::Error> {
     let current_reservation = get_reservation_by_id(pool, reservation_id).await?;
+    let current_status = ReservationStatus::try_from(current_reservation.status.as_str())
+        .map_err(|_| sqlx::Error::Protocol("invalid reservation status in database".into()))?;
+    let next_status = status.unwrap_or(current_status);
+
+    if !current_status.can_transition_to(next_status) {
+        return Err(sqlx::Error::Protocol(
+            format!(
+                "invalid reservation status transition from {} to {}",
+                current_status.as_str(),
+                next_status.as_str()
+            )
+            .into(),
+        ));
+    }
 
     let final_table_id = table_id.unwrap_or(current_reservation.table_id);
     let final_num_people = num_people.unwrap_or(current_reservation.num_people);
@@ -782,27 +800,40 @@ pub async fn update_reservation(
     } else {
         current_reservation.total_amount
     };
+    let final_refusal_reason = if status.is_some() {
+        normalize_refusal_reason(next_status, refusal_reason)
+    } else if current_status == ReservationStatus::Refused {
+        match refusal_reason {
+            Some(reason) => normalize_refusal_reason(current_status, Some(reason)),
+            None => current_reservation.refusal_reason.clone(),
+        }
+    } else {
+        None
+    };
+    let status_to_bind = status.map(|value| value.as_str().to_string());
 
     let reservation = sqlx::query_as::<_, TableReservation>(
         r#"
         UPDATE table_reservations
-        SET status = COALESCE($1, status),
-            table_id = COALESCE($2, table_id),
-            num_people = COALESCE($3, num_people),
-            total_amount = $4,
-            contact_name = COALESCE($5, contact_name),
-            contact_email = COALESCE($6, contact_email),
-            contact_phone = COALESCE($7, contact_phone),
-            special_requests = COALESCE($8, special_requests),
-            manual_notes = COALESCE($9, manual_notes),
-            male_guest_count = COALESCE($10, male_guest_count),
-            female_guest_count = COALESCE($11, female_guest_count),
+        SET status = COALESCE($1::reservation_status, status),
+            refusal_reason = $2,
+            table_id = COALESCE($3, table_id),
+            num_people = COALESCE($4, num_people),
+            total_amount = $5,
+            contact_name = COALESCE($6, contact_name),
+            contact_email = COALESCE($7, contact_email),
+            contact_phone = COALESCE($8, contact_phone),
+            special_requests = COALESCE($9, special_requests),
+            manual_notes = COALESCE($10, manual_notes),
+            male_guest_count = COALESCE($11, male_guest_count),
+            female_guest_count = COALESCE($12, female_guest_count),
             updated_at = NOW()
-        WHERE id = $12
+        WHERE id = $13
         RETURNING *
         "#,
     )
-    .bind(status)
+    .bind(status_to_bind)
+    .bind(final_refusal_reason)
     .bind(table_id)
     .bind(num_people)
     .bind(new_total_amount)
@@ -832,6 +863,7 @@ pub async fn get_event_reservation_stats(
             COUNT(*) FILTER (WHERE tr.status = 'pending')::bigint AS pending_reservations,
             COUNT(*) FILTER (WHERE tr.status = 'confirmed')::bigint AS confirmed_reservations,
             COUNT(*) FILTER (WHERE tr.status = 'completed')::bigint AS completed_reservations,
+            COUNT(*) FILTER (WHERE tr.status = 'refused')::bigint AS refused_reservations,
             COUNT(*) FILTER (WHERE tr.status = 'cancelled')::bigint AS cancelled_reservations,
             COALESCE(SUM(tr.num_people), 0)::bigint AS total_people,
             COALESCE(SUM(tr.male_guest_count), 0)::bigint AS male_guests,
@@ -854,6 +886,7 @@ pub async fn get_event_reservation_stats(
             pending_reservations: 0,
             confirmed_reservations: 0,
             completed_reservations: 0,
+            refused_reservations: 0,
             cancelled_reservations: 0,
             total_people: 0,
             male_guests: 0,
@@ -1267,7 +1300,7 @@ pub async fn check_and_confirm_reservation(
 
     if pending_count == 0 {
         sqlx::query(
-            "UPDATE table_reservations SET status = 'confirmed', updated_at = NOW() WHERE id = $1",
+            "UPDATE table_reservations SET status = 'confirmed', updated_at = NOW() WHERE id = $1 AND status = 'pending'",
         )
         .bind(reservation_id)
         .execute(pool)

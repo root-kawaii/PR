@@ -145,14 +145,17 @@ pub struct CreateManualReservationRequest {
 // ── Reservation status update ────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateReservationStatusRequest {
     pub status: String,
+    pub refusal_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OwnerUpdateReservationRequest {
     pub status: Option<String>,
+    pub refusal_reason: Option<String>,
     pub table_id: Option<String>,
     pub num_people: Option<i32>,
     pub contact_name: Option<String>,
@@ -173,6 +176,7 @@ pub struct DuplicateTablesRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CheckinDecisionRequest {
     pub decision: Option<String>,
+    pub refusal_reason: Option<String>,
 }
 
 // ── QR scan result ───────────────────────────────────────────────────────────
@@ -183,6 +187,8 @@ pub struct ScanResult {
     pub valid: bool,
     pub already_used: bool,
     pub scan_type: String, // "ticket" | "reservation"
+    pub status: Option<String>,
+    pub refusal_reason: Option<String>,
     pub guest_name: Option<String>,
     pub num_people: Option<i32>,
     pub event_title: Option<String>,
@@ -218,6 +224,7 @@ pub struct EventReservationStatsResponse {
     pub pending_reservations: i64,
     pub confirmed_reservations: i64,
     pub completed_reservations: i64,
+    pub refused_reservations: i64,
     pub cancelled_reservations: i64,
     pub total_people: i64,
     pub male_guests: i64,
