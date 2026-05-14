@@ -1071,6 +1071,18 @@ pub async fn get_payment_share_by_checkout_session(
     .await
 }
 
+pub async fn get_payment_share_by_id(
+    pool: &PgPool,
+    share_id: Uuid,
+) -> Result<ReservationPaymentShare, sqlx::Error> {
+    sqlx::query_as::<_, ReservationPaymentShare>(
+        "SELECT * FROM reservation_payment_shares WHERE id = $1",
+    )
+    .bind(share_id)
+    .fetch_one(pool)
+    .await
+}
+
 /// Get all payment shares for a reservation
 pub async fn get_payment_shares_by_reservation(
     pool: &PgPool,

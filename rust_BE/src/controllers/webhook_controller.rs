@@ -221,34 +221,9 @@ pub async fn handle_stripe_webhook(
             }
         }
 
-        // Mark event as processed before handling so concurrent retries are rejected
-        if let Err(e) = sqlx::query(
-            "INSERT INTO processed_stripe_events (stripe_event_id, event_type, processed_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
-        )
-        .bind(stripe_event_id)
-        .bind(event_type)
-        .execute(&state.db_pool)
-        .await
-        {
-            error!(error = %e, "Failed to record Stripe event as processed");
-            let _ = outbox_service::enqueue_analytics_error(
-                &state.db_pool,
-                &state.config,
-                "stripe_webhook_persist_failed",
-                None,
-                Some("stripe_webhook"),
-                None,
-                &e.to_string(),
-                serde_json::json!({
-                    "stripe_event_id": stripe_event_id,
-                    "event_type": event_type,
-                }),
-            ).await;
-            return StatusCode::INTERNAL_SERVER_ERROR;
-        }
     }
 
-    match event_type {
+    let result = match event_type {
         "payment_intent.succeeded" => {
             update_payment_status(&state, payment_intent_id, PaymentStatus::Completed).await
         }
@@ -273,7 +248,39 @@ pub async fn handle_stripe_webhook(
             info!(event_type = %event_type, "Unhandled Stripe webhook event type");
             StatusCode::OK
         }
+    };
+
+    // Record event as processed only after a successful handler outcome, so
+    // a failed handler can be retried by Stripe. Application-level guards
+    // (e.g. the `if share.status == "paid"` check inside the checkout
+    // handler) prevent double-processing if Stripe re-delivers concurrently.
+    if result == StatusCode::OK && !stripe_event_id.is_empty() {
+        if let Err(e) = sqlx::query(
+            "INSERT INTO processed_stripe_events (stripe_event_id, event_type, processed_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
+        )
+        .bind(stripe_event_id)
+        .bind(event_type)
+        .execute(&state.db_pool)
+        .await
+        {
+            error!(error = %e, "Failed to record Stripe event as processed");
+            let _ = outbox_service::enqueue_analytics_error(
+                &state.db_pool,
+                &state.config,
+                "stripe_webhook_persist_failed",
+                None,
+                Some("stripe_webhook"),
+                None,
+                &e.to_string(),
+                serde_json::json!({
+                    "stripe_event_id": stripe_event_id,
+                    "event_type": event_type,
+                }),
+            ).await;
+        }
     }
+
+    result
 }
 
 async fn store_authorization(
@@ -400,19 +407,57 @@ async fn handle_checkout_session_completed(
 ) -> StatusCode {
     info!(session_id = %session_id, "Processing checkout.session.completed");
 
-    // Look up the payment share by checkout session ID
-    let share = match table_persistence::get_payment_share_by_checkout_session(
-        &state.db_pool,
-        session_id,
-    )
-    .await
-    {
-        Ok(share) => share,
-        Err(_) => {
-            info!(session_id = %session_id, "No payment share found for checkout session (may be external)");
-            return StatusCode::OK;
-        }
-    };
+    // Look up the payment share by checkout session ID, falling back to the
+    // share UUID embedded in the Stripe session metadata. The fallback covers
+    // the window between insert of the share row and the post-create UPDATE
+    // that sets stripe_checkout_session_id — if that UPDATE didn't land, we
+    // can still resolve the share from the metadata and back-fill the
+    // session id below.
+    let metadata_share_id = event["data"]["object"]["metadata"]["payment_share_id"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let (share, used_metadata_fallback) =
+        match table_persistence::get_payment_share_by_checkout_session(
+            &state.db_pool,
+            session_id,
+        )
+        .await
+        {
+            Ok(share) => (share, false),
+            Err(_) => match metadata_share_id {
+                Some(share_id) => {
+                    match table_persistence::get_payment_share_by_id(&state.db_pool, share_id)
+                        .await
+                    {
+                        Ok(share) => {
+                            warn!(
+                                session_id = %session_id,
+                                share_id = %share_id,
+                                "Payment share resolved via metadata fallback (session id was not persisted)"
+                            );
+                            (share, true)
+                        }
+                        Err(e) => {
+                            error!(
+                                error = %e,
+                                session_id = %session_id,
+                                share_id = %share_id,
+                                "Metadata payment_share_id did not match any share"
+                            );
+                            return StatusCode::OK;
+                        }
+                    }
+                }
+                None => {
+                    info!(
+                        session_id = %session_id,
+                        "No payment share found for checkout session and no metadata fallback (may be external)"
+                    );
+                    return StatusCode::OK;
+                }
+            },
+        };
 
     if share.status == "paid" {
         info!(share_id = %share.id, "Payment share already marked as paid, skipping");
@@ -527,16 +572,23 @@ async fn handle_checkout_session_completed(
     } else {
         Some(stripe_pi_id.clone())
     };
+    let backfill_session_id = if used_metadata_fallback {
+        Some(session_id.to_string())
+    } else {
+        None
+    };
     if let Err(e) = sqlx::query(
         r#"UPDATE reservation_payment_shares
            SET status = 'paid',
                payment_id = $1,
                stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+               stripe_checkout_session_id = COALESCE(stripe_checkout_session_id, $3),
                updated_at = NOW()
-           WHERE id = $3"#,
+           WHERE id = $4"#,
     )
     .bind(payment_id)
     .bind(&stripe_pi_opt)
+    .bind(&backfill_session_id)
     .bind(share.id)
     .execute(&mut *tx)
     .await
