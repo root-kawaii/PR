@@ -17,14 +17,13 @@ import { Calendar } from "react-native-calendars";
 import { EventCard } from "@/components/home/EventCard";
 import { EventDetailModal } from "@/components/event/EventDetailModal";
 import { TableReservationModal } from "@/components/reservation/TableReservationModal";
-import { TableReservationDetailModal } from "@/components/reservation/TableReservationDetailModal";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useEvents } from "@/hooks/useEvents";
 import { useModal } from "@/hooks/useModal";
 import { useTheme } from "@/context/ThemeContext";
-import { Event, Table, TableReservation } from "@/types";
+import { Event, Table } from "@/types";
 import { getEventDateKey } from "@/utils/events";
-import { useLocalSearchParams, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import { trackEvent } from "@/config/analytics";
 
 export default function HomeScreen() {
@@ -32,7 +31,6 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
-  const [selectedReservation, setSelectedReservation] = useState<TableReservation | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
@@ -443,7 +441,14 @@ export default function HomeScreen() {
         onClose={eventModal.close}
         onReserveTable={handleReserveTable}
         onReservationCreated={(reservation) => {
-          setSelectedReservation(reservation);
+          // Navigate to the reservations tab and ask it to auto-open the
+          // detail for the freshly created reservation. Opening a modal
+          // here while the EventDetail/event-360/payment modal stack is
+          // still dismissing leaves iOS with a stuck black overlay.
+          router.push({
+            pathname: "/(tabs)/reservations",
+            params: { reservation_id: reservation.id },
+          });
         }}
       />
 
@@ -452,12 +457,6 @@ export default function HomeScreen() {
         table={selectedTable}
         event={selectedEvent}
         onClose={reservationModal.close}
-      />
-
-      <TableReservationDetailModal
-        visible={Boolean(selectedReservation)}
-        reservation={selectedReservation}
-        onClose={() => setSelectedReservation(null)}
       />
     </SafeAreaView>
   );
